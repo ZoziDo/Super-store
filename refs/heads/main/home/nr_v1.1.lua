@@ -3077,10 +3077,9 @@ end
 local function handleTouch(x, y, uuid)
     local fl_y1 = config.clickAreaPorogPlus.y1
     if flux_network == true then fl_y1 = config.clickAreaPorogPlus.y2 end
-    if y >= config.clickArea1.y1 and
-        y <= config.clickArea1.y2 and 
-        x >= config.clickArea1.x1 and 
-        x <= config.clickArea1.x2 then
+
+    -- Кнопка "Отключить реакторы!"
+    if y >= config.clickArea1.y1 and y <= config.clickArea1.y2 and x >= config.clickArea1.x1 and x <= config.clickArea1.x2 then
         buffer.drawRectangle(12, 44, 26, 3, colors.bg3, 0, " ")
         animatedButton(1, 13, 44, "Отключить реакторы!", nil, nil, 24, nil, nil, 0xfb3737)
         animatedButton(2, 13, 44, "Отключить реакторы!", nil, nil, 24, nil, nil, 0xfb3737)
@@ -3117,44 +3116,13 @@ local function handleTouch(x, y, uuid)
         os.sleep(0.2)
         animatedButton(1, 13, 44, "Отключить реакторы!", nil, nil, 24, nil, nil, 0xfd3232)
         buffer.drawChanges()
-
         os.sleep(0.3)
         drawDynamic()
-    elseif 
-        y >= config.clickArea19.y1 and
-        y <= config.clickArea19.y2 and 
-        x >= config.clickArea19.x1 and 
-        x <= config.clickArea19.x2 then
-        buffer.drawRectangle(4, 44, 6, 3, colors.bg3, 0, " ")
-        animatedButton(1, 5, 44, "🔧", nil, nil, 4, nil, nil, 0x8100cc, 0xffffff)
-        animatedButton(2, 5, 44, "🔧", nil, nil, 4, nil, nil, 0x8100cc, 0xffffff)
-        buffer.drawChanges()
-        
-        os.sleep(0.2)
-        animatedButton(1, 5, 44, "🔧", nil, nil, 4, nil, nil, 0xa91df9, 0xffffff)
-        buffer.drawChanges()
-        
-        drawSettingsMenu()
-    elseif 
-        y >= config.clickArea20.y1 and
-        y <= config.clickArea20.y2 and 
-        x >= config.clickArea20.x1 and 
-        x <= config.clickArea20.x2 then
-        buffer.drawRectangle(4, 47, 6, 3, colors.bg3, 0, " ")
-        animatedButton(1, 5, 47, "ⓘ", nil, nil, 4, nil, nil, 0x8100cc, 0x05e2ff)
-        animatedButton(2, 5, 47, "ⓘ", nil, nil, 4, nil, nil, 0x8100cc, 0x05e2ff)
-        buffer.drawChanges()
-        
-        os.sleep(0.2)
-        animatedButton(1, 5, 47, "ⓘ", nil, nil, 4, nil, nil, 0xa91df9, 0x05e2ff)
-        buffer.drawChanges()
-        
-        drawInfoMenu()    
-    elseif 
-        y >= config.clickArea4.y1 and
-        y <= config.clickArea4.y2 and 
-        x >= config.clickArea4.x1 and 
-        x <= config.clickArea4.x2 then
+        return
+    end
+
+    -- Кнопка "Запуск реакторов!"
+    if y >= config.clickArea4.y1 and y <= config.clickArea4.y2 and x >= config.clickArea4.x1 and x <= config.clickArea4.x2 then
         buffer.drawRectangle(40, 44, 25, 3, colors.bg3, 0, " ")
         animatedButton(1, 41, 44, "Запуск реакторов!", nil, nil, 23, nil, nil, 0x61ff52)
         animatedButton(2, 41, 44, "Запуск реакторов!", nil, nil, 23, nil, nil, 0x61ff52)
@@ -3191,33 +3159,65 @@ local function handleTouch(x, y, uuid)
         os.sleep(0.2)
         animatedButton(1, 41, 44, "Запуск реакторов!", nil, nil, 23, nil, nil, 0x35e525)
         buffer.drawChanges()
-        
         os.sleep(0.3)
         drawDynamic()
-    elseif
-        y >= config.clickArea2.y1 and
-        y <= config.clickArea2.y2 and 
-        x >= config.clickArea2.x1 and 
-        x <= config.clickArea2.x2 then
-        buffer.drawRectangle(12, 47, 26, 3, colors.bg3, 0, " ")
-        animatedButton(1, 13, 47, "Рестарт программы.", nil, nil, 24, nil, nil, colors.whitebtn2)
-        animatedButton(2, 13, 47, "Рестарт программы.", nil, nil, 24, nil, nil, colors.whitebtn2)
+        return
+    end
+
+    -- Кнопка "Обновить МЭ"
+    if y >= config.clickArea5.y1 and y <= config.clickArea5.y2 and x >= config.clickArea5.x1 and x <= config.clickArea5.x2 then
+        buffer.drawRectangle(67, 44, 20, 3, colors.bg3, 0, " ")
+        animatedButton(1, 68, 44, "Обновить МЭ", nil, nil, 18, nil, nil, 0x38afff)
+        animatedButton(2, 68, 44, "Обновить МЭ", nil, nil, 18, nil, nil, 0x38afff)
+        buffer.drawChanges()
+        checkFluid()
+        os.sleep(0.2)
+        animatedButton(1, 68, 44, "Обновить МЭ", nil, nil, 18, nil, nil, nil)
+        buffer.drawChanges()
+        return
+    end
+
+    -- ------------------------------------------------------------------------
+    -- КНОПКИ ВТОРОЙ СТРОКИ (Магазин, Аккаунт, Отзывы)
+    -- ------------------------------------------------------------------------
+    if y >= config.clickAreaShop.y1 and y <= config.clickAreaShop.y2 and x >= config.clickAreaShop.x1 and x <= config.clickAreaShop.x2 then
+        -- Здесь будет вызов магазина (позже добавишь)
+        message("🛒 Магазин временно не доступен", colors.msgwarn)
+        return
+    end
+
+    if y >= config.clickAreaAccount.y1 and y <= config.clickAreaAccount.y2 and x >= config.clickAreaAccount.x1 and x <= config.clickAreaAccount.x2 then
+        message("👤 Аккаунт временно не доступен", colors.msgwarn)
+        return
+    end
+
+    if y >= config.clickAreaReviews.y1 and y <= config.clickAreaReviews.y2 and x >= config.clickAreaReviews.x1 and x <= config.clickAreaReviews.x2 then
+        message("⭐ Отзывы временно не доступны", colors.msgwarn)
+        return
+    end
+
+    -- ------------------------------------------------------------------------
+    -- КНОПКИ ТРЕТЬЕЙ СТРОКИ (Рестарт, Выход, Метрика)
+    -- ------------------------------------------------------------------------
+    if y >= config.clickAreaRestart.y1 and y <= config.clickAreaRestart.y2 and x >= config.clickAreaRestart.x1 and x <= config.clickAreaRestart.x2 then
+        buffer.drawRectangle(12, 50, 19, 3, colors.bg3, 0, " ")
+        animatedButton(1, 13, 50, "Рестарт", nil, nil, 18, nil, nil, colors.whitebtn2)
+        animatedButton(2, 13, 50, "Рестарт", nil, nil, 18, nil, nil, colors.whitebtn2)
         stop()
         message("Перезагружаюсь!")
         buffer.drawChanges()
         os.sleep(0.2)
-        animatedButton(1, 13, 47, "Рестарт программы.", nil, nil, 24, nil, nil, colors.whitebtn)
+        animatedButton(1, 13, 50, "Рестарт", nil, nil, 18, nil, nil, colors.whitebtn)
         buffer.drawChanges()
         os.sleep(1)
         shell.execute("reboot")
-    elseif
-        y >= config.clickArea3.y1 and
-        y <= config.clickArea3.y2 and 
-        x >= config.clickArea3.x1 and 
-        x <= config.clickArea3.x2 then
-        buffer.drawRectangle(40, 47, 25, 3, colors.bg3, 0, " ")
-        animatedButton(1, 41, 47, "Выход из программы.", nil, nil, 23, nil, nil, colors.whitebtn2)
-        animatedButton(2, 41, 47, "Выход из программы.", nil, nil, 23, nil, nil, colors.whitebtn2)
+        return
+    end
+
+    if y >= config.clickAreaExit.y1 and y <= config.clickAreaExit.y2 and x >= config.clickAreaExit.x1 and x <= config.clickAreaExit.x2 then
+        buffer.drawRectangle(40, 50, 19, 3, colors.bg3, 0, " ")
+        animatedButton(1, 41, 50, "Выход", nil, nil, 18, nil, nil, colors.whitebtn2)
+        animatedButton(2, 41, 50, "Выход", nil, nil, 18, nil, nil, colors.whitebtn2)
         if work == true then
             work = false
             message("Отключаю реакторы!", colors.msginfo)
@@ -3229,7 +3229,7 @@ local function handleTouch(x, y, uuid)
         message("Завершаю работу программы...", colors.msgerror)
         buffer.drawChanges()
         os.sleep(0.2)
-        animatedButton(1, 41, 47, "Выход из программы.", nil, nil, 23, nil, nil, colors.whitebtn)
+        animatedButton(1, 41, 50, "Выход", nil, nil, 18, nil, nil, colors.whitebtn)
         buffer.drawChanges()
         os.sleep(0.5)
         buffer.clear(0x000000)
@@ -3238,27 +3238,13 @@ local function handleTouch(x, y, uuid)
         rawset(_G, "__NR_ON_INTERRUPT__", nil)
         exit = true
         os.exit()
-    elseif
-        y >= config.clickArea5.y1 and
-        y <= config.clickArea5.y2 and 
-        x >= config.clickArea5.x1 and 
-        x <= config.clickArea5.x2 then
-        buffer.drawRectangle(67, 44, 20, 3, colors.bg3, 0, " ")
-        animatedButton(1, 68, 44, "Пр.Обновить МЭ", nil, nil, 18, nil, nil, 0x38afff)
-        animatedButton(2, 68, 44, "Пр.Обновить МЭ", nil, nil, 18, nil, nil, 0x38afff)
-        buffer.drawChanges()
-        checkFluid()
-        os.sleep(0.2)
-        animatedButton(1, 68, 44, "Пр.Обновить МЭ", nil, nil, 18, nil, nil, nil)
-        buffer.drawChanges()
-    elseif
-        y >= config.clickArea6.y1 and
-        y <= config.clickArea6.y2 and 
-        x >= config.clickArea6.x1 and 
-        x <= config.clickArea6.x2 then
-        buffer.drawRectangle(67, 47, 20, 3, colors.bg3, 0, " ")
-        animatedButton(1, 68, 47, "Метрика: " .. status_metric, nil, nil, 18, nil, nil, colors.whitebtn2)
-        animatedButton(2, 68, 47, "Метрика: " .. status_metric, nil, nil, 18, nil, nil, colors.whitebtn2)
+        return
+    end
+
+    if y >= config.clickAreaMetric.y1 and y <= config.clickAreaMetric.y2 and x >= config.clickAreaMetric.x1 and x <= config.clickAreaMetric.x2 then
+        buffer.drawRectangle(67, 50, 20, 3, colors.bg3, 0, " ")
+        animatedButton(1, 68, 50, "Метрика: " .. status_metric, nil, nil, 18, nil, nil, colors.whitebtn2)
+        animatedButton(2, 68, 50, "Метрика: " .. status_metric, nil, nil, 18, nil, nil, colors.whitebtn2)
         metric = metric + 1
         if metric == 0 then
             status_metric = "Auto"
@@ -3290,41 +3276,45 @@ local function handleTouch(x, y, uuid)
             metric = 0
         end
         os.sleep(0.2)
-        animatedButton(1, 68, 47, "Метрика: " .. status_metric, nil, nil, 18, nil, nil, colors.whitebtn)
+        animatedButton(1, 68, 50, "Метрика: " .. status_metric, nil, nil, 18, nil, nil, colors.whitebtn)
         drawDynamic()
-    elseif
-    
-        y >= fl_y1 and
-        y <= fl_y1 and 
-        x >= config.clickAreaPorogPlus.x1 and 
-        x <= config.clickAreaPorogPlus.x2 then
+        return
+    end
 
+    -- ------------------------------------------------------------------------
+    -- КНОПКИ ПОРОГА
+    -- ------------------------------------------------------------------------
+    if y >= fl_y1 and y <= fl_y1 and x >= config.clickAreaPorogPlus.x1 and x <= config.clickAreaPorogPlus.x2 then
         porog = porog + 2500
         saveCfg()
         drawDigit(124, fl_y1, brail_greenbtn, 0x5f9300)
         buffer.drawChanges()
         os.sleep(0.2)
         drawPorog()
-    elseif
-        y >= fl_y1 and
-        y <= fl_y1 and
-        x >= config.clickAreaPorogMinus.x1 and
-        x <= config.clickAreaPorogMinus.x2 then
+        return
+    end
+
+    if y >= fl_y1 and y <= fl_y1 and x >= config.clickAreaPorogMinus.x1 and x <= config.clickAreaPorogMinus.x2 then
         if porog > 0 then
             porog = porog - 2500
             saveCfg()
             if porog == 27500 then
                 message("Порог ниже рекомендованного!", colors.msgwarn)
-            end     
+            end
         end
         drawDigit(126, fl_y1, brail_redbtn, 0x9d0000)
         buffer.drawChanges()
         os.sleep(0.2)
         drawPorog()
+        return
     end
+
+    -- ------------------------------------------------------------------------
+    -- КНОПКИ РЕАКТОРОВ (виджеты)
+    -- ------------------------------------------------------------------------
     for i = 1, reactors do
         local clickArea = config["clickArea" .. (6 + i)]
-        if y >= clickArea.y1 and y <= clickArea.y2 and x >= clickArea.x1 and x <= clickArea.x2 and reactor_aborted[i] == false or nil then
+        if y >= clickArea.y1 and y <= clickArea.y2 and x >= clickArea.x1 and x <= clickArea.x2 and (reactor_aborted[i] == false or nil) then
             local Rnum = i
             local xw, yw = widgetCoords[Rnum][1], widgetCoords[Rnum][2]
 
@@ -3343,7 +3333,7 @@ local function handleTouch(x, y, uuid)
                 starting = true
                 updateReactorData(Rnum)
             end
-            
+
             if not any_reactor_on then
                 work = false
                 starting = false
@@ -3354,7 +3344,6 @@ local function handleTouch(x, y, uuid)
             drawWidgets()
             break
         end
-        
     end
 end
 

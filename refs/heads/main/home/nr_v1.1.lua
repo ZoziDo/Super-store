@@ -134,33 +134,24 @@ local widgetCoords = {
 }
 
 local config = {
-    clickArea19 = {x1=4,  y1=44, x2=9,  y2=46}, -- Кнопка 🔧 (x:5, y:44)
-    clickArea20 = {x1=4,  y1=47, x2=9,  y2=49}, -- Кнопка ⓘ (x:5, y:47)
+    -- Первая строка (y=44)
+    clickArea1  = {x1=12, y1=44, x2=37, y2=46}, -- Отключить реакторы
+    clickArea4  = {x1=40, y1=44, x2=64, y2=46}, -- Запуск реакторов
+    clickArea5  = {x1=67, y1=44, x2=86, y2=46}, -- Обновить МЭ
 
-    clickArea1  = {x1=12,  y1=44, x2=37, y2=46}, -- Отключить реакторы (x:13, y:44)
-    clickArea2  = {x1=12,  y1=47, x2=37, y2=49}, -- Рестарт программы (x:13, y:47)
+    -- Вторая строка (y=47)
+    clickAreaShop    = {x1=4,  y1=47, x2=22, y2=49}, -- Магазин
+    clickAreaAccount = {x1=40, y1=47, x2=58, y2=49}, -- Аккаунт
+    clickAreaReviews = {x1=67, y1=47, x2=85, y2=49}, -- Отзывы
 
-    clickArea4  = {x1=40, y1=44, x2=64, y2=46}, -- Запуск реакторов (x:41, y:44)
-    clickArea3  = {x1=40, y1=47, x2=64, y2=49}, -- Выход из программы (x:41, y:47)
+    -- Третья строка (y=50)
+    clickAreaRestart = {x1=12, y1=50, x2=30, y2=52}, -- Рестарт
+    clickAreaExit    = {x1=40, y1=50, x2=58, y2=52}, -- Выход
+    clickAreaMetric  = {x1=67, y1=50, x2=86, y2=52}, -- Метрика
 
-    clickArea5  = {x1=67, y1=44, x2=86, y2=46}, -- Обновить МЭ (x:68, y:44)
-    clickArea6  = {x1=67, y1=47, x2=86, y2=49}, -- Метрика (x:68, y:47)
-    -- Координаты для кнопок на виджетах
-    clickArea7 = {x1=widgetCoords[1][1]+5, y1=widgetCoords[1][2]+9, x2=widgetCoords[1][1]+11, y2=widgetCoords[1][2]+10}, -- Реактор 1
-    clickArea8 = {x1=widgetCoords[2][1]+5, y1=widgetCoords[2][2]+9, x2=widgetCoords[2][1]+11, y2=widgetCoords[2][2]+10}, -- Реактор 2
-    clickArea9 = {x1=widgetCoords[3][1]+5, y1=widgetCoords[3][2]+9, x2=widgetCoords[3][1]+11, y2=widgetCoords[3][2]+10}, -- Реактор 3
-    clickArea10 = {x1=widgetCoords[4][1]+5, y1=widgetCoords[4][2]+9, x2=widgetCoords[4][1]+11, y2=widgetCoords[4][2]+10}, -- Реактор 4
-    clickArea11 = {x1=widgetCoords[5][1]+5, y1=widgetCoords[5][2]+9, x2=widgetCoords[5][1]+11, y2=widgetCoords[5][2]+10}, -- Реактор 5
-    clickArea12 = {x1=widgetCoords[6][1]+5, y1=widgetCoords[6][2]+9, x2=widgetCoords[6][1]+11, y2=widgetCoords[6][2]+10}, -- Реактор 6
-    clickArea13 = {x1=widgetCoords[7][1]+5, y1=widgetCoords[7][2]+9, x2=widgetCoords[7][1]+11, y2=widgetCoords[7][2]+10}, -- Реактор 7
-    clickArea14 = {x1=widgetCoords[8][1]+5, y1=widgetCoords[8][2]+9, x2=widgetCoords[8][1]+11, y2=widgetCoords[8][2]+10}, -- Реактор 8
-    clickArea15 = {x1=widgetCoords[9][1]+5, y1=widgetCoords[9][2]+9, x2=widgetCoords[9][1]+11, y2=widgetCoords[9][2]+10}, -- Реактор 9
-    clickArea16 = {x1=widgetCoords[10][1]+5, y1=widgetCoords[10][2]+9, x2=widgetCoords[10][1]+11, y2=widgetCoords[10][2]+10}, -- Реактор 10
-    clickArea17 = {x1=widgetCoords[11][1]+5, y1=widgetCoords[11][2]+9, x2=widgetCoords[11][1]+11, y2=widgetCoords[11][2]+10}, -- Реактор 11
-    clickArea18 = {x1=widgetCoords[12][1]+5, y1=widgetCoords[12][2]+9, x2=widgetCoords[12][1]+11, y2=widgetCoords[12][2]+10}, -- Реактор 12
-    -- Координаты для кнопок в правом меню
-    clickAreaPorogPlus = {x1=124, y1=36, x2=125, y2=33}, -- Кнопка "+ Порог"
-    clickAreaPorogMinus = {x1=126, y1=36, x2=127, y2=33} -- Кнопка "- Порог"
+    -- Остальные зоны (порог, реакторы) оставь как были
+    clickAreaPorogPlus  = {x1=124, y1=36, x2=125, y2=33},
+    clickAreaPorogMinus = {x1=126, y1=36, x2=127, y2=33},
 }
 local colors = {
     bg = 0x202020,
@@ -1287,18 +1278,23 @@ local function drawStatic()
         buffer.drawText(1, 1, colors.msgerror, "Ошибка загрузки изображения! Проверьте наличие файлов 'image/reactorGUI.pic'")
         return
     end
-    animatedButton(1, 5, 44, "🔧", nil, nil, 4, nil, nil, 0xa91df9, 0xffffff)
-    animatedButton(1, 5, 47, "ⓘ", nil, nil, 4, nil, nil, 0xa91df9, 0x05e2ff)
+
+    -- Первая строка (y=44): Управление реакторами
     animatedButton(1, 13, 44, "Отключить реакторы!", nil, nil, 24, nil, nil, 0xfd3232)
-    animatedButton(1, 41, 44, "Запуск реакторов!", nil, nil, 23, nil, nil, 0x35e525)
-    animatedButton(1, 68, 44, "Пр.Обновить МЭ", nil, nil, 18, nil, nil, nil)
-    animatedButton(1, 13, 47, "Рестарт программы.", nil, nil, 24, nil, nil, colors.whitebtn)
-    animatedButton(1, 41, 47, "Выход из программы.", nil, nil, 23, nil, nil, colors.whitebtn)
-    animatedButton(1, 68, 47, "Метрика: " .. status_metric, nil, nil, 18, nil, nil, colors.whitebtn)
+    animatedButton(1, 41, 44, "Запуск реакторов!",   nil, nil, 23, nil, nil, 0x35e525)
+    animatedButton(1, 68, 44, "Обновить МЭ",        nil, nil, 18, nil, nil, nil)
+
+    -- Вторая строка (y=47): Магазин, Аккаунт, Отзывы
+    animatedButton(1, 5,  47, "🛒 Магазин", nil, nil, 18, nil, nil, 0x8B5CF6, 0xFFFFFF)
+    animatedButton(1, 41, 47, "👤 Аккаунт", nil, nil, 18, nil, nil, 0x8B5CF6, 0xFFFFFF)
+    animatedButton(1, 68, 47, "⭐ Отзывы",  nil, nil, 18, nil, nil, 0x8B5CF6, 0xFFFFFF)
+
+    -- Третья строка (y=50): Рестарт, Выход, Метрика
+    animatedButton(1, 13, 50, "Рестарт", nil, nil, 18, nil, nil, colors.whitebtn)
+    animatedButton(1, 41, 50, "Выход",   nil, nil, 18, nil, nil, colors.whitebtn)
+    animatedButton(1, 68, 50, "Метрика: " .. status_metric, nil, nil, 18, nil, nil, colors.whitebtn)
 
     buffer.drawText(123, 50, (theme and 0xc3c3c3 or 0x666666), "Reactor Control v" .. version .. "." .. build .. " by P1KaChU337")
-    -- buffer.drawText(130, 50, (theme and 0xc3c3c3 or 0x666666), "by P1KaChU337") -- Контакты: VK: @p1kachu337, Discord: p1kachu337 TG: @sh1zurz
-    
     buffer.drawChanges()
 end
 

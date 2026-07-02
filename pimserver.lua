@@ -11,6 +11,11 @@ local internet = require("internet")
 local TIMEZONE_OFFSET = 3 * 3600 
 
 -- ============================================
+-- ВСТАВЬТЕ ЭТУ СТРОКУ ЗДЕСЬ:
+-- ============================================
+pcall(function() io.stdout:setvbuf("no") end)  -- Отключаем буферизацию вывода
+
+-- ============================================
 -- СИСТЕМА ПОДРОБНОГО ЛОГИРОВАНИЯ
 -- ============================================
 local function writeDebugLog(msg, level)
@@ -1599,7 +1604,7 @@ local function handleTouch(x, y, player)
 end
 
 -- ============================================
--- ОСНОВНОЙ ЦИКЛ
+-- ОСНОВНОЙ ЦИКЛ (ИСПРАВЛЕННЫЙ)
 -- ============================================
 writeDebugLog("=== ЗАПУСК ОСНОВНОГО ЦИКЛА ===", "CRITICAL")
 
@@ -1614,11 +1619,16 @@ local function main()
     local telegramCheckInterval = 2
 
     while true do
-        writeDebugLog("Ожидание события...", "DEBUG")
-        local ev = {event.pull(0.1)}
+        -- Увеличили время ожидания с 0.1 до 0.5 для стабильности
+        local ev = {event.pull(0.5)}
         local etype = ev[1]
-        writeDebugLog("Получено событие: " .. tostring(etype), "DEBUG")
+        
+        -- Логируем только важные события, чтобы не засорять лог
+        if etype == "key_down" or etype == "modem_message" or etype == "touch" then
+            writeDebugLog("Получено событие: " .. tostring(etype), "INFO")
+        end
 
+        -- Проверка Telegram каждые 2 секунды
         if os.time() - lastTelegramCheck > telegramCheckInterval then
             lastTelegramCheck = os.time()
             local ok, err = pcall(checkTelegramUpdates)
@@ -1627,20 +1637,21 @@ local function main()
             end
         end
 
+        -- Обработка событий
         if etype == "key_down" then
-            writeDebugLog("Обработка key_down", "DEBUG")
+            writeDebugLog("Обработка key_down", "INFO")
             local key = ev[4]
             local char = ev[3]
             local player = ev[5]
             handleKey(key, char, player)
         elseif etype == "touch" then
-            writeDebugLog("Обработка touch", "DEBUG")
+            writeDebugLog("Обработка touch", "INFO")
             local x = ev[3]
             local y = ev[4]
             local player = ev[5]
             handleTouch(x, y, player)
         elseif etype == "modem_message" then
-            writeDebugLog("Обработка modem_message", "DEBUG")
+            writeDebugLog("Обработка modem_message", "INFO")
             local from = ev[3]
             local raw = ev[6]
             local success, msg = pcall(serialization.unserialize, raw)
@@ -1659,7 +1670,7 @@ local function main()
             logIncoming(from, msg)
 
             if msg.op == "register" then
-                writeDebugLog("Обработка register от " .. from, "DEBUG")
+                writeDebugLog("Обработка register от " .. from, "INFO")
                 if msg.password ~= ACCESS_PASSWORD then
                     modem.send(from, 0xffef, serialization.serialize({op="error", message="Неверный пароль"}))
                     log("WARN", "❌ Попытка подключения с неверным паролем от " .. from)
@@ -1679,7 +1690,7 @@ local function main()
                 if not adminMode and not editBalanceMode and not addItemMode then drawInterface() end
                 goto continue
             elseif msg.op == "enter" then
-                writeDebugLog("Обработка enter от " .. from, "DEBUG")
+                writeDebugLog("Обработка enter от " .. from, "INFO")
                 if shopPaused then
                     modem.send(from, 0xffef, serialization.serialize({op="error", message="Магазин на паузе"}))
                     if not adminMode and not editBalanceMode and not addItemMode then drawInterface() end
@@ -1745,7 +1756,7 @@ local function main()
                 if not adminMode and not editBalanceMode and not addItemMode then drawInterface() end
                 goto continue
             elseif msg.op == "sell" then
-                writeDebugLog("Обработка sell от " .. from, "DEBUG")
+                writeDebugLog("Обработка sell от " .. from, "INFO")
                 if shopPaused then
                     modem.send(from, 0xffef, serialization.serialize({op="error", message="Магазин на паузе"}))
                     if not adminMode and not editBalanceMode and not addItemMode then drawInterface() end
@@ -1782,7 +1793,7 @@ local function main()
                 if not adminMode and not editBalanceMode and not addItemMode then drawInterface() end
                 goto continue
             elseif msg.op == "buy" then
-                writeDebugLog("Обработка buy от " .. from, "DEBUG")
+                writeDebugLog("Обработка buy от " .. from, "INFO")
                 if shopPaused then
                     modem.send(from, 0xffef, serialization.serialize({op="error", message="Магазин на паузе"}))
                     if not adminMode and not editBalanceMode and not addItemMode then drawInterface() end
@@ -1829,7 +1840,7 @@ local function main()
                 if not adminMode and not editBalanceMode and not addItemMode then drawInterface() end
                 goto continue
             elseif msg.op == "report" then
-                writeDebugLog("Обработка report от " .. from, "DEBUG")
+                writeDebugLog("Обработка report от " .. from, "INFO")
                 if not validateSession(msg.name, msg.token) then
                     log("WARN", "❌ Неверный токен для report")
                     if not adminMode and not editBalanceMode and not addItemMode then drawInterface() end
@@ -1850,7 +1861,7 @@ local function main()
                 if not adminMode and not editBalanceMode and not addItemMode then drawInterface() end
                 goto continue
             elseif msg.op == "agree" then
-                writeDebugLog("Обработка agree от " .. from, "DEBUG")
+                writeDebugLog("Обработка agree от " .. from, "INFO")
                 if not validateSession(msg.name, msg.token) then
                     log("WARN", "❌ Неверный токен для agree")
                     modem.send(from, 0xffef, serialization.serialize({ op="agree", error = true, message = "Токен устарел" }))
@@ -1950,6 +1961,7 @@ while true do
     local ok, err = pcall(main)
     if not ok then
         writeDebugLog("КРИТИЧЕСКАЯ ОШИБКА: " .. tostring(err), "CRITICAL")
+        -- Полный стек вызовов
         writeDebugLog("Стек вызовов:", "CRITICAL")
         local stack = debug.traceback("", 2)
         if stack then
@@ -1960,7 +1972,7 @@ while true do
         print("❌ Ошибка сервера: " .. tostring(err))
         print("📋 Подробности в /home/pimserver_detailed.log")
         pcall(drawInterface)
-        writeDebugLog("Перезапуск через 5 секунд...", "WARNING")
-        os.sleep(5)
+        writeDebugLog("Перезапуск через 10 секунд...", "WARNING")
+        os.sleep(10)
     end
 end

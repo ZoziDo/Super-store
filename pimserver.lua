@@ -787,7 +787,7 @@ local function saveFeedbacks()
 end
 
 local function handleTelegramCommand(text)
-    if not text or text == "" then return end
+    if not text or text == "" then return
     
     if text == "/start" or text == "Назад" then
         sendTelegram("🛒 PIM Market Admin\n\nВыберите действие:", getMainKeyboard())
@@ -1041,7 +1041,7 @@ local function checkTelegramUpdates()
         if id and id > maxId then
             maxId = id
         end
-    end
+    end  -- <-- ЭТОТ end БЫЛ ПРОПУЩЕН!
     
     -- Парсим тексты (без логов!)
     for text in responseData:gmatch('"text":"([^"]+)"') do
@@ -1060,7 +1060,7 @@ local function checkTelegramUpdates()
             f2:close()
         end
     end
-end
+end  -- <-- ЭТО end ЗАКРЫВАЕТ ФУНКЦИЮ
 
 -- ===== ВЕБ-АДМИН ОБРАБОТЧИК =====
 local function handleWebCommand(msg, from)

@@ -1662,10 +1662,11 @@ local function main()
     end
 end
 
-while true do
-    local ok, err = pcall(main)
-    if not ok then
-        print("Ошибка сервера: " .. tostring(err))
-        os.sleep(5)
+    while true do
+        local ok, err = pcall(main)
+        if not ok then
+            print("Ошибка сервера: " .. tostring(err))
+            os.sleep(5)
+        end
     end
-end
+end  

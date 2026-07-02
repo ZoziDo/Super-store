@@ -890,7 +890,7 @@ local function handleTelegramCommand(text)
 end
 
 -- ============================================
--- ИСПРАВЛЕННАЯ ФУНКЦИЯ checkTelegramUpdates
+-- ФУНКЦИЯ ПРОВЕРКИ ОБНОВЛЕНИЙ TELEGRAM
 -- ============================================
 local function checkTelegramUpdates()
     local url = "https://api.telegram.org/bot" .. TELEGRAM_TOKEN .. "/getUpdates?limit=5"
@@ -913,10 +913,8 @@ local function checkTelegramUpdates()
         responseData = responseData .. chunk
     end
     
-    -- ПОЛНОСТЬЮ ПЕРЕРАБОТАННЫЙ ПАРСИНГ
+    -- Парсим update_id
     local maxId = lastUpdateId
-    
-    -- Ищем все update_id
     for updateId in responseData:gmatch('"update_id":(%d+)') do
         local id = tonumber(updateId)
         if id and id > maxId then
@@ -924,31 +922,18 @@ local function checkTelegramUpdates()
         end
     end
     
-    -- Ищем все тексты с правильной конвертацией Unicode
+    -- Парсим тексты
     for text in responseData:gmatch('"text":"([^"]+)"') do
-        -- Конвертируем \uXXXX в символы
         local decoded = text:gsub("\\u([0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F])", function(hex)
             return unicode.char(tonumber(hex, 16))
         end)
-        
-        -- Дополнительная конвертация для эмодзи (суррогатные пары)
-        decoded = decoded:gsub("\\uD83D\\uDC65", "👥")
-        decoded = decoded:gsub("\\uD83D\\uDCCA", "📊")
-        decoded = decoded:gsub("\\uD83D\\uDCB0", "💰")
-        decoded = decoded:gsub("\\uD83D\\uDC51", "👑")
-        decoded = decoded:gsub("\\uD83D\\uDCE6", "📦")
-        decoded = decoded:gsub("\\u23F8", "⏸️")
-        decoded = decoded:gsub("\\uD83D\\uDD04", "🔄")
-        decoded = decoded:gsub("\\uD83D\\uDEAB", "🚫")
-        decoded = decoded:gsub("\\uD83D\\uDD19", "🔙")
-        
         print("📥 Получено: " .. decoded)
         handleTelegramCommand(decoded)
     end
     
     if maxId > lastUpdateId then
         lastUpdateId = maxId
-        print("📌 lastUpdateId обновлён: " .. lastUpdateId)
+        print("📌 lastUpdateId: " .. lastUpdateId)
     end
 end
 
@@ -1379,7 +1364,9 @@ local function handleTouch(x, y, player)
     end
 end
 
--- ===== ОСНОВНОЙ ЦИКЛ =====
+-- ============================================
+-- ОСНОВНОЙ ЦИКЛ
+-- ============================================
 local function main()
     log("SUCCESS", "🚀 Сервер запущен. Администраторы: " .. table.concat(admins, ", "))
     sendTelegram("🤖 **PIM Market Бот запущен!**\n\nНажмите /start для начала работы.", getMainKeyboard())
@@ -1694,8 +1681,10 @@ local function main()
         ::continue::
     end
 end
-    
--- ===== ЗАПУСК =====
+
+-- ============================================
+-- ЗАПУСК
+-- ============================================
 while true do
     local ok, err = pcall(main)
     if not ok then

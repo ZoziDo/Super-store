@@ -1223,7 +1223,7 @@ local function handleKey(key, char, player)
             drawEditBalanceWindow()
             return
         end
-        return  -- Этот return был пропущен
+        return  
     end
 
     -- Обработка админ-режима
@@ -1700,9 +1700,13 @@ end
 -- ЗАПУСК
 -- ============================================
 while true do
-    local ok, err = pcall(main)
+    local ok, err = xpcall(main, function(e)
+        print("Критическая ошибка: " .. tostring(e))
+        print(debug.traceback())
+    end)
     if not ok then
-        print("Ошибка сервера: " .. tostring(err))
         os.sleep(5)
+    else
+        os.sleep(1)
     end
 end

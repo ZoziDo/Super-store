@@ -1694,7 +1694,6 @@ local function main()
         ::continue::
     end
 end
-end
     
 -- ===== ЗАПУСК =====
 while true do

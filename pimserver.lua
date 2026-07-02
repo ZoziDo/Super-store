@@ -787,7 +787,7 @@ local function saveFeedbacks()
 end
 
 local function handleTelegramCommand(text)
-    if not text or text == "" then return
+    if not text or text == "" then return end  -- <-- ДОБАВИТЬ end
     
     if text == "/start" or text == "Назад" then
         sendTelegram("🛒 PIM Market Admin\n\nВыберите действие:", getMainKeyboard())
@@ -799,7 +799,7 @@ local function handleTelegramCommand(text)
         local playersKeys = {}
         for name, data in pairs(players) do
             msg = msg .. (#playersKeys + 1) .. ". " .. name
-            if data.banned then msg = msg .. " 🚫"
+            if data.banned then msg = msg .. " 🚫" end
             msg = msg .. "\n"
             table.insert(playersKeys, name)
             if #playersKeys >= 10 then
@@ -807,7 +807,7 @@ local function handleTelegramCommand(text)
                 break
             end
         end
-        if #playersKeys == 0 then msg = msg .. "Нет игроков"
+        if #playersKeys == 0 then msg = msg .. "Нет игроков" end
         sendTelegram(msg, getPlayersKeyboard(playersKeys))
         return
     end
@@ -819,7 +819,7 @@ local function handleTelegramCommand(text)
         for _, p in pairs(players) do
             totalPlayers = totalPlayers + 1
             totalTransactions = totalTransactions + (p.transactions or 0)
-            if p.banned then bannedCount = bannedCount + 1
+            if p.banned then bannedCount = bannedCount + 1 end 
         end
         local msg = "📊 Статистика магазина\n═══════════════════\n"
         msg = msg .. "👥 Игроков: " .. totalPlayers .. "\n"

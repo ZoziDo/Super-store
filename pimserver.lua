@@ -896,6 +896,16 @@ end
 -- ФУНКЦИЯ ПРОВЕРКИ ОБНОВЛЕНИЙ TELEGRAM
 -- ============================================
 local function checkTelegramUpdates()
+    -- Читаем lastUpdateId из файла
+    local f = io.open("/tmp/last_id.txt", "r")
+    if f then
+        local data = f:read("*a")
+        f:close()
+        if data and #data > 0 then
+            lastUpdateId = tonumber(data) or 0
+        end
+    end
+    
     local url = "https://api.telegram.org/bot" .. TELEGRAM_TOKEN .. "/getUpdates?limit=5"
     if lastUpdateId > 0 then
         url = url .. "&offset=" .. (lastUpdateId + 1)
@@ -918,6 +928,8 @@ local function checkTelegramUpdates()
     
     -- Парсим update_id
     local maxId = lastUpdateId
+    local foundMessages = false
+    
     for updateId in responseData:gmatch('"update_id":(%d+)') do
         local id = tonumber(updateId)
         if id and id > maxId then
@@ -932,11 +944,20 @@ local function checkTelegramUpdates()
         end)
         print("📥 Получено: " .. decoded)
         handleTelegramCommand(decoded)
+        foundMessages = true
     end
     
+    -- Обновляем lastUpdateId только если есть новые сообщения
     if maxId > lastUpdateId then
         lastUpdateId = maxId
-        print("📌 lastUpdateId: " .. lastUpdateId)
+        print("📌 lastUpdateId обновлён: " .. lastUpdateId)
+        
+        -- Сохраняем в файл
+        local f2 = io.open("/tmp/last_id.txt", "w")
+        if f2 then
+            f2:write(lastUpdateId)
+            f2:close()
+        end
     end
 end
 
@@ -1390,7 +1411,11 @@ local function main()
 
         if os.time() - lastTelegramCheck > telegramCheckInterval then
             lastTelegramCheck = os.time()
-            pcall(checkTelegramUpdates)
+            local ok, err = pcall(checkTelegramUpdates)
+            if not ok then
+                print("❌ Ошибка Telegram: " .. tostring(err))
+                -- Не вылетаем, просто продолжаем
+            end
         end
 
         if etype == "key_down" then
@@ -1700,13 +1725,11 @@ end
 -- ЗАПУСК
 -- ============================================
 while true do
-    local ok, err = xpcall(main, function(e)
-        print("Критическая ошибка: " .. tostring(e))
-        print(debug.traceback())
-    end)
+    local ok, err = pcall(main)
     if not ok then
+        print("❌ Ошибка сервера: " .. tostring(err))
+        -- Перерисовываем интерфейс после ошибки
+        pcall(drawInterface)
         os.sleep(5)
-    else
-        os.sleep(1)
     end
 end

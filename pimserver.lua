@@ -1611,7 +1611,15 @@ writeDebugLog("=== ЗАПУСК ОСНОВНОГО ЦИКЛА ===", "CRITICAL")
 local function main()
     writeDebugLog("main() вызвана", "CRITICAL")
     log("SUCCESS", "🚀 Сервер запущен. Администраторы: " .. table.concat(admins, ", "))
-    sendTelegram("🤖 PIM Market Бот запущен!\nНажмите /start для начала работы.", getMainKeyboard())
+    
+    -- Отправляем сообщение в Telegram с защитой от ошибок
+    local ok, err = pcall(function()
+        sendTelegram("🤖 PIM Market Бот запущен!\nНажмите /start для начала работы.", getMainKeyboard())
+    end)
+    if not ok then
+        writeDebugLog("Ошибка отправки Telegram при запуске: " .. tostring(err), "ERROR")
+    end
+    
     drawInterface()
     writeDebugLog("Интерфейс отрисован", "INFO")
 
@@ -1619,11 +1627,9 @@ local function main()
     local telegramCheckInterval = 2
 
     while true do
-        -- Увеличили время ожидания с 0.1 до 0.5 для стабильности
         local ev = {event.pull(0.5)}
         local etype = ev[1]
         
-        -- Логируем только важные события, чтобы не засорять лог
         if etype == "key_down" or etype == "modem_message" or etype == "touch" then
             writeDebugLog("Получено событие: " .. tostring(etype), "INFO")
         end
@@ -1637,314 +1643,352 @@ local function main()
             end
         end
 
-        -- Обработка событий
+        -- Обработка событий с защитой от ошибок
         if etype == "key_down" then
             writeDebugLog("Обработка key_down", "INFO")
-            local key = ev[4]
-            local char = ev[3]
-            local player = ev[5]
-            handleKey(key, char, player)
+            local ok, err = pcall(function()
+                local key = ev[4]
+                local char = ev[3]
+                local player = ev[5]
+                handleKey(key, char, player)
+            end)
+            if not ok then
+                writeDebugLog("ОШИБКА в key_down: " .. tostring(err), "ERROR")
+            end
+            
         elseif etype == "touch" then
             writeDebugLog("Обработка touch", "INFO")
-            local x = ev[3]
-            local y = ev[4]
-            local player = ev[5]
-            handleTouch(x, y, player)
+            local ok, err = pcall(function()
+                local x = ev[3]
+                local y = ev[4]
+                local player = ev[5]
+                handleTouch(x, y, player)
+            end)
+            if not ok then
+                writeDebugLog("ОШИБКА в touch: " .. tostring(err), "ERROR")
+            end
+            
         elseif etype == "modem_message" then
             writeDebugLog("Обработка modem_message", "INFO")
-            local from = ev[3]
-            local raw = ev[6]
-            local success, msg = pcall(serialization.unserialize, raw)
-            if not success or not msg or type(msg) ~= "table" then
-                writeDebugLog("Ошибка десериализации modem_message", "WARNING")
-                goto continue
-            end
-
-            local last = sessions["__modem_"..from] or 0
-            if os.time() - last < 0.5 then
-                log("WARN", "Спам от " .. from)
-                goto continue
-            end
-            sessions["__modem_"..from] = os.time()
-
-            logIncoming(from, msg)
-
-            if msg.op == "register" then
-                writeDebugLog("Обработка register от " .. from, "INFO")
-                if msg.password ~= ACCESS_PASSWORD then
-                    modem.send(from, 0xffef, serialization.serialize({op="error", message="Неверный пароль"}))
-                    log("WARN", "❌ Попытка подключения с неверным паролем от " .. from)
-                    if not adminMode and not editBalanceMode and not addItemMode then drawInterface() end
-                    goto continue
-                end
-                marketConnected = true
-                if not owner then
-                    owner = from
-                    log("SUCCESS", "🔐 АДМИН ЗАРЕГИСТРИРОВАН: " .. from)
-                end
-                if not markets[from] then
-                    markets[from] = true
-                    log("SUCCESS", "✅ Терминал подключён: " .. from)
-                end
-                modem.send(from, 0xffef, serialization.serialize({op="welcome", owner=(from==owner), shopPaused=shopPaused}))
-                if not adminMode and not editBalanceMode and not addItemMode then drawInterface() end
-                goto continue
-            elseif msg.op == "enter" then
-                writeDebugLog("Обработка enter от " .. from, "INFO")
-                if shopPaused then
-                    modem.send(from, 0xffef, serialization.serialize({op="error", message="Магазин на паузе"}))
-                    if not adminMode and not editBalanceMode and not addItemMode then drawInterface() end
-                    goto continue
-                end
-                local playerName = msg.name
-                if not playerName or playerName == "" then
-                    log("WARN", "❌ Вход без имени от " .. from)
-                    if not adminMode and not editBalanceMode and not addItemMode then drawInterface() end
-                    goto continue
-                end
-                local player = getOrCreatePlayer(playerName)
-                if player.banned then
-                    modem.send(from, 0xffef, serialization.serialize({op="error", message="Вы забанены"}))
-                    log("WARN", "🚫 Забаненный игрок пытается войти: " .. playerName)
-                    if not adminMode and not editBalanceMode and not addItemMode then drawInterface() end
-                    goto continue
+            
+            -- ВСЯ ОБРАБОТКА modem_message В ОДНОМ pcall
+            local ok, err = pcall(function()
+                local from = ev[3]
+                local raw = ev[6]
+                
+                writeDebugLog("modem_message от " .. tostring(from), "INFO")
+                
+                local success, msg = pcall(serialization.unserialize, raw)
+                if not success or not msg or type(msg) ~= "table" then
+                    writeDebugLog("Ошибка десериализации modem_message", "WARNING")
+                    return
                 end
 
-                local existingSession = sessions[playerName]
-                local token
-                if existingSession and os.time() - (existingSession.lastAction or 0) < SESSION_TIMEOUT then
-                    token = existingSession.token
-                    existingSession.lastAction = os.time()
-                else
-                    token = tostring(math.floor(math.random() * 900000000 + 100000000))
-                    sessions[playerName] = {token = token, lastAction = os.time()}
-                    log("SUCCESS", "👤 " .. playerName .. " вошёл в систему")
-                end
+                writeDebugLog("msg.op = " .. tostring(msg.op), "INFO")
 
-                modem.send(from, 0xffef, serialization.serialize({
-                    op="welcome", status="ok", token=token,
-                    balance=player.balance or 0.0,
-                    emaBalance=player.emaBalance or 0.0,
-                    transactions=player.transactions,
-                    regDate=player.regDate,
-                    agreed = player.agreed or false,
-                    shopPaused = shopPaused
-                }))
-                if not adminMode and not editBalanceMode and not addItemMode then drawInterface() end
-                goto continue
-            elseif msg.op == "getAccount" then
-                if not validateSession(msg.name, msg.token) then
-                    log("WARN", "❌ Неверный токен для getAccount от " .. (msg.name or "?"))
-                    modem.send(from, 0xffef, serialization.serialize({op="accountData", error = true, message = "Токен устарел"}))
-                    if not adminMode and not editBalanceMode and not addItemMode then drawInterface() end
-                    goto continue
+                local last = sessions["__modem_"..from] or 0
+                if os.time() - last < 0.5 then
+                    log("WARN", "Спам от " .. from)
+                    return
                 end
-                local player = players[msg.name]
-                if not player then goto continue end
-                sessions[msg.name].lastAction = os.time()
-                modem.send(from, 0xffef, serialization.serialize({
-                    op="accountData",
-                    data = {
-                        balance = player.balance,
-                        emaBalance = player.emaBalance,
-                        transactions = player.transactions,
-                        regDate = player.regDate,
-                        agreed = player.agreed,
+                sessions["__modem_"..from] = os.time()
+
+                logIncoming(from, msg)
+
+                if msg.op == "register" then
+                    writeDebugLog("Обработка register от " .. from, "INFO")
+                    if msg.password ~= ACCESS_PASSWORD then
+                        modem.send(from, 0xffef, serialization.serialize({op="error", message="Неверный пароль"}))
+                        log("WARN", "❌ Попытка подключения с неверным паролем от " .. from)
+                        if not adminMode and not editBalanceMode and not addItemMode then drawInterface() end
+                        return
+                    end
+                    marketConnected = true
+                    if not owner then
+                        owner = from
+                        log("SUCCESS", "🔐 АДМИН ЗАРЕГИСТРИРОВАН: " .. from)
+                    end
+                    if not markets[from] then
+                        markets[from] = true
+                        log("SUCCESS", "✅ Терминал подключён: " .. from)
+                    end
+                    modem.send(from, 0xffef, serialization.serialize({op="welcome", owner=(from==owner), shopPaused=shopPaused}))
+                    if not adminMode and not editBalanceMode and not addItemMode then drawInterface() end
+                    return
+                    
+                elseif msg.op == "enter" then
+                    writeDebugLog("Обработка enter от " .. from, "INFO")
+                    if shopPaused then
+                        modem.send(from, 0xffef, serialization.serialize({op="error", message="Магазин на паузе"}))
+                        if not adminMode and not editBalanceMode and not addItemMode then drawInterface() end
+                        return
+                    end
+                    local playerName = msg.name
+                    if not playerName or playerName == "" then
+                        log("WARN", "❌ Вход без имени от " .. from)
+                        if not adminMode and not editBalanceMode and not addItemMode then drawInterface() end
+                        return
+                    end
+                    local player = getOrCreatePlayer(playerName)
+                    if player.banned then
+                        modem.send(from, 0xffef, serialization.serialize({op="error", message="Вы забанены"}))
+                        log("WARN", "🚫 Забаненный игрок пытается войти: " .. playerName)
+                        if not adminMode and not editBalanceMode and not addItemMode then drawInterface() end
+                        return
+                    end
+
+                    local existingSession = sessions[playerName]
+                    local token
+                    if existingSession and os.time() - (existingSession.lastAction or 0) < SESSION_TIMEOUT then
+                        token = existingSession.token
+                        existingSession.lastAction = os.time()
+                    else
+                        token = tostring(math.floor(math.random() * 900000000 + 100000000))
+                        sessions[playerName] = {token = token, lastAction = os.time()}
+                        log("SUCCESS", "👤 " .. playerName .. " вошёл в систему")
+                    end
+
+                    modem.send(from, 0xffef, serialization.serialize({
+                        op="welcome", status="ok", token=token,
+                        balance=player.balance or 0.0,
+                        emaBalance=player.emaBalance or 0.0,
+                        transactions=player.transactions,
+                        regDate=player.regDate,
+                        agreed = player.agreed or false,
                         shopPaused = shopPaused
-                    }
-                }))
-                if not adminMode and not editBalanceMode and not addItemMode then drawInterface() end
-                goto continue
-            elseif msg.op == "sell" then
-                writeDebugLog("Обработка sell от " .. from, "INFO")
-                if shopPaused then
-                    modem.send(from, 0xffef, serialization.serialize({op="error", message="Магазин на паузе"}))
+                    }))
                     if not adminMode and not editBalanceMode and not addItemMode then drawInterface() end
-                    goto continue
-                end
-                if not validateSession(msg.name, msg.token) then
-                    log("WARN", "❌ Неверный токен для sell от " .. (msg.name or "?"))
-                    if not adminMode and not editBalanceMode and not addItemMode then drawInterface() end
-                    goto continue
-                end
-                local player = players[msg.name]
-                if not player or player.banned then goto continue end
-                local qty = tonumber(msg.qty) or 0
-                local value = tonumber(msg.value) or 0
-                local internalName = msg.internalName
-
-                if internalName == "customnpcs:npcMoney" then
-                    player.emaBalance = (player.emaBalance or 0) + value
-                    log("SUCCESS", "💚 " .. msg.name .. " пополнил ЭМЫ: " .. (msg.item or "?") .. " x" .. qty .. " на " .. string.format("%.2f", value) .. " ۞")
-                    sendTelegram("💰 Пополнение!\n👤 " .. msg.name .. "\n📦 " .. (msg.item or "?") .. " x" .. qty .. "\n💚 +" .. string.format("%.2f", value) .. " ۞")
-                else
-                    player.balance = (player.balance or 0) + value
-                    log("SUCCESS", "💰 " .. msg.name .. " пополнил Coina: " .. (msg.item or "?") .. " x" .. qty .. " на " .. string.format("%.2f", value) .. " ₵")
-                    sendTelegram("💰 Пополнение!\n👤 " .. msg.name .. "\n📦 " .. (msg.item or "?") .. " x" .. qty .. "\n💰 +" .. string.format("%.2f", value) .. " ₵")
-                end
-                player.transactions = (player.transactions or 0) + 1
-                sessions[msg.name].lastAction = os.time()
-                globalStats.totalSells = (globalStats.totalSells or 0) + 1
-                saveGlobalStats()
-                saveDB()
-                recordTransaction()
-                table.insert(sellHistory, {item = msg.item, qty = qty, name = msg.name})
-                while #sellHistory > MAX_SELL_HISTORY do table.remove(sellHistory, 1) end
-                if not adminMode and not editBalanceMode and not addItemMode then drawInterface() end
-                goto continue
-            elseif msg.op == "buy" then
-                writeDebugLog("Обработка buy от " .. from, "INFO")
-                if shopPaused then
-                    modem.send(from, 0xffef, serialization.serialize({op="error", message="Магазин на паузе"}))
-                    if not adminMode and not editBalanceMode and not addItemMode then drawInterface() end
-                    goto continue
-                end
-                if not validateSession(msg.name, msg.token) then
-                    log("WARN", "❌ Неверный токен для buy от " .. (msg.name or "?"))
-                    if not adminMode and not editBalanceMode and not addItemMode then drawInterface() end
-                    goto continue
-                end
-                local player = players[msg.name]
-                if not player or player.banned then goto continue end
-                local value_coin = tonumber(msg.value_coin) or 0
-                local value_ema = tonumber(msg.value_ema) or 0
-
-                if player.balance < value_coin or player.emaBalance < value_ema then
-                    modem.send(from, 0xffef, serialization.serialize({op="error", message="Недостаточно средств"}))
-                    log("WARN", "❌ " .. msg.name .. " пытался купить " .. (msg.item or "?") .. " x" .. (msg.qty or 0) .. " но недостаточно средств")
-                    goto continue
-                end
-
-                player.balance = player.balance - value_coin
-                player.emaBalance = player.emaBalance - value_ema
-                player.transactions = (player.transactions or 0) + 1
-                sessions[msg.name].lastAction = os.time()
-                globalStats.totalBuys = (globalStats.totalBuys or 0) + 1
-                saveGlobalStats()
-                saveDB()
-                recordTransaction()
-                
-                local priceStr = ""
-                if value_coin > 0 then
-                    priceStr = priceStr .. string.format("%.2f", value_coin) .. "₵"
-                end
-                
-                if value_ema > 0 then
-                    if priceStr ~= "" then
-                        priceStr = priceStr .. " + "
+                    return
+                    
+                elseif msg.op == "getAccount" then
+                    if not validateSession(msg.name, msg.token) then
+                        log("WARN", "❌ Неверный токен для getAccount от " .. (msg.name or "?"))
+                        modem.send(from, 0xffef, serialization.serialize({op="accountData", error = true, message = "Токен устарел"}))
+                        if not adminMode and not editBalanceMode and not addItemMode then drawInterface() end
+                        return
                     end
-                    priceStr = priceStr .. string.format("%.2f", value_ema) .. "۞"
-                end
-                log("SUCCESS", "🛒 " .. msg.name .. " купил " .. (msg.item or "?") .. " x" .. (msg.qty or 0) .. " за " .. priceStr)
-                sendTelegram("🛒 Покупка!\n👤 " .. msg.name .. "\n📦 " .. (msg.item or "?") .. " x" .. (msg.qty or 0) .. "\n💳 " .. priceStr)
-                if not adminMode and not editBalanceMode and not addItemMode then drawInterface() end
-                goto continue
-            elseif msg.op == "report" then
-                writeDebugLog("Обработка report от " .. from, "INFO")
-                if not validateSession(msg.name, msg.token) then
-                    log("WARN", "❌ Неверный токен для report")
-                    if not adminMode and not editBalanceMode and not addItemMode then drawInterface() end
-                    goto continue
-                end
-                globalStats.totalReports = (globalStats.totalReports or 0) + 1
-                saveGlobalStats()
-                log("IMPORTANT", "📩 Репорт от " .. msg.name .. " (" .. msg.time .. ")")
-                log("INFO", "   Текст: " .. (msg.text or ""))
-                sendTelegram("📩 Репорт!\n👤 " .. msg.name .. "\n📝 " .. (msg.text or ""))
-                local file = io.open("/home/reports.log", "a")
-                if file then
-                    file:write("[" .. msg.time .. "] " .. msg.name .. ": " .. msg.text .. "\n")
-                    file:close()
-                else
-                    log("ERROR", "❌ Не удалось открыть reports.log")
-                end
-                if not adminMode and not editBalanceMode and not addItemMode then drawInterface() end
-                goto continue
-            elseif msg.op == "agree" then
-                writeDebugLog("Обработка agree от " .. from, "INFO")
-                if not validateSession(msg.name, msg.token) then
-                    log("WARN", "❌ Неверный токен для agree")
-                    modem.send(from, 0xffef, serialization.serialize({ op="agree", error = true, message = "Токен устарел" }))
-                    if not adminMode and not editBalanceMode and not addItemMode then drawInterface() end
-                    goto continue
-                end
-                local player = players[msg.name]
-                if player then
-                    player.agreed = true
-                    saveDB()
+                    local player = players[msg.name]
+                    if not player then return end
                     sessions[msg.name].lastAction = os.time()
-                    log("IMPORTANT", "📝 " .. msg.name .. " принял пользовательское соглашение")
-                    sendTelegram("📝 Соглашение принято!\n👤 " .. msg.name)
-                    modem.send(from, 0xffef, serialization.serialize({ op = "agree", success = true, agreed = true }))
-                else
-                    modem.send(from, 0xffef, serialization.serialize({ op = "agree", error = true, message = "Игрок не найден" }))
-                end
-                if not adminMode and not editBalanceMode and not addItemMode then drawInterface() end
-                goto continue
-            elseif msg.op == "add_buy_item_response" then
-                addItemResponse = { success = msg.success, error = msg.error }
-                goto continue
-            elseif msg.op == "get_feedbacks" then
-                if not validateSession(msg.name, msg.token) then
-                    modem.send(from, 0xffef, serialization.serialize({op="feedbacks_list", error="Токен устарел"}))
-                    goto continue
-                end
-                local player = players[msg.name]
-                local feedbacks = {}
-                if filesystem.exists("/home/feedbacks.db") then
-                    local file = io.open("/home/feedbacks.db", "r")
-                    local data = file:read("*a")
-                    file:close()
-                    if data and #data > 0 then
-                        local ok, result = pcall(serialization.unserialize, data)
-                        if ok and type(result) == "table" then
-                            feedbacks = result
+                    modem.send(from, 0xffef, serialization.serialize({
+                        op="accountData",
+                        data = {
+                            balance = player.balance,
+                            emaBalance = player.emaBalance,
+                            transactions = player.transactions,
+                            regDate = player.regDate,
+                            agreed = player.agreed,
+                            shopPaused = shopPaused
+                        }
+                    }))
+                    if not adminMode and not editBalanceMode and not addItemMode then drawInterface() end
+                    return
+                    
+                elseif msg.op == "sell" then
+                    writeDebugLog("Обработка sell от " .. from, "INFO")
+                    if shopPaused then
+                        modem.send(from, 0xffef, serialization.serialize({op="error", message="Магазин на паузе"}))
+                        if not adminMode and not editBalanceMode and not addItemMode then drawInterface() end
+                        return
+                    end
+                    if not validateSession(msg.name, msg.token) then
+                        log("WARN", "❌ Неверный токен для sell от " .. (msg.name or "?"))
+                        if not adminMode and not editBalanceMode and not addItemMode then drawInterface() end
+                        return
+                    end
+                    local player = players[msg.name]
+                    if not player or player.banned then return end
+                    local qty = tonumber(msg.qty) or 0
+                    local value = tonumber(msg.value) or 0
+                    local internalName = msg.internalName
+
+                    if internalName == "customnpcs:npcMoney" then
+                        player.emaBalance = (player.emaBalance or 0) + value
+                        log("SUCCESS", "💚 " .. msg.name .. " пополнил ЭМЫ: " .. (msg.item or "?") .. " x" .. qty .. " на " .. string.format("%.2f", value) .. " ۞")
+                        pcall(sendTelegram, "💰 Пополнение!\n👤 " .. msg.name .. "\n📦 " .. (msg.item or "?") .. " x" .. qty .. "\n💚 +" .. string.format("%.2f", value) .. " ۞")
+                    else
+                        player.balance = (player.balance or 0) + value
+                        log("SUCCESS", "💰 " .. msg.name .. " пополнил Coina: " .. (msg.item or "?") .. " x" .. qty .. " на " .. string.format("%.2f", value) .. " ₵")
+                        pcall(sendTelegram, "💰 Пополнение!\n👤 " .. msg.name .. "\n📦 " .. (msg.item or "?") .. " x" .. qty .. "\n💰 +" .. string.format("%.2f", value) .. " ₵")
+                    end
+                    player.transactions = (player.transactions or 0) + 1
+                    sessions[msg.name].lastAction = os.time()
+                    globalStats.totalSells = (globalStats.totalSells or 0) + 1
+                    saveGlobalStats()
+                    saveDB()
+                    recordTransaction()
+                    table.insert(sellHistory, {item = msg.item, qty = qty, name = msg.name})
+                    while #sellHistory > MAX_SELL_HISTORY do table.remove(sellHistory, 1) end
+                    if not adminMode and not editBalanceMode and not addItemMode then drawInterface() end
+                    return
+                    
+                elseif msg.op == "buy" then
+                    writeDebugLog("Обработка buy от " .. from, "INFO")
+                    if shopPaused then
+                        modem.send(from, 0xffef, serialization.serialize({op="error", message="Магазин на паузе"}))
+                        if not adminMode and not editBalanceMode and not addItemMode then drawInterface() end
+                        return
+                    end
+                    if not validateSession(msg.name, msg.token) then
+                        log("WARN", "❌ Неверный токен для buy от " .. (msg.name or "?"))
+                        if not adminMode and not editBalanceMode and not addItemMode then drawInterface() end
+                        return
+                    end
+                    local player = players[msg.name]
+                    if not player or player.banned then return end
+                    local value_coin = tonumber(msg.value_coin) or 0
+                    local value_ema = tonumber(msg.value_ema) or 0
+
+                    if player.balance < value_coin or player.emaBalance < value_ema then
+                        modem.send(from, 0xffef, serialization.serialize({op="error", message="Недостаточно средств"}))
+                        log("WARN", "❌ " .. msg.name .. " пытался купить " .. (msg.item or "?") .. " x" .. (msg.qty or 0) .. " но недостаточно средств")
+                        return
+                    end
+
+                    player.balance = player.balance - value_coin
+                    player.emaBalance = player.emaBalance - value_ema
+                    player.transactions = (player.transactions or 0) + 1
+                    sessions[msg.name].lastAction = os.time()
+                    globalStats.totalBuys = (globalStats.totalBuys or 0) + 1
+                    saveGlobalStats()
+                    saveDB()
+                    recordTransaction()
+                    
+                    local priceStr = ""
+                    if value_coin > 0 then
+                        priceStr = priceStr .. string.format("%.2f", value_coin) .. "₵"
+                    end
+                    
+                    if value_ema > 0 then
+                        if priceStr ~= "" then
+                            priceStr = priceStr .. " + "
+                        end
+                        priceStr = priceStr .. string.format("%.2f", value_ema) .. "۞"
+                    end
+                    log("SUCCESS", "🛒 " .. msg.name .. " купил " .. (msg.item or "?") .. " x" .. (msg.qty or 0) .. " за " .. priceStr)
+                    pcall(sendTelegram, "🛒 Покупка!\n👤 " .. msg.name .. "\n📦 " .. (msg.item or "?") .. " x" .. (msg.qty or 0) .. "\n💳 " .. priceStr)
+                    if not adminMode and not editBalanceMode and not addItemMode then drawInterface() end
+                    return
+                    
+                elseif msg.op == "report" then
+                    writeDebugLog("Обработка report от " .. from, "INFO")
+                    if not validateSession(msg.name, msg.token) then
+                        log("WARN", "❌ Неверный токен для report")
+                        if not adminMode and not editBalanceMode and not addItemMode then drawInterface() end
+                        return
+                    end
+                    globalStats.totalReports = (globalStats.totalReports or 0) + 1
+                    saveGlobalStats()
+                    log("IMPORTANT", "📩 Репорт от " .. msg.name .. " (" .. msg.time .. ")")
+                    log("INFO", "   Текст: " .. (msg.text or ""))
+                    pcall(sendTelegram, "📩 Репорт!\n👤 " .. msg.name .. "\n📝 " .. (msg.text or ""))
+                    local file = io.open("/home/reports.log", "a")
+                    if file then
+                        file:write("[" .. msg.time .. "] " .. msg.name .. ": " .. msg.text .. "\n")
+                        file:close()
+                    else
+                        log("ERROR", "❌ Не удалось открыть reports.log")
+                    end
+                    if not adminMode and not editBalanceMode and not addItemMode then drawInterface() end
+                    return
+                    
+                elseif msg.op == "agree" then
+                    writeDebugLog("Обработка agree от " .. from, "INFO")
+                    if not validateSession(msg.name, msg.token) then
+                        log("WARN", "❌ Неверный токен для agree")
+                        modem.send(from, 0xffef, serialization.serialize({ op="agree", error = true, message = "Токен устарел" }))
+                        if not adminMode and not editBalanceMode and not addItemMode then drawInterface() end
+                        return
+                    end
+                    local player = players[msg.name]
+                    if player then
+                        player.agreed = true
+                        saveDB()
+                        sessions[msg.name].lastAction = os.time()
+                        log("IMPORTANT", "📝 " .. msg.name .. " принял пользовательское соглашение")
+                        pcall(sendTelegram, "📝 Соглашение принято!\n👤 " .. msg.name)
+                        modem.send(from, 0xffef, serialization.serialize({ op = "agree", success = true, agreed = true }))
+                    else
+                        modem.send(from, 0xffef, serialization.serialize({ op = "agree", error = true, message = "Игрок не найден" }))
+                    end
+                    if not adminMode and not editBalanceMode and not addItemMode then drawInterface() end
+                    return
+                    
+                elseif msg.op == "add_buy_item_response" then
+                    addItemResponse = { success = msg.success, error = msg.error }
+                    return
+                    
+                elseif msg.op == "get_feedbacks" then
+                    if not validateSession(msg.name, msg.token) then
+                        modem.send(from, 0xffef, serialization.serialize({op="feedbacks_list", error="Токен устарел"}))
+                        return
+                    end
+                    local player = players[msg.name]
+                    local feedbacks = {}
+                    if filesystem.exists("/home/feedbacks.db") then
+                        local file = io.open("/home/feedbacks.db", "r")
+                        local data = file:read("*a")
+                        file:close()
+                        if data and #data > 0 then
+                            local ok, result = pcall(serialization.unserialize, data)
+                            if ok and type(result) == "table" then
+                                feedbacks = result
+                            end
                         end
                     end
-                end
-                modem.send(from, 0xffef, serialization.serialize({
-                    op = "feedbacks_list",
-                    feedbacks = feedbacks,
-                    hasFeedback = player and player.hasFeedback or false
-                }))
-                goto continue
-            elseif msg.op == "add_feedback" then
-                if not validateSession(msg.name, msg.token) then
-                    modem.send(from, 0xffef, serialization.serialize({op="add_feedback_response", success=false, error="Токен устарел"}))
-                    goto continue
-                end
-                local player = players[msg.name]
-                if not player then
-                    modem.send(from, 0xffef, serialization.serialize({op="add_feedback_response", success=false, error="Игрок не найден"}))
-                    goto continue
-                end
-                if player.hasFeedback then
-                    modem.send(from, 0xffef, serialization.serialize({op="add_feedback_response", success=false, error="Вы уже оставляли отзыв"}))
-                    goto continue
-                end
-                local feedbacks = {}
-                if filesystem.exists("/home/feedbacks.db") then
-                    local file = io.open("/home/feedbacks.db", "r")
-                    local data = file:read("*a")
-                    file:close()
-                    if data and #data > 0 then
-                        local ok, result = pcall(serialization.unserialize, data)
-                        if ok and type(result) == "table" then
-                            feedbacks = result
+                    modem.send(from, 0xffef, serialization.serialize({
+                        op = "feedbacks_list",
+                        feedbacks = feedbacks,
+                        hasFeedback = player and player.hasFeedback or false
+                    }))
+                    return
+                    
+                elseif msg.op == "add_feedback" then
+                    if not validateSession(msg.name, msg.token) then
+                        modem.send(from, 0xffef, serialization.serialize({op="add_feedback_response", success=false, error="Токен устарел"}))
+                        return
+                    end
+                    local player = players[msg.name]
+                    if not player then
+                        modem.send(from, 0xffef, serialization.serialize({op="add_feedback_response", success=false, error="Игрок не найден"}))
+                        return
+                    end
+                    if player.hasFeedback then
+                        modem.send(from, 0xffef, serialization.serialize({op="add_feedback_response", success=false, error="Вы уже оставляли отзыв"}))
+                        return
+                    end
+                    local feedbacks = {}
+                    if filesystem.exists("/home/feedbacks.db") then
+                        local file = io.open("/home/feedbacks.db", "r")
+                        local data = file:read("*a")
+                        file:close()
+                        if data and #data > 0 then
+                            local ok, result = pcall(serialization.unserialize, data)
+                            if ok and type(result) == "table" then
+                                feedbacks = result
+                            end
                         end
                     end
+                    table.insert(feedbacks, 1, {name = msg.name, text = msg.text, time = msg.time})
+                    local file = io.open("/home/feedbacks.db", "w")
+                    file:write(serialization.serialize(feedbacks))
+                    file:close()
+                    player.hasFeedback = true
+                    saveDB()
+                    modem.send(from, 0xffef, serialization.serialize({op="add_feedback_response", success=true}))
+                    log("INFO", "📝 Новый отзыв от " .. msg.name)
+                    return
+                    
+                elseif msg.op == "web_command" then
+                    handleWebCommand(msg, from)
+                    return
                 end
-                table.insert(feedbacks, 1, {name = msg.name, text = msg.text, time = msg.time})
-                local file = io.open("/home/feedbacks.db", "w")
-                file:write(serialization.serialize(feedbacks))
-                file:close()
-                player.hasFeedback = true
-                saveDB()
-                modem.send(from, 0xffef, serialization.serialize({op="add_feedback_response", success=true}))
-                log("INFO", "📝 Новый отзыв от " .. msg.name)
-                goto continue
-            elseif msg.op == "web_command" then
-                handleWebCommand(msg, from)
+            end)
+            
+            if not ok then
+                writeDebugLog("КРИТИЧЕСКАЯ ОШИБКА в modem_message: " .. tostring(err), "ERROR")
+                -- Пытаемся восстановить интерфейс
+                pcall(drawInterface)
             end
         end
         ::continue::

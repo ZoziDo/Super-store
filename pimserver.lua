@@ -1564,8 +1564,7 @@ local function main()
                 log("INFO", "   Текст: " .. (msg.text or ""))
                 sendTelegram("📩 **Репорт!**\n👤 " .. msg.name .. "\n📝 " .. (msg.text or ""))
                 local file = io.open("/home/reports.log", "a")
-                if file then
-                    file:write("[" .. msg.time .. "] " .. msg.name .. ": " .. msg.text .. "\n")
+                if file then                    file:write("[" .. msg.time .. "] " .. msg.name .. ": " .. msg.text .. "\n")
                     file:close()
                 else
                     log("ERROR", "❌ Не удалось открыть reports.log")
@@ -1662,11 +1661,11 @@ local function main()
     end
 end
 
-    while true do
-        local ok, err = pcall(main)
-        if not ok then
-            print("Ошибка сервера: " .. tostring(err))
-            os.sleep(5)
-        end
+-- ===== ЗАПУСК =====
+while true do
+    local ok, err = pcall(main)
+    if not ok then
+        print("Ошибка сервера: " .. tostring(err))
+        os.sleep(5)
     end
-end  
+end

@@ -33,7 +33,7 @@ local function getRealTimeHM()
     return os.date("%H:%M:%S", getRealTimestamp())
 end
 
-local serverAddress = "9aae30d7-90cc-4da0-9789-7c8636e4fddc"
+local serverAddress = "2a904dc5-cbac-47de-be90-6f407fa91ecc"
 local ACCESS_PASSWORD = "secret"
 
 local colors = {
@@ -697,14 +697,59 @@ local function extractToME(targetName, amount, targetDamage)
     return extracted
 end
 
-local function getFilteredItems()
-    local filtered = {}
-    local searchLower = string.lower(shopSearch)
-    local searchWords = {}
-    if searchLower ~= "" then
-        for word in searchLower:gmatch("%S+") do
-            table.insert(searchWords, word)
+-- Вспомогательная функция для преобразования в нижний регистр (включая кириллицу)
+local function toLowerCase(str)
+    if not str then return "" end
+    str = string.lower(str)
+    local cyrillic_map = {
+        ["А"]="а", ["Б"]="б", ["В"]="в", ["Г"]="г", ["Д"]="д", ["Е"]="е", ["Ё"]="ё",
+        ["Ж"]="ж", ["З"]="з", ["И"]="и", ["Й"]="й", ["К"]="к", ["Л"]="л", ["М"]="м",
+        ["Н"]="н", ["О"]="о", ["П"]="п", ["Р"]="р", ["С"]="с", ["Т"]="т", ["У"]="у",
+        ["Ф"]="ф", ["Х"]="х", ["Ц"]="ц", ["Ч"]="ч", ["Ш"]="ш", ["Щ"]="щ", ["Ъ"]="ъ",
+        ["Ы"]="ы", ["Ь"]="ь", ["Э"]="э", ["Ю"]="ю", ["Я"]="я"
+    }
+    str = str:gsub("([А-ЯЁ])", function(c) return cyrillic_map[c] or c end)
+    return str
+end
+
+    local function getFilteredItems()
+        local filtered = {}
+        local searchLower = toLowerCase(shopSearch)  -- Изменено
+        local searchWords = {}
+        if searchLower ~= "" then
+            for word in searchLower:gmatch("%S+") do
+                table.insert(searchWords, word)
+            end
         end
+    
+        for _, item in ipairs(shopItems) do
+            local nameLower = toLowerCase(item.displayName or item.internalName)  -- Изменено
+            local matchesSearch = false
+            if #searchWords == 0 then
+                matchesSearch = true
+            else
+                for _, word in ipairs(searchWords) do
+                    if string.find(nameLower, word, 1, true) then
+                        matchesSearch = true
+                        break
+                    end
+                end
+            end
+            if matchesSearch then
+                table.insert(filtered, item)
+            end
+        end
+    
+        table.sort(filtered, function(a, b)
+            return sortableName(a.displayName) < sortableName(b.displayName)
+        end)
+    
+        maxItemWidth = 0
+        for _, item in ipairs(filtered) do
+            local len = unicode.len(item.displayName or item.internalName or "")
+            if len > maxItemWidth then maxItemWidth = len end
+        end
+        return filtered
     end
 
     for _, item in ipairs(shopItems) do

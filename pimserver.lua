@@ -20,19 +20,13 @@ pcall(function() io.stdout:setvbuf("no") end)  -- Отключаем буфер�
 -- ============================================
 local function writeDebugLog(msg, level)
     level = level or "INFO"
+    -- Пишем ТОЛЬКО в файл, без вывода в консоль
     local file = io.open("/home/pimserver_detailed.log", "a")
     if file then
         file:write(os.date("%Y-%m-%d %H:%M:%S") .. " | [" .. level .. "] | " .. msg .. "\n")
         file:close()
     end
-    -- Также выводим в консоль для наглядности
-    if level == "ERROR" or level == "CRITICAL" then
-        print("❌ " .. msg)
-    elseif level == "WARNING" then
-        print("⚠️ " .. msg)
-    else
-        print("📋 " .. msg)
-    end
+    -- Убрали вывод в консоль, чтобы не мешал
 end
 
 writeDebugLog("=== НАЧАЛО ЗАГРУЗКИ СЕРВЕРА ===", "CRITICAL")
@@ -1274,318 +1268,327 @@ end
 -- ===== ОСНОВНЫЕ ОБРАБОТЧИКИ =====
 
 local function handleKey(key, char, player)
-    writeDebugLog("handleKey: key=" .. tostring(key) .. ", char=" .. tostring(char) .. ", player=" .. tostring(player), "DEBUG")
-    local isPlayerAdmin = isAdmin(player)
-    
-    local currentTime = os.time()
-    if currentTime - lastKeyTime < 0.15 then
-        return
-    end
-    lastKeyTime = currentTime
+    -- Оборачиваем ВЕСЬ код в pcall чтобы предотвратить падение
+    local success, err = pcall(function()
+        local isPlayerAdmin = isAdmin(player)
+        
+        local currentTime = os.time()
+        if currentTime - lastKeyTime < 0.15 then
+            return
+        end
+        lastKeyTime = currentTime
 
-    if addAdminMode then
-        if char == 27 or char == 93 then
-            addAdminMode = false
-            addAdminInput = ""
-            drawAdminPanel()
-            return
-        elseif char == 13 then
-            if addAdminInput ~= "" then
-                if addAdmin(addAdminInput) then
-                    log("SUCCESS", "👑 " .. addAdminInput .. " добавлен в администраторы")
-                    updateAdminPlayerList()
-                    drawAdminPanel()
-                else
-                    addLog("Ошибка: игрок уже является администратором", ansi.red)
+        if addAdminMode then
+            if char == 27 or char == 93 then
+                addAdminMode = false
+                addAdminInput = ""
+                drawAdminPanel()
+                return
+            elseif char == 13 then
+                if addAdminInput ~= "" then
+                    if addAdmin(addAdminInput) then
+                        log("SUCCESS", "👑 " .. addAdminInput .. " добавлен в администраторы")
+                        updateAdminPlayerList()
+                        drawAdminPanel()
+                    else
+                        addLog("Ошибка: игрок уже является администратором", ansi.red)
+                    end
                 end
-            end
-            addAdminMode = false
-            addAdminInput = ""
-            return
-        elseif char == 8 then
-            addAdminInput = addAdminInput:sub(1, -2)
-            drawAddAdminWindow()
-            return
-        elseif char >= 32 then
-            local c = unicode.char(char)
-            if c:match("[%w_]") then
-                addAdminInput = addAdminInput .. c
+                addAdminMode = false
+                addAdminInput = ""
+                return
+            elseif char == 8 then
+                addAdminInput = addAdminInput:sub(1, -2)
                 drawAddAdminWindow()
+                return
+            elseif char >= 32 then
+                local c = unicode.char(char)
+                if c:match("[%w_]") then
+                    addAdminInput = addAdminInput .. c
+                    drawAddAdminWindow()
+                end
+                return
             end
             return
         end
-        return
-    end
 
-    if addItemMode then
-        if char == 27 or char == 93 then
-            addItemMode = false
-            addItemResponse = nil
-            if adminMode then drawAdminPanel() else drawInterface() end
-            return
-        elseif char == 13 then
-            if addItemCurrentField < 5 then
-                addItemCurrentField = addItemCurrentField + 1
-                drawAddItemForm()
-                return
-            else
-                local priceCoin = tonumber(addItemFields.price_coin)
-                local priceEma = tonumber(addItemFields.price_ema)
-                if not priceCoin then priceCoin = 0 end
-                if not priceEma then priceEma = 0 end
-                if priceCoin < 0 then priceCoin = 0 end
-                if priceEma < 0 then priceEma = 0 end
-                local damage = tonumber(addItemFields.damage) or 0
-                if damage < 0 then damage = 0 end
-                if addItemFields.internal == "" or addItemFields.display == "" then
-                    addLog("Ошибка: internalName и displayName не могут быть пустыми", ansi.red)
-                    addItemMode = false
-                    drawAdminPanel()
-                    return
-                end
-                if priceCoin == 0 and priceEma == 0 then
-                    addLog("Ошибка: цена не может быть нулевой (хотя бы одна валюта >0)", ansi.red)
-                    addItemMode = false
-                    drawAdminPanel()
-                    return
-                end
-
-                local data = {
-                    op = "add_buy_item",
-                    internalName = addItemFields.internal,
-                    displayName = addItemFields.display,
-                    price_coin = priceCoin,
-                    price_ema = priceEma,
-                    damage = damage
-                }
-                
-                if next(markets) == nil then
-                    addLog("Нет подключённых терминалов market_01", ansi.red)
-                else
-                    local sent = 0
-                    for addr, _ in pairs(markets) do
-                        modem.send(addr, 0xffef, serialization.serialize(data))
-                        sent = sent + 1
-                    end
-                    addLog("Отправка предмета на " .. sent .. " терминал(ов)...", ansi.yellow)
-                    
-                    addItemResponse = nil
-                    addItemResponseTimer = os.time()
-                    while os.time() - addItemResponseTimer < 5 do
-                        event.pull(0.2)
-                        if addItemResponse then break end
-                    end
-                    if addItemResponse and addItemResponse.success then
-                        log("SUCCESS", "✅ Предмет добавлен: " .. addItemFields.display)
-                        for addr, _ in pairs(markets) do
-                            modem.send(addr, 0xffef, serialization.serialize({op = "reload_buy_items"}))
-                        end
-                        addLog("Отправлена команда перезагрузки на все терминалы", ansi.green)
-                    else
-                        addLog("Внимание: не получен ответ от терминалов, но предмет мог быть добавлен.", ansi.yellow)
-                    end
-                end
+        if addItemMode then
+            if char == 27 or char == 93 then
                 addItemMode = false
                 addItemResponse = nil
                 if adminMode then drawAdminPanel() else drawInterface() end
                 return
-            end
-        elseif char == 8 then
-            local field = addItemFieldNames[addItemCurrentField]
-            addItemFields[field] = addItemFields[field]:sub(1, -2)
-            drawAddItemForm()
-            return
-        elseif char >= 32 then
-            local c = unicode.char(char)
-            local field = addItemFieldNames[addItemCurrentField]
-            if field == "price_coin" or field == "price_ema" or field == "damage" then
-                if c:match("%d") or (c == "." and not addItemFields[field]:find("%.")) then
-                    addItemFields[field] = addItemFields[field] .. c
-                end
-            else
-                addItemFields[field] = addItemFields[field] .. c
-            end
-            drawAddItemForm()
-            return
-        end
-        return
-    end
+            elseif char == 13 then
+                if addItemCurrentField < 5 then
+                    addItemCurrentField = addItemCurrentField + 1
+                    drawAddItemForm()
+                    return
+                else
+                    local priceCoin = tonumber(addItemFields.price_coin)
+                    local priceEma = tonumber(addItemFields.price_ema)
+                    if not priceCoin then priceCoin = 0 end
+                    if not priceEma then priceEma = 0 end
+                    if priceCoin < 0 then priceCoin = 0 end
+                    if priceEma < 0 then priceEma = 0 end
+                    local damage = tonumber(addItemFields.damage) or 0
+                    if damage < 0 then damage = 0 end
+                    if addItemFields.internal == "" or addItemFields.display == "" then
+                        addLog("Ошибка: internalName и displayName не могут быть пустыми", ansi.red)
+                        addItemMode = false
+                        drawAdminPanel()
+                        return
+                    end
+                    if priceCoin == 0 and priceEma == 0 then
+                        addLog("Ошибка: цена не может быть нулевой (хотя бы одна валюта >0)", ansi.red)
+                        addItemMode = false
+                        drawAdminPanel()
+                        return
+                    end
 
-    if editBalanceMode then
-        if char == 27 or char == 93 then
-            editBalanceMode = false
-            editingPlayer = nil
-            editInput = ""
-            drawAdminPanel()
-            return
-        elseif char == 13 then
-            if editInput ~= "" then
-                local parts = {}
-                for part in editInput:gmatch("%S+") do
-                    table.insert(parts, part)
-                end
-                local coinVal = tonumber(parts[1])
-                local emaVal = tonumber(parts[2])
-                if coinVal then
-                    editingPlayer.data.balance = coinVal
-                end
-                if emaVal then
-                    editingPlayer.data.emaBalance = emaVal
-                end
-                log("INFO", "📊 Баланс игрока " .. editingPlayer.name .. " изменён: Coin=" .. (coinVal or editingPlayer.data.balance) .. " ₵, ЭМЫ=" .. (emaVal or editingPlayer.data.emaBalance) .. " ۞")
-                saveDB()
-            end
-            editBalanceMode = false
-            editingPlayer = nil
-            editInput = ""
-            drawAdminPanel()
-            return
-        else
-            if (char >= 48 and char <= 57) or char == 32 then
-                editInput = editInput .. string.char(char)
-            elseif char == 46 then
-                if not editInput:find("%.") then
-                    editInput = editInput .. "."
+                    local data = {
+                        op = "add_buy_item",
+                        internalName = addItemFields.internal,
+                        displayName = addItemFields.display,
+                        price_coin = priceCoin,
+                        price_ema = priceEma,
+                        damage = damage
+                    }
+                    
+                    if next(markets) == nil then
+                        addLog("Нет подключённых терминалов market_01", ansi.red)
+                    else
+                        local sent = 0
+                        for addr, _ in pairs(markets) do
+                            modem.send(addr, 0xffef, serialization.serialize(data))
+                            sent = sent + 1
+                        end
+                        addLog("Отправка предмета на " .. sent .. " терминал(ов)...", ansi.yellow)
+                        
+                        addItemResponse = nil
+                        addItemResponseTimer = os.time()
+                        while os.time() - addItemResponseTimer < 5 do
+                            event.pull(0.2)
+                            if addItemResponse then break end
+                        end
+                        if addItemResponse and addItemResponse.success then
+                            log("SUCCESS", "✅ Предмет добавлен: " .. addItemFields.display)
+                            for addr, _ in pairs(markets) do
+                                modem.send(addr, 0xffef, serialization.serialize({op = "reload_buy_items"}))
+                            end
+                            addLog("Отправлена команда перезагрузки на все терминалы", ansi.green)
+                        else
+                            addLog("Внимание: не получен ответ от терминалов, но предмет мог быть добавлен.", ansi.yellow)
+                        end
+                    end
+                    addItemMode = false
+                    addItemResponse = nil
+                    if adminMode then drawAdminPanel() else drawInterface() end
+                    return
                 end
             elseif char == 8 then
-                editInput = editInput:sub(1, -2)
-            end
-            drawEditBalanceWindow()
-            return
-        end
-        return  
-    end
-
-    if adminMode then
-        if not isPlayerAdmin then
-            adminMode = false
-            drawInterface()
-            log("WARN", "Сессия администратора истекла, выход из панели")
-            return
-        end
-
-        if key == 200 then
-            if selectedAdminIndex > 1 then
-                selectedAdminIndex = selectedAdminIndex - 1
-                if selectedAdminIndex < adminScroll + 1 then
-                    adminScroll = math.max(0, selectedAdminIndex - 1)
+                local field = addItemFieldNames[addItemCurrentField]
+                addItemFields[field] = addItemFields[field]:sub(1, -2)
+                drawAddItemForm()
+                return
+            elseif char >= 32 then
+                local c = unicode.char(char)
+                local field = addItemFieldNames[addItemCurrentField]
+                if field == "price_coin" or field == "price_ema" or field == "damage" then
+                    if c:match("%d") or (c == "." and not addItemFields[field]:find("%.")) then
+                        addItemFields[field] = addItemFields[field] .. c
+                    end
+                else
+                    addItemFields[field] = addItemFields[field] .. c
                 end
-                drawAdminPanel()
-            end
-            return
-        elseif key == 208 then
-            if selectedAdminIndex < #adminPlayerList then
-                selectedAdminIndex = selectedAdminIndex + 1
-                if selectedAdminIndex > adminScroll + adminViewHeight then
-                    adminScroll = selectedAdminIndex - adminViewHeight
-                end
-                drawAdminPanel()
+                drawAddItemForm()
+                return
             end
             return
         end
-    end
 
-    local pressed = nil
-    if char and char >= 1 and char <= 255 then
-        pressed = string.lower(string.char(char))
-    end
-
-    if not adminMode then
-        if pressed == "a" then
-            if isPlayerAdmin then
-                adminMode = true
-                adminScroll = 0
-                selectedAdminIndex = 1
-                updateAdminPlayerList()
-                log("INFO", "🔐 Админ-панель открыта")
-                drawAdminPanel()
-            else
-                log("WARN", "⚠️ Попытка входа в админ-панель не админом: " .. tostring(player))
-            end
-            return
-        elseif pressed == "p" then
-            if isPlayerAdmin then
-                shopPaused = not shopPaused
-                log("IMPORTANT", "⏸️ Магазин " .. (shopPaused and "приостановлен" or "возобновлён"))
-                drawInterface()
-            else
-                log("WARN", "⚠️ Попытка паузы магазина не админом: " .. tostring(player))
-            end
-            return
-        elseif pressed == "r" then
-            drawInterface()
-            return
-        end
-    else
-        if pressed == "a" then
-            adminMode = false
-            log("INFO", "🔐 Выход из админ-панели")
-            drawInterface()
-            return
-        elseif pressed == "p" then
-            shopPaused = not shopPaused
-            log("IMPORTANT", "⏸️ Магазин " .. (shopPaused and "приостановлен" or "возобновлён"))
-            drawAdminPanel()
-            return
-        elseif pressed == "d" then
-            local ply = adminPlayerList[selectedAdminIndex]
-            if ply then
-                ply.data.banned = not ply.data.banned
-                saveDB()
-                log("IMPORTANT", "🚫 Игрок " .. ply.name .. (ply.data.banned and " ЗАБАНЕН" or " РАЗБАНЕН"))
-                drawAdminPanel()
-            end
-            return
-        elseif pressed == "r" then
-            local ply = adminPlayerList[selectedAdminIndex]
-            if ply then
-                ply.data.transactions = 0
-                ply.data.balance = 0
-                ply.data.emaBalance = 0
-                saveDB()
-                log("INFO", "📊 Статистика игрока " .. ply.name .. " сброшена")
-                drawAdminPanel()
-            end
-            return
-        elseif pressed == "e" then
-            local ply = adminPlayerList[selectedAdminIndex]
-            if ply then
-                editingPlayer = ply
+        if editBalanceMode then
+            if char == 27 or char == 93 then
+                editBalanceMode = false
+                editingPlayer = nil
                 editInput = ""
-                editBalanceMode = true
+                drawAdminPanel()
+                return
+            elseif char == 13 then
+                if editInput ~= "" then
+                    local parts = {}
+                    for part in editInput:gmatch("%S+") do
+                        table.insert(parts, part)
+                    end
+                    local coinVal = tonumber(parts[1])
+                    local emaVal = tonumber(parts[2])
+                    if coinVal then
+                        editingPlayer.data.balance = coinVal
+                    end
+                    if emaVal then
+                        editingPlayer.data.emaBalance = emaVal
+                    end
+                    log("INFO", "📊 Баланс игрока " .. editingPlayer.name .. " изменён")
+                    saveDB()
+                end
+                editBalanceMode = false
+                editingPlayer = nil
+                editInput = ""
+                drawAdminPanel()
+                return
+            else
+                if (char >= 48 and char <= 57) or char == 32 then
+                    editInput = editInput .. string.char(char)
+                elseif char == 46 then
+                    if not editInput:find("%.") then
+                        editInput = editInput .. "."
+                    end
+                elseif char == 8 then
+                    editInput = editInput:sub(1, -2)
+                end
                 drawEditBalanceWindow()
+                return
             end
-            return
-        elseif pressed == "b" then
-            addItemMode = true
-            addItemFields = { internal = "", display = "", price_coin = "", price_ema = "0", damage = "0" }
-            addItemCurrentField = 1
-            drawAddItemForm()
-            return
-        elseif pressed == "+" then
-            addAdminMode = true
-            addAdminInput = ""
-            drawAddAdminWindow()
-            return
-        elseif pressed == "-" then
-            local ply = adminPlayerList[selectedAdminIndex]
-            if ply then
-                if removeAdmin(ply.name) then
-                    log("SUCCESS", "👑 " .. ply.name .. " удалён из администраторов")
+            return  
+        end
+
+        if adminMode then
+            if not isPlayerAdmin then
+                adminMode = false
+                drawInterface()
+                log("WARN", "Сессия администратора истекла, выход из панели")
+                return
+            end
+
+            if key == 200 then
+                if selectedAdminIndex > 1 then
+                    selectedAdminIndex = selectedAdminIndex - 1
+                    if selectedAdminIndex < adminScroll + 1 then
+                        adminScroll = math.max(0, selectedAdminIndex - 1)
+                    end
+                    drawAdminPanel()
+                end
+                return
+            elseif key == 208 then
+                if selectedAdminIndex < #adminPlayerList then
+                    selectedAdminIndex = selectedAdminIndex + 1
+                    if selectedAdminIndex > adminScroll + adminViewHeight then
+                        adminScroll = selectedAdminIndex - adminViewHeight
+                    end
+                    drawAdminPanel()
+                end
+                return
+            end
+        end
+
+        local pressed = nil
+        if char and char >= 1 and char <= 255 then
+            pressed = string.lower(string.char(char))
+        end
+
+        if not adminMode then
+            if pressed == "a" then
+                if isPlayerAdmin then
+                    adminMode = true
+                    adminScroll = 0
+                    selectedAdminIndex = 1
                     updateAdminPlayerList()
+                    log("INFO", "🔐 Админ-панель открыта")
                     drawAdminPanel()
                 else
-                    addLog("Нельзя удалить последнего администратора!", ansi.red)
+                    log("WARN", "⚠️ Попытка входа в админ-панель не админом: " .. tostring(player))
                 end
+                return
+            elseif pressed == "p" then
+                if isPlayerAdmin then
+                    shopPaused = not shopPaused
+                    log("IMPORTANT", "⏸️ Магазин " .. (shopPaused and "приостановлен" or "возобновлён"))
+                    drawInterface()
+                else
+                    log("WARN", "⚠️ Попытка паузы магазина не админом: " .. tostring(player))
+                end
+                return
+            elseif pressed == "r" then
+                drawInterface()
+                return
             end
-            return
-        elseif pressed == "u" then
-            broadcastUpdate()
-            return
-        elseif pressed == "k" then
-            broadcastKill()
-            return
+        else
+            if pressed == "a" then
+                adminMode = false
+                log("INFO", "🔐 Выход из админ-панели")
+                drawInterface()
+                return
+            elseif pressed == "p" then
+                shopPaused = not shopPaused
+                log("IMPORTANT", "⏸️ Магазин " .. (shopPaused and "приостановлен" or "возобновлён"))
+                drawAdminPanel()
+                return
+            elseif pressed == "d" then
+                local ply = adminPlayerList[selectedAdminIndex]
+                if ply then
+                    ply.data.banned = not ply.data.banned
+                    saveDB()
+                    log("IMPORTANT", "🚫 Игрок " .. ply.name .. (ply.data.banned and " ЗАБАНЕН" or " РАЗБАНЕН"))
+                    drawAdminPanel()
+                end
+                return
+            elseif pressed == "r" then
+                local ply = adminPlayerList[selectedAdminIndex]
+                if ply then
+                    ply.data.transactions = 0
+                    ply.data.balance = 0
+                    ply.data.emaBalance = 0
+                    saveDB()
+                    log("INFO", "📊 Статистика игрока " .. ply.name .. " сброшена")
+                    drawAdminPanel()
+                end
+                return
+            elseif pressed == "e" then
+                local ply = adminPlayerList[selectedAdminIndex]
+                if ply then
+                    editingPlayer = ply
+                    editInput = ""
+                    editBalanceMode = true
+                    drawEditBalanceWindow()
+                end
+                return
+            elseif pressed == "b" then
+                addItemMode = true
+                addItemFields = { internal = "", display = "", price_coin = "", price_ema = "0", damage = "0" }
+                addItemCurrentField = 1
+                drawAddItemForm()
+                return
+            elseif pressed == "+" then
+                addAdminMode = true
+                addAdminInput = ""
+                drawAddAdminWindow()
+                return
+            elseif pressed == "-" then
+                local ply = adminPlayerList[selectedAdminIndex]
+                if ply then
+                    if removeAdmin(ply.name) then
+                        log("SUCCESS", "👑 " .. ply.name .. " удалён из администраторов")
+                        updateAdminPlayerList()
+                        drawAdminPanel()
+                    else
+                        addLog("Нельзя удалить последнего администратора!", ansi.red)
+                    end
+                end
+                return
+            elseif pressed == "u" then
+                broadcastUpdate()
+                return
+            elseif pressed == "k" then
+                broadcastKill()
+                return
+            end
         end
+    end)
+    
+    -- Если была ошибка в handleKey, записываем её в лог
+    if not success then
+        writeDebugLog("ОШИБКА В handleKey: " .. tostring(err), "ERROR")
+        -- Восстанавливаем интерфейс
+        pcall(drawInterface)
     end
 end
 
@@ -1998,25 +2001,12 @@ end
 -- ============================================
 -- ЗАПУСК
 -- ============================================
-writeDebugLog("=== ЗАПУСК С ОБРАБОТКОЙ ОШИБОК ===", "CRITICAL")
-
 while true do
-    writeDebugLog("Запуск main()...", "CRITICAL")
     local ok, err = pcall(main)
     if not ok then
         writeDebugLog("КРИТИЧЕСКАЯ ОШИБКА: " .. tostring(err), "CRITICAL")
-        -- Полный стек вызовов
-        writeDebugLog("Стек вызовов:", "CRITICAL")
-        local stack = debug.traceback("", 2)
-        if stack then
-            for line in stack:gmatch("[^\n]+") do
-                writeDebugLog("  " .. line, "ERROR")
-            end
-        end
-        print("❌ Ошибка сервера: " .. tostring(err))
-        print("📋 Подробности в /home/pimserver_detailed.log")
+        -- Убрали print, пишем только в файл
         pcall(drawInterface)
-        writeDebugLog("Перезапуск через 10 секунд...", "WARNING")
-        os.sleep(10)
+        os.sleep(5)
     end
 end

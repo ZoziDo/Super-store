@@ -722,8 +722,8 @@ end
             end
         end
     
-        for _, item in ipairs(shopItems) do
-            local nameLower = toLowerCase(item.displayName or item.internalName)  -- Изменено
+          for _, item in ipairs(shopItems) do
+            local nameLower = string.lower(item.displayName or item.internalName)
             local matchesSearch = false
             if #searchWords == 0 then
                 matchesSearch = true
@@ -750,24 +750,6 @@ end
             if len > maxItemWidth then maxItemWidth = len end
         end
         return filtered
-    end
-
-    for _, item in ipairs(shopItems) do
-        local nameLower = string.lower(item.displayName or item.internalName)
-        local matchesSearch = false
-        if #searchWords == 0 then
-            matchesSearch = true
-        else
-            for _, word in ipairs(searchWords) do
-                if string.find(nameLower, word, 1, true) then
-                    matchesSearch = true
-                    break
-                end
-            end
-        end
-        if matchesSearch then
-            table.insert(filtered, item)
-        end
     end
 
     table.sort(filtered, function(a, b)

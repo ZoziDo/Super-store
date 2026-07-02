@@ -247,6 +247,7 @@ local logStartY = 20
 local maxLogLines = 14
 local drawing = false
 local lastUpdateId = 0
+local lastKeyTime = 0
 
 local function updateScreenSize()
     local w, h = gpu.getResolution()
@@ -731,7 +732,6 @@ end
 local function sendTelegram(text, keyboard)
     if not text then return false end
     
-    -- Ограничим длину текста
     if #text > 4000 then
         text = text:sub(1, 3997) .. "..."
     end
@@ -741,11 +741,8 @@ local function sendTelegram(text, keyboard)
     local postData = "chat_id=" .. TELEGRAM_CHAT_ID .. "&text=" .. encodedText
     
     if keyboard then 
-        -- Отправляем клавиатуру как есть
         postData = postData .. "&reply_markup=" .. keyboard
     end
-    
-    writeDebugLog("sendTelegram: отправка запроса, длина postData: " .. #postData)
     
     local success, result = pcall(function()
         local request = internet.request(url, postData, {
@@ -759,9 +756,7 @@ local function sendTelegram(text, keyboard)
                 if not chunk then break end
                 response = response .. chunk
             end
-            writeDebugLog("sendTelegram: ответ: " .. (response:sub(1, 200) or "нет ответа"))
             if response and response:find('"ok":true') then
-                writeDebugLog("sendTelegram: успешно отправлено")
                 return true
             elseif response and response:find('"ok":false') then
                 writeDebugLog("sendTelegram: ОШИБКА API: " .. response)
@@ -1116,7 +1111,6 @@ local function checkTelegramUpdates()
     
     writeDebugLog("checkTelegramUpdates: получен ответ, длина: " .. #responseData)
     
-    -- Парсим update_id
     local maxId = lastUpdateId
     for updateId in responseData:gmatch('"update_id":(%d+)') do
         local id = tonumber(updateId)
@@ -1125,7 +1119,6 @@ local function checkTelegramUpdates()
         end
     end
     
-    -- Парсим тексты
     local hasUpdates = false
     for text in responseData:gmatch('"text":"([^"]+)"') do
         hasUpdates = true
@@ -1263,7 +1256,15 @@ end
 
 local function handleKey(key, char, player)
     local isPlayerAdmin = isAdmin(player)
+    
+    -- Защита от слишком быстрых нажатий
+    local currentTime = os.time()
+    if currentTime - lastKeyTime < 0.1 then
+        return
+    end
+    lastKeyTime = currentTime
 
+    -- Обработка модальных окон
     if addAdminMode then
         if char == 27 or char == 93 then
             addAdminMode = false
@@ -1437,6 +1438,7 @@ local function handleKey(key, char, player)
         return  
     end
 
+    -- Обработка админ-панели
     if adminMode then
         if not isPlayerAdmin then
             adminMode = false
@@ -1466,6 +1468,7 @@ local function handleKey(key, char, player)
         end
     end
 
+    -- Обработка буквенных клавиш
     local pressed = nil
     if char and char >= 1 and char <= 255 then
         pressed = string.lower(string.char(char))
@@ -1498,15 +1501,15 @@ local function handleKey(key, char, player)
             return
         end
     else
-        if pressed == "p" then
-            shopPaused = not shopPaused
-            log("IMPORTANT", "⏸️ Магазин " .. (shopPaused and "приостановлен" or "возобновлён"))
-            drawAdminPanel()
-            return
-        elseif pressed == "a" then
+        if pressed == "a" then
             adminMode = false
             log("INFO", "🔐 Выход из админ-панели")
             drawInterface()
+            return
+        elseif pressed == "p" then
+            shopPaused = not shopPaused
+            log("IMPORTANT", "⏸️ Магазин " .. (shopPaused and "приостановлен" or "возобновлён"))
+            drawAdminPanel()
             return
         elseif pressed == "d" then
             local ply = adminPlayerList[selectedAdminIndex]
@@ -1596,7 +1599,7 @@ local function main()
     local telegramCheckInterval = 2
 
     while true do
-        local ev = {event.pull(0.5)}
+        local ev = {event.pull(0.05)}
         local etype = ev[1]
 
         if os.time() - lastTelegramCheck > telegramCheckInterval then

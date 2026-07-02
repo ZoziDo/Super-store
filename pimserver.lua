@@ -1043,9 +1043,11 @@ local function handleWebCommand(msg, from)
 end
 
 -- ===== ОСНОВНЫЕ ОБРАБОТЧИКИ =====
+
 local function handleKey(key, char, player)
     local isPlayerAdmin = isAdmin(player)
 
+    -- Обработка режима добавления админа
     if addAdminMode then
         if char == 27 or char == 93 then
             addAdminMode = false
@@ -1080,6 +1082,7 @@ local function handleKey(key, char, player)
         return
     end
 
+    -- Обработка режима добавления предмета
     if addItemMode then
         if char == 27 or char == 93 then
             addItemMode = false
@@ -1174,6 +1177,7 @@ local function handleKey(key, char, player)
         return
     end
 
+    -- Обработка режима редактирования баланса
     if editBalanceMode then
         if char == 27 or char == 93 then
             editBalanceMode = false
@@ -1216,8 +1220,10 @@ local function handleKey(key, char, player)
             drawEditBalanceWindow()
             return
         end
+        return  -- Этот return был пропущен
     end
 
+    -- Обработка админ-режима
     if adminMode then
         if not isPlayerAdmin then
             adminMode = false
@@ -1349,7 +1355,7 @@ local function handleKey(key, char, player)
             return
         end
     end
-end
+end  -- Этот end закрывает функцию handleKey
 
 local function handleTouch(x, y, player)
     if not adminMode or editBalanceMode or addItemMode or addAdminMode then return end
@@ -1680,7 +1686,6 @@ local function main()
         end
         ::continue::
     end
-end
 end
     
 -- ============================================

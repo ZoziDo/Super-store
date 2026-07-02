@@ -1569,9 +1569,14 @@ local function main()
                 recordTransaction()
                 
                 local priceStr = ""
-                if value_coin > 0 then priceStr = priceStr .. string.format("%.2f", value_coin) .. "₵" end
+                if value_coin > 0 then
+                    priceStr = priceStr .. string.format("%.2f", value_coin) .. "₵"
+                end
+                
                 if value_ema > 0 then
-                    if priceStr ~= "" then priceStr = priceStr .. " + "
+                    if priceStr ~= "" then
+                        priceStr = priceStr .. " + "
+                    end
                     priceStr = priceStr .. string.format("%.2f", value_ema) .. "۞"
                 end
                 log("SUCCESS", "🛒 " .. msg.name .. " купил " .. (msg.item or "?") .. " x" .. (msg.qty or 0) .. " за " .. priceStr)

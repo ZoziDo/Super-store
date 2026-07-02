@@ -901,6 +901,16 @@ end
 -- ИСПРАВЛЕННАЯ ФУНКЦИЯ checkTelegramUpdates
 -- ============================================
 local function checkTelegramUpdates()
+    -- Читаем lastUpdateId из файла
+    local f = io.open("/tmp/last_id.txt", "r")
+    if f then
+        local data = f:read("*a")
+        f:close()
+        if data and #data > 0 then
+            lastUpdateId = tonumber(data) or 0
+        end
+    end
+    
     local url = "https://api.telegram.org/bot" .. TELEGRAM_TOKEN .. "/getUpdates?limit=5"
     if lastUpdateId > 0 then
         url = url .. "&offset=" .. (lastUpdateId + 1)
@@ -921,13 +931,15 @@ local function checkTelegramUpdates()
         responseData = responseData .. chunk
     end
     
-    -- Ручной парсинг (работает с русскими буквами и эмодзи)
+    local maxId = lastUpdateId
+    
+    -- Ручной парсинг
     for line in responseData:gmatch("[^\r\n]+") do
         local updateId = line:match('"update_id":(%d+)')
         if updateId then
             local id = tonumber(updateId)
-            if id and id > lastUpdateId then
-                lastUpdateId = id
+            if id and id > maxId then
+                maxId = id
             end
         end
         
@@ -938,6 +950,19 @@ local function checkTelegramUpdates()
             end)
             print("📥 Получено: " .. text)
             handleTelegramCommand(text)
+        end
+    end
+    
+    -- Обновляем lastUpdateId
+    if maxId > lastUpdateId then
+        lastUpdateId = maxId
+        print("📌 lastUpdateId обновлён: " .. lastUpdateId)
+        
+        -- Сохраняем в файл
+        local f2 = io.open("/tmp/last_id.txt", "w")
+        if f2 then
+            f2:write(lastUpdateId)
+            f2:close()
         end
     end
 end

@@ -897,25 +897,47 @@ local function handleTelegramCommand(text)
     end
 end
 
+-- ============================================
+-- ИСПРАВЛЕННАЯ ФУНКЦИЯ checkTelegramUpdates
+-- ============================================
 local function checkTelegramUpdates()
-    local url = "https://api.telegram.org/bot" .. TELEGRAM_TOKEN .. "/getUpdates?offset=" .. (lastUpdateId + 1) .. "&timeout=5"
-    local success, response = pcall(function() return internet.request(url) end)
-    if not success then return end
-    if type(response) == "table" then
-        local responseData = ""
-        while true do
-            local chunk = response()
-            if not chunk then break end
-            responseData = responseData .. chunk
-        end
-        local ok, parsed = pcall(serialization.unserialize, responseData)
-        if ok and parsed and parsed.result then
-            for _, update in ipairs(parsed.result) do
-                if update.update_id then lastUpdateId = update.update_id end
-                if update.message and update.message.text then
-                    handleTelegramCommand(update.message.text)
-                end
+    local url = "https://api.telegram.org/bot" .. TELEGRAM_TOKEN .. "/getUpdates?limit=5"
+    if lastUpdateId > 0 then
+        url = url .. "&offset=" .. (lastUpdateId + 1)
+    end
+    
+    local success, response = pcall(function()
+        return internet.request(url)
+    end)
+    
+    if not success or type(response) ~= "table" then
+        return
+    end
+    
+    local responseData = ""
+    while true do
+        local chunk = response()
+        if not chunk then break end
+        responseData = responseData .. chunk
+    end
+    
+    -- Ручной парсинг (работает с русскими буквами и эмодзи)
+    for line in responseData:gmatch("[^\r\n]+") do
+        local updateId = line:match('"update_id":(%d+)')
+        if updateId then
+            local id = tonumber(updateId)
+            if id and id > lastUpdateId then
+                lastUpdateId = id
             end
+        end
+        
+        local text = line:match('"text":"([^"]+)"')
+        if text then
+            text = text:gsub("\\u([0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F])", function(hex)
+                return unicode.char(tonumber(hex, 16))
+            end)
+            print("📥 Получено: " .. text)
+            handleTelegramCommand(text)
         end
     end
 end
@@ -1662,8 +1684,6 @@ local function main()
         ::continue::
     end
 end
-end
-
 
 -- ===== ЗАПУСК =====
 while true do

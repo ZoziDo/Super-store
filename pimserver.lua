@@ -782,8 +782,11 @@ local function handleTelegramCommand(text)
         for _, p in pairs(players) do
             totalPlayers = totalPlayers + 1
             totalTransactions = totalTransactions + (p.transactions or 0)
-            if p.banned then bannedCount = bannedCount + 1
+            if p.banned then
+                bannedCount = bannedCount + 1
+            end
         end
+    
         local msg = "📊 **Статистика магазина**\n═══════════════════\n"
         msg = msg .. "👥 Игроков: " .. totalPlayers .. "\n"
         msg = msg .. "💰 Транзакций: " .. totalTransactions .. "\n"

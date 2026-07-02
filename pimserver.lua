@@ -40,7 +40,6 @@ writeDebugLog("Telegram токен загружен")
 
 local tmpfs = component.proxy(computer.tmpAddress())
 local function getRealTimestamp()
-    writeDebugLog("getRealTimestamp вызван")
     local handle = tmpfs.open("/time", "w")
     tmpfs.write(handle, "time")
     tmpfs.close(handle)
@@ -726,69 +725,20 @@ local function validateSession(name, token)
 end
 
 -- ============================================
--- TELEGRAM ФУНКЦИИ С УЛУЧШЕННЫМ ЛОГИРОВАНИЕМ
+-- TELEGRAM ФУНКЦИИ
 -- ============================================
 
 local function sendTelegram(text, keyboard)
-    writeDebugLog("sendTelegram вызван, длина текста: " .. #text)
-    
-    if not text then 
-        writeDebugLog("sendTelegram: text is nil")
-        return false 
-    end
-    
-    -- Ограничим длину текста
-    if #text > 4000 then
-        text = text:sub(1, 3997) .. "..."
-        writeDebugLog("sendTelegram: текст обрезан до 4000 символов")
-    end
-    
+    if not text then return false end
     local encodedText = text:gsub(" ", "%%20"):gsub("\n", "%%0A"):gsub("#", "%%23"):gsub("&", "%%26")
     local url = "https://api.telegram.org/bot" .. TELEGRAM_TOKEN .. "/sendMessage"
     local postData = "chat_id=" .. TELEGRAM_CHAT_ID .. "&text=" .. encodedText
+    if keyboard then postData = postData .. "&reply_markup=" .. keyboard end
     
-    if keyboard then 
-        -- Экранируем кавычки
-        local escapedKeyboard = keyboard:gsub('"', '\\"')
-        postData = postData .. "&reply_markup=" .. escapedKeyboard 
-        writeDebugLog("sendTelegram: с клавиатурой")
-    end
-    
-    writeDebugLog("sendTelegram: отправка запроса к Telegram API")
-    
-    local success, result = pcall(function()
-        local request = internet.request(url, postData, {
-            ["Content-Type"] = "application/x-www-form-urlencoded",
-            ["Connection"] = "close"
-        })
-        
-        if request then
-            local response = ""
-            while true do
-                local chunk = request()
-                if not chunk then break end
-                response = response .. chunk
-            end
-            writeDebugLog("sendTelegram: ответ получен, длина: " .. #response)
-            
-            if response and response:find('"ok":true') then
-                writeDebugLog("sendTelegram: успешно отправлено")
-                return true
-            else
-                writeDebugLog("sendTelegram: ошибка в ответе: " .. (response or "нет ответа"))
-                return false
-            end
-        end
-        writeDebugLog("sendTelegram: request вернул nil")
-        return false
+    local success = pcall(function()
+        internet.request(url, postData, {["Content-Type"] = "application/x-www-form-urlencoded"})
     end)
-    
-    if not success then
-        writeDebugLog("sendTelegram: ошибка: " .. tostring(result))
-        return false
-    end
-    
-    return result
+    return success
 end
 
 local function getMainKeyboard()
@@ -851,257 +801,239 @@ local function saveFeedbacks()
     return false
 end
 
--- ============================================
--- ОБРАБОТЧИК КОМАНД TELEGRAM С ЛОГИРОВАНИЕМ
--- ============================================
 local function handleTelegramCommand(text)
     writeDebugLog("handleTelegramCommand: получен текст: " .. tostring(text))
     
-    if not text or text == "" then 
-        writeDebugLog("handleTelegramCommand: текст пустой, выход")
-        return 
+    if not text or text == "" then return end
+    
+    if text == "/start" or text == "Назад" then
+        writeDebugLog("handleTelegramCommand: команда /start или Назад")
+        sendTelegram("🛒 PIM Market Admin\n\nВыберите действие:", getMainKeyboard())
+        return
     end
     
-    -- Обрабатываем команду в защищенном режиме
-    local success, err = pcall(function()
-        if text == "/start" or text == "Назад" then
-            writeDebugLog("handleTelegramCommand: команда /start или Назад")
-            sendTelegram("🛒 PIM Market Admin\n\nВыберите действие:", getMainKeyboard())
+    if text == "Игроки" then
+        writeDebugLog("handleTelegramCommand: команда Игроки")
+        local msg = "👥 Список игроков:\n═══════════════════\n"
+        local playersKeys = {}
+        for name, data in pairs(players) do
+            msg = msg .. (#playersKeys + 1) .. ". " .. name
+            if data.banned then msg = msg .. " 🚫" end
+            msg = msg .. "\n"
+            table.insert(playersKeys, name)
+            if #playersKeys >= 10 then
+                msg = msg .. "\n... и ещё " .. (#players - 10) .. " игроков"
+                break
+            end
+        end
+        if #playersKeys == 0 then msg = msg .. "Нет игроков" end
+        sendTelegram(msg, getPlayersKeyboard(playersKeys))
+        return
+    end
+    
+    if text == "Статистика" then
+        writeDebugLog("handleTelegramCommand: команда Статистика")
+        local totalPlayers = 0
+        local totalTransactions = 0
+        local bannedCount = 0
+        for _, p in pairs(players) do
+            totalPlayers = totalPlayers + 1
+            totalTransactions = totalTransactions + (p.transactions or 0)
+            if p.banned then bannedCount = bannedCount + 1 end
+        end
+        local msg = "📊 Статистика магазина\n═══════════════════\n"
+        msg = msg .. "👥 Игроков: " .. totalPlayers .. "\n"
+        msg = msg .. "💰 Транзакций: " .. totalTransactions .. "\n"
+        msg = msg .. "🚫 Забанов: " .. bannedCount .. "\n"
+        msg = msg .. "👑 Админов: " .. #admins .. "\n"
+        msg = msg .. "⏸️ Пауза: " .. (shopPaused and "🔴 Включена" or "🟢 Выключена") .. "\n"
+        sendTelegram(msg, getReportsKeyboard())
+        return
+    end
+    
+    if text == "Отзывы" then
+        writeDebugLog("handleTelegramCommand: команда Отзывы")
+        if #feedbacks == 0 then
+            sendTelegram("📝 Отзывов пока нет", getMainKeyboard())
             return
         end
-        
-        if text == "Игроки" then
-            writeDebugLog("handleTelegramCommand: команда Игроки")
-            local msg = "👥 Список игроков:\n═══════════════════\n"
-            local playersKeys = {}
-            for name, data in pairs(players) do
-                msg = msg .. (#playersKeys + 1) .. ". " .. name
-                if data.banned then msg = msg .. " 🚫" end
-                msg = msg .. "\n"
-                table.insert(playersKeys, name)
-                if #playersKeys >= 10 then
-                    msg = msg .. "\n... и ещё " .. (#players - 10) .. " игроков"
-                    break
+        local msg = "📝 Отзывы:\n═══════════════════\n"
+        for i, fb in ipairs(feedbacks) do
+            msg = msg .. i .. ". " .. fb.name .. ":\n   " .. fb.text .. "\n   [" .. (fb.time or "без даты") .. "]\n"
+            msg = msg .. "───────────────────\n"
+        end
+        sendTelegram(msg, '{"keyboard": [["Назад"]], "resize_keyboard": true}')
+        return
+    end
+    
+    if text:match("^Удалить ") then
+        writeDebugLog("handleTelegramCommand: команда Удалить")
+        local id = tonumber(text:match("Удалить (%d+)"))
+        if id and id >= 1 and id <= #feedbacks then
+            table.remove(feedbacks, id)
+            saveFeedbacks()
+            sendTelegram("✅ Отзыв удален!", getMainKeyboard())
+        else
+            sendTelegram("❌ Отзыв не найден", getMainKeyboard())
+        end
+        return
+    end
+    
+    if text == "Админы" then
+        writeDebugLog("handleTelegramCommand: команда Админы")
+        local msg = "👑 Управление администраторами\n═══════════════════\n"
+        msg = msg .. "Текущие админы:\n"
+        for i, name in ipairs(admins) do
+            msg = msg .. i .. ". " .. name .. "\n"
+        end
+        sendTelegram(msg, getAdminKeyboard())
+        return
+    end
+    
+    if text == "Добавить админа" then
+        writeDebugLog("handleTelegramCommand: команда Добавить админа")
+        sendTelegram("👑 Введите ник игрока для добавления в администраторы:", '{"keyboard": [["Назад"]], "resize_keyboard": true}')
+        return
+    end
+    
+    if text == "Удалить админа" then
+        writeDebugLog("handleTelegramCommand: команда Удалить админа")
+        sendTelegram("👑 Введите ник игрока для удаления из администраторов:", '{"keyboard": [["Назад"]], "resize_keyboard": true}')
+        return
+    end
+    
+    if text ~= "Назад" and text ~= "Игроки" and text ~= "Статистика" and text ~= "Админы" and text ~= "Пауза" and text ~= "Обновить" and text ~= "Закрыть" and text ~= "Добавить предмет" and text ~= "Баланс" and text ~= "Добавить админа" and text ~= "Удалить админа" and text ~= "Отзывы" and not text:match("^Удалить ") and not text:match("^/additem") and not text:match("^/") then
+        writeDebugLog("handleTelegramCommand: обработка ника: " .. text)
+        local found = false
+        for name, data in pairs(players) do
+            if name:lower() == text:lower() then
+                local msg = "👤 " .. name .. "\n═══════════════════\n"
+                msg = msg .. "💰 Coina: " .. string.format("%.2f", data.balance or 0) .. " ₵\n"
+                msg = msg .. "💚 ЭМЫ: " .. string.format("%.2f", data.emaBalance or 0) .. " ۞\n"
+                msg = msg .. "📊 Транзакций: " .. (data.transactions or 0) .. "\n"
+                if data.banned then 
+                    msg = msg .. "🚫 Забанен\n"
+                else
+                    msg = msg .. "✅ Активен\n"
                 end
-            end
-            if #playersKeys == 0 then msg = msg .. "Нет игроков" end
-            sendTelegram(msg, getPlayersKeyboard(playersKeys))
-            return
-        end
-        
-        if text == "Статистика" then
-            writeDebugLog("handleTelegramCommand: команда Статистика")
-            local totalPlayers = 0
-            local totalTransactions = 0
-            local bannedCount = 0
-            for _, p in pairs(players) do
-                totalPlayers = totalPlayers + 1
-                totalTransactions = totalTransactions + (p.transactions or 0)
-                if p.banned then bannedCount = bannedCount + 1 end
-            end
-            local msg = "📊 Статистика магазина\n═══════════════════\n"
-            msg = msg .. "👥 Игроков: " .. totalPlayers .. "\n"
-            msg = msg .. "💰 Транзакций: " .. totalTransactions .. "\n"
-            msg = msg .. "🚫 Забанов: " .. bannedCount .. "\n"
-            msg = msg .. "👑 Админов: " .. #admins .. "\n"
-            msg = msg .. "⏸️ Пауза: " .. (shopPaused and "🔴 Включена" or "🟢 Выключена") .. "\n"
-            sendTelegram(msg, getReportsKeyboard())
-            return
-        end
-        
-        if text == "Отзывы" then
-            writeDebugLog("handleTelegramCommand: команда Отзывы")
-            if #feedbacks == 0 then
-                sendTelegram("📝 Отзывов пока нет", getMainKeyboard())
+                msg = msg .. "\nВыберите действие:"
+                sendTelegram(msg, '{"keyboard": [["Изменить баланс", "Бан/Разбан"], ["Назад"]], "resize_keyboard": true}')
+                found = true
                 return
             end
-            local msg = "📝 Отзывы:\n═══════════════════\n"
-            for i, fb in ipairs(feedbacks) do
-                msg = msg .. i .. ". " .. fb.name .. ":\n   " .. fb.text .. "\n   [" .. (fb.time or "без даты") .. "]\n"
-                msg = msg .. "───────────────────\n"
-            end
-            sendTelegram(msg, '{"keyboard": [["Назад"]], "resize_keyboard": true}')
-            return
         end
         
-        if text:match("^Удалить ") then
-            writeDebugLog("handleTelegramCommand: команда Удалить")
-            local id = tonumber(text:match("Удалить (%d+)"))
-            if id and id >= 1 and id <= #feedbacks then
-                table.remove(feedbacks, id)
-                saveFeedbacks()
-                sendTelegram("✅ Отзыв удален!", getMainKeyboard())
-            else
-                sendTelegram("❌ Отзыв не найден", getMainKeyboard())
-            end
-            return
-        end
-        
-        if text == "Админы" then
-            writeDebugLog("handleTelegramCommand: команда Админы")
-            local msg = "👑 Управление администраторами\n═══════════════════\n"
-            msg = msg .. "Текущие админы:\n"
-            for i, name in ipairs(admins) do
-                msg = msg .. i .. ". " .. name .. "\n"
-            end
-            sendTelegram(msg, getAdminKeyboard())
-            return
-        end
-        
-        if text == "Добавить админа" then
-            writeDebugLog("handleTelegramCommand: команда Добавить админа")
-            sendTelegram("👑 Введите ник игрока для добавления в администраторы:", '{"keyboard": [["Назад"]], "resize_keyboard": true}')
-            return
-        end
-        
-        if text == "Удалить админа" then
-            writeDebugLog("handleTelegramCommand: команда Удалить админа")
-            sendTelegram("👑 Введите ник игрока для удаления из администраторов:", '{"keyboard": [["Назад"]], "resize_keyboard": true}')
-            return
-        end
-        
-        -- Обработка ввода ника (добавление/удаление админа или просмотр игрока)
-        if text ~= "Назад" and text ~= "Игроки" and text ~= "Статистика" and text ~= "Админы" and text ~= "Пауза" and text ~= "Обновить" and text ~= "Закрыть" and text ~= "Добавить предмет" and text ~= "Баланс" and text ~= "Добавить админа" and text ~= "Удалить админа" and text ~= "Отзывы" and not text:match("^Удалить ") and not text:match("^/additem") and not text:match("^/") then
-            writeDebugLog("handleTelegramCommand: обработка ника: " .. text)
-            local found = false
-            for name, data in pairs(players) do
-                if name:lower() == text:lower() then
-                    local msg = "👤 " .. name .. "\n═══════════════════\n"
-                    msg = msg .. "💰 Coina: " .. string.format("%.2f", data.balance or 0) .. " ₵\n"
-                    msg = msg .. "💚 ЭМЫ: " .. string.format("%.2f", data.emaBalance or 0) .. " ۞\n"
-                    msg = msg .. "📊 Транзакций: " .. (data.transactions or 0) .. "\n"
-                    if data.banned then 
-                        msg = msg .. "🚫 Забанен\n"
-                    else
-                        msg = msg .. "✅ Активен\n"
-                    end
-                    msg = msg .. "\nВыберите действие:"
-                    sendTelegram(msg, '{"keyboard": [["Изменить баланс", "Бан/Разбан"], ["Назад"]], "resize_keyboard": true}')
-                    found = true
-                    return
+        if not found then
+            if not players[text] and not isAdmin(text) then
+                if addAdmin(text) then
+                    sendTelegram("👑 " .. text .. " добавлен в администраторы!", getMainKeyboard())
+                else
+                    sendTelegram("❌ Ошибка: " .. text .. " уже является администратором", getMainKeyboard())
                 end
+                return
             end
-            
-            if not found then
-                if not players[text] and not isAdmin(text) then
-                    if addAdmin(text) then
-                        sendTelegram("👑 " .. text .. " добавлен в администраторы!", getMainKeyboard())
-                    else
-                        sendTelegram("❌ Ошибка: " .. text .. " уже является администратором", getMainKeyboard())
-                    end
-                    return
+            if isAdmin(text) then
+                if removeAdmin(text) then
+                    sendTelegram("👑 " .. text .. " удален из администраторов!", getMainKeyboard())
+                else
+                    sendTelegram("❌ Нельзя удалить последнего администратора!", getMainKeyboard())
                 end
-                if isAdmin(text) then
-                    if removeAdmin(text) then
-                        sendTelegram("👑 " .. text .. " удален из администраторов!", getMainKeyboard())
-                    else
-                        sendTelegram("❌ Нельзя удалить последнего администратора!", getMainKeyboard())
-                    end
-                    return
-                end
-                sendTelegram("❌ Игрок " .. text .. " не найден!", getMainKeyboard())
+                return
             end
-            return
+            sendTelegram("❌ Игрок " .. text .. " не найден!", getMainKeyboard())
         end
-        
-        if text == "Изменить баланс" then
-            writeDebugLog("handleTelegramCommand: команда Изменить баланс")
-            sendTelegram("💰 Введите сумму для изменения баланса (Coin + ЭМЫ через пробел, например: 100 50):", '{"keyboard": [["Назад"]], "resize_keyboard": true}')
-            return
-        end
-        
-        if text == "Бан/Разбан" then
-            writeDebugLog("handleTelegramCommand: команда Бан/Разбан")
-            sendTelegram("🔒 Введите ник игрока для бана/разбана:", '{"keyboard": [["Назад"]], "resize_keyboard": true}')
-            return
-        end
-        
-        if text == "Пауза" then
-            writeDebugLog("handleTelegramCommand: команда Пауза")
-            shopPaused = not shopPaused
-            for addr in pairs(markets) do
-                modem.send(addr, 0xffef, serialization.serialize({op="shop_paused", paused=shopPaused}))
-            end
-            sendTelegram("⏸️ Магазин " .. (shopPaused and "ПРИОСТАНОВЛЕН" or "ВОЗОБНОВЛЕН"), getMainKeyboard())
-            return
-        end
-        
-        if text == "Обновить" then
-            writeDebugLog("handleTelegramCommand: команда Обновить")
-            local sent = broadcastUpdate()
-            sendTelegram("✅ Обновление отправлено " .. sent .. " терминалам!", getMainKeyboard())
-            return
-        end
-        
-        if text == "Закрыть" then
-            writeDebugLog("handleTelegramCommand: команда Закрыть")
-            local sent = broadcastKill()
-            sendTelegram("🚫 Магазин закрыт! " .. sent .. " терминалов отключены.", getMainKeyboard())
-            return
-        end
-        
-        if text == "Добавить предмет" then
-            writeDebugLog("handleTelegramCommand: команда Добавить предмет")
-            local msg = "📦 Добавление предмета\n\n"
-            msg = msg .. "Отправьте команду:\n"
-            msg = msg .. "/additem internalName displayName цена_coin цена_ema damage\n\n"
-            msg = msg .. "📌 Пример:\n"
-            msg = msg .. "/additem minecraft:diamond Алмаз 10 5 0\n\n"
-            msg = msg .. "Где damage = 0 если не нужен"
-            sendTelegram(msg, getMainKeyboard())
-            return
-        end
-        
-        if text:match("^/additem") then
-            writeDebugLog("handleTelegramCommand: команда /additem")
-            local parts = {}
-            for part in text:gmatch("%S+") do table.insert(parts, part) end
-            if #parts >= 5 then
-                local internal = parts[2]
-                local display = parts[3]
-                local coin = tonumber(parts[4]) or 0
-                local ema = tonumber(parts[5]) or 0
-                local damage = tonumber(parts[6]) or 0
-                if coin < 0 then coin = 0 end
-                if ema < 0 then ema = 0 end
-                if damage < 0 then damage = 0 end
-                if coin == 0 and ema == 0 then
-                    sendTelegram("❌ Ошибка! Цена не может быть нулевой", getMainKeyboard())
-                    return
-                end
-                local buyItems = {}
-                if filesystem.exists("/home/buy_items.lua") then
-                    buyItems = dofile("/home/buy_items.lua") or {}
-                end
-                table.insert(buyItems, { internalName = internal, displayName = display, price_coin = coin, price_ema = ema, damage = damage })
-                local file = io.open("/home/buy_items.lua", "w")
-                file:write("return " .. serialization.serialize(buyItems))
-                file:close()
-                broadcastUpdate()
-                local msg = "✅ Предмет добавлен!\n📦 " .. display .. "\n💰 " .. coin .. " ₵\n💚 " .. ema .. " ۞\n🔢 Damage: " .. damage
-                sendTelegram(msg, getMainKeyboard())
-            else
-                sendTelegram("❌ Ошибка!\nФормат: /additem internalName displayName цена_coin цена_ema damage", getMainKeyboard())
-            end
-            return
-        end
-        
-        if text == "Баланс" then
-            writeDebugLog("handleTelegramCommand: команда Баланс")
-            sendTelegram("💰 Введите имя игрока для просмотра баланса:", '{"keyboard": [["Назад"]], "resize_keyboard": true}')
-            return
-        end
-        
-        writeDebugLog("handleTelegramCommand: неизвестная команда: " .. text)
-    end)
-    
-    if not success then
-        writeDebugLog("handleTelegramCommand: ОШИБКА: " .. tostring(err))
-        -- Попробуем отправить сообщение об ошибке
-        pcall(function()
-            sendTelegram("❌ Произошла ошибка при обработке команды. Проверьте логи.", getMainKeyboard())
-        end)
+        return
     end
+    
+    if text == "Изменить баланс" then
+        writeDebugLog("handleTelegramCommand: команда Изменить баланс")
+        sendTelegram("💰 Введите сумму для изменения баланса (Coin + ЭМЫ через пробел, например: 100 50):", '{"keyboard": [["Назад"]], "resize_keyboard": true}')
+        return
+    end
+    
+    if text == "Бан/Разбан" then
+        writeDebugLog("handleTelegramCommand: команда Бан/Разбан")
+        sendTelegram("🔒 Введите ник игрока для бана/разбана:", '{"keyboard": [["Назад"]], "resize_keyboard": true}')
+        return
+    end
+    
+    if text == "Пауза" then
+        writeDebugLog("handleTelegramCommand: команда Пауза")
+        shopPaused = not shopPaused
+        for addr in pairs(markets) do
+            modem.send(addr, 0xffef, serialization.serialize({op="shop_paused", paused=shopPaused}))
+        end
+        sendTelegram("⏸️ Магазин " .. (shopPaused and "ПРИОСТАНОВЛЕН" or "ВОЗОБНОВЛЕН"), getMainKeyboard())
+        return
+    end
+    
+    if text == "Обновить" then
+        writeDebugLog("handleTelegramCommand: команда Обновить")
+        local sent = broadcastUpdate()
+        sendTelegram("✅ Обновление отправлено " .. sent .. " терминалам!", getMainKeyboard())
+        return
+    end
+    
+    if text == "Закрыть" then
+        writeDebugLog("handleTelegramCommand: команда Закрыть")
+        local sent = broadcastKill()
+        sendTelegram("🚫 Магазин закрыт! " .. sent .. " терминалов отключены.", getMainKeyboard())
+        return
+    end
+    
+    if text == "Добавить предмет" then
+        writeDebugLog("handleTelegramCommand: команда Добавить предмет")
+        local msg = "📦 Добавление предмета\n\n"
+        msg = msg .. "Отправьте команду:\n"
+        msg = msg .. "/additem internalName displayName цена_coin цена_ema damage\n\n"
+        msg = msg .. "📌 Пример:\n"
+        msg = msg .. "/additem minecraft:diamond Алмаз 10 5 0\n\n"
+        msg = msg .. "Где damage = 0 если не нужен"
+        sendTelegram(msg, getMainKeyboard())
+        return
+    end
+    
+    if text:match("^/additem") then
+        writeDebugLog("handleTelegramCommand: команда /additem")
+        local parts = {}
+        for part in text:gmatch("%S+") do table.insert(parts, part) end
+        if #parts >= 5 then
+            local internal = parts[2]
+            local display = parts[3]
+            local coin = tonumber(parts[4]) or 0
+            local ema = tonumber(parts[5]) or 0
+            local damage = tonumber(parts[6]) or 0
+            if coin < 0 then coin = 0 end
+            if ema < 0 then ema = 0 end
+            if damage < 0 then damage = 0 end
+            if coin == 0 and ema == 0 then
+                sendTelegram("❌ Ошибка! Цена не может быть нулевой", getMainKeyboard())
+                return
+            end
+            local buyItems = {}
+            if filesystem.exists("/home/buy_items.lua") then
+                buyItems = dofile("/home/buy_items.lua") or {}
+            end
+            table.insert(buyItems, { internalName = internal, displayName = display, price_coin = coin, price_ema = ema, damage = damage })
+            local file = io.open("/home/buy_items.lua", "w")
+            file:write("return " .. serialization.serialize(buyItems))
+            file:close()
+            broadcastUpdate()
+            local msg = "✅ Предмет добавлен!\n📦 " .. display .. "\n💰 " .. coin .. " ₵\n💚 " .. ema .. " ۞\n🔢 Damage: " .. damage
+            sendTelegram(msg, getMainKeyboard())
+        else
+            sendTelegram("❌ Ошибка!\nФормат: /additem internalName displayName цена_coin цена_ema damage", getMainKeyboard())
+        end
+        return
+    end
+    
+    if text == "Баланс" then
+        writeDebugLog("handleTelegramCommand: команда Баланс")
+        sendTelegram("💰 Введите имя игрока для просмотра баланса:", '{"keyboard": [["Назад"]], "resize_keyboard": true}')
+        return
+    end
+    
+    writeDebugLog("handleTelegramCommand: неизвестная команда: " .. text)
 end
 
 -- ============================================
@@ -1110,7 +1042,6 @@ end
 local function checkTelegramUpdates()
     writeDebugLog("checkTelegramUpdates: начат")
     
-    -- Читаем lastUpdateId из файла
     local f = io.open("/tmp/last_id.txt", "r")
     if f then
         local data = f:read("*a")
@@ -1121,19 +1052,19 @@ local function checkTelegramUpdates()
         end
     end
     
-    local url = "https://api.telegram.org/bot" .. TELEGRAM_TOKEN .. "/getUpdates?limit=5&timeout=10"
+    local url = "https://api.telegram.org/bot" .. TELEGRAM_TOKEN .. "/getUpdates?limit=5"
     if lastUpdateId > 0 then
         url = url .. "&offset=" .. (lastUpdateId + 1)
     end
     
-    writeDebugLog("checkTelegramUpdates: запрос к " .. url)
+    writeDebugLog("checkTelegramUpdates: запрос к API")
     
     local success, response = pcall(function()
-        return internet.request(url, "", {["Connection"] = "close"})
+        return internet.request(url)
     end)
     
     if not success or type(response) ~= "table" then
-        writeDebugLog("checkTelegramUpdates: ошибка запроса: " .. tostring(success))
+        writeDebugLog("checkTelegramUpdates: ошибка запроса")
         return
     end
     
@@ -1145,12 +1076,6 @@ local function checkTelegramUpdates()
     end
     
     writeDebugLog("checkTelegramUpdates: получен ответ, длина: " .. #responseData)
-    
-    -- Проверяем, есть ли ошибка
-    if responseData:find('"ok":false') then
-        writeDebugLog("checkTelegramUpdates: Telegram API ошибка: " .. responseData)
-        return
-    end
     
     -- Парсим update_id
     local maxId = lastUpdateId
@@ -1168,8 +1093,11 @@ local function checkTelegramUpdates()
         local decoded = text:gsub("\\u([0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F])", function(hex)
             return unicode.char(tonumber(hex, 16))
         end)
-        writeDebugLog("checkTelegramUpdates: получена команда: " .. decoded)
-        handleTelegramCommand(decoded)
+        writeDebugLog("checkTelegramUpdates: команда: " .. decoded)
+        local ok, err = pcall(handleTelegramCommand, decoded)
+        if not ok then
+            writeDebugLog("checkTelegramUpdates: ОШИБКА обработки: " .. tostring(err))
+        end
     end
     
     if not hasUpdates then

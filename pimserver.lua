@@ -18,7 +18,7 @@ event.ignore("interrupted", function() end)
 event.ignore("terminate", function() end)
 
 -- ============================================
--- TELEGRAM НАСТРОЙКИ (ЗАМЕНИ НА СВОИ!)
+-- TELEGRAM НАСТРОЙКИ
 -- ============================================
 local TELEGRAM_TOKEN = "8780133006:AAF2Zg7Dv_mr-E1-bgVuGDVsKYvyuwizuaE"
 local TELEGRAM_CHAT_ID = "492178371"
@@ -873,7 +873,6 @@ local function handleTelegramCommand(text)
         return
     end
     
-    -- Проверка имени игрока
     if not text:match("^/") and text ~= "🔙 Назад" and text ~= "👥 Игроки" and text ~= "📊 Статистика" and text ~= "👑 Админы" and text ~= "⏸️ Пауза" and text ~= "🔄 Обновить" and text ~= "🚫 Закрыть" and text ~= "📦 Добавить предмет" and text ~= "💰 Баланс" then
         local found = false
         for name, data in pairs(players) do
@@ -1358,7 +1357,6 @@ local function main()
         local ev = {event.pull(0.5)}
         local etype = ev[1]
 
-        -- Проверка Telegram каждые 2 секунды
         if os.time() - lastTelegramCheck > telegramCheckInterval then
             lastTelegramCheck = os.time()
             pcall(checkTelegramUpdates)
@@ -1564,7 +1562,8 @@ local function main()
                 log("INFO", "   Текст: " .. (msg.text or ""))
                 sendTelegram("📩 **Репорт!**\n👤 " .. msg.name .. "\n📝 " .. (msg.text or ""))
                 local file = io.open("/home/reports.log", "a")
-                if file then                    file:write("[" .. msg.time .. "] " .. msg.name .. ": " .. msg.text .. "\n")
+                if file then
+                    file:write("[" .. msg.time .. "] " .. msg.name .. ": " .. msg.text .. "\n")
                     file:close()
                 else
                     log("ERROR", "❌ Не удалось открыть reports.log")

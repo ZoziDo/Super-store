@@ -86,7 +86,6 @@ local ACCESS_PASSWORD = "secret"
 local ADMINS_PATH = "/home/admins.db"
 local admins = {}
 
--- Загружаем список администраторов
 if filesystem.exists(ADMINS_PATH) then
     local file = io.open(ADMINS_PATH, "r")
     if file then
@@ -101,7 +100,6 @@ if filesystem.exists(ADMINS_PATH) then
     end
 end
 
--- Если нет админов, добавляем ZoziDo по умолчанию
 if #admins == 0 then
     admins = {"ZoziDo"}
     local file = io.open(ADMINS_PATH, "w")
@@ -111,7 +109,6 @@ if #admins == 0 then
     end
 end
 
--- Функция проверки, является ли игрок администратором
 local function isAdmin(playerName)
     if not playerName then return false end
     for _, name in ipairs(admins) do
@@ -122,7 +119,6 @@ local function isAdmin(playerName)
     return false
 end
 
--- Функция добавления администратора
 local function addAdmin(playerName)
     if not playerName or playerName == "" then return false end
     if isAdmin(playerName) then return false end
@@ -136,10 +132,9 @@ local function addAdmin(playerName)
     return false
 end
 
--- Функция удаления администратора
 local function removeAdmin(playerName)
     if not playerName or playerName == "" then return false end
-    if #admins <= 1 then return false end -- Нельзя удалить последнего админа
+    if #admins <= 1 then return false end
     for i, name in ipairs(admins) do
         if name == playerName then
             table.remove(admins, i)
@@ -210,18 +205,14 @@ local adminViewHeight = 20
 local editBalanceMode = false
 local editingPlayer = nil
 local editInput = ""
-
--- Режим добавления администратора
 local addAdminMode = false
 local addAdminInput = ""
-
 local addItemMode = false
 local addItemFields = { internal = "", display = "", price_coin = "", price_ema = "0", damage = "0" }
 local addItemCurrentField = 1
 local addItemFieldNames = { "internal", "display", "price_coin", "price_ema", "damage" }
 local addItemResponse = nil
 local addItemResponseTimer = nil
-
 local sellHistory = {}
 local MAX_SELL_HISTORY = 20
 local ACTIVITY_SIZE = 60
@@ -322,6 +313,205 @@ local function logIncoming(from, msg)
     end
 end
 
+-- ============================================
+-- ИНТЕГРАЦИЯ С ВЕБ-СЕРВЕРОМ
+-- ============================================
+
+local internet = require("internet")
+local WEB_URL = "https://upfront-dinginess-impulsive.ngrok-free.dev"
+
+local function toJson(val)
+    if type(val) == "string" then return '"' .. val:gsub('"', '\\"') .. '"'
+    elseif type(val) == "number" or type(val) == "boolean" then return tostring(val)
+    elseif type(val) == "table" then
+        local parts = {}
+        for k, v in pairs(val) do
+            table.insert(parts, '"' .. k .. '":' .. toJson(v))
+        end
+        return "{" .. table.concat(parts, ",") .. "}"
+    end
+    return "null"
+end
+
+local function sendToWeb(endpoint, data)
+    local json = toJson(data)
+    pcall(function()
+        internet.request(WEB_URL .. endpoint, json, {
+            ["Content-Type"] = "application/json",
+            ["Connection"] = "close"
+        })
+    end)
+end
+
+local originalAddLog = addLog
+addLog = function(text, fg)
+    originalAddLog(text, fg)
+    local level = "INFO"
+    if text:find("ERROR") or text:find("❌") then level = "ERROR"
+    elseif text:find("WARN") or text:find("⚠") then level = "WARN"
+    elseif text:find("SUCCESS") or text:find("✅") then level = "SUCCESS"
+    elseif text:find("IMPORTANT") then level = "IMPORTANT" end
+    
+    sendToWeb("/api/log", {
+        time = getRealTimeString(),
+        text = text:gsub("%[%d+:%d+:%d+%] ", ""),
+        level = level
+    })
+end
+
+local function sendStats()
+    local playerList = {}
+    for name, data in pairs(players) do
+        table.insert(playerList, {
+            name = name,
+            balance = data.balance or 0,
+            emaBalance = data.emaBalance or 0,
+            transactions = data.transactions or 0,
+            banned = data.banned or false
+        })
+    end
+    
+    local online = 0
+    for _, s in pairs(sessions) do
+        if type(s) == "table" and s.token then online = online + 1 end
+    end
+    
+    local feedbacksList = {}
+    if filesystem.exists("/home/feedbacks.db") then
+        local file = io.open("/home/feedbacks.db", "r")
+        if file then
+            local data = file:read("*a")
+            file:close()
+            if data and #data > 0 then
+                local ok, result = pcall(serialization.unserialize, data)
+                if ok and type(result) == "table" then feedbacksList = result end
+            end
+        end
+    end
+    
+    local reportsList = {}
+    if filesystem.exists("/home/reports.log") then
+        local file = io.open("/home/reports.log", "r")
+        if file then
+            for line in file:lines() do
+                local time = line:match("%[([^%]]+)%]")
+                local name = line:match("%] (%w+):")
+                local text = line:match("%] %w+: (.+)")
+                if time and name and text then
+                    table.insert(reportsList, {time = time, name = name, text = text})
+                end
+            end
+            file:close()
+        end
+    end
+    
+    sendToWeb("/api/update", {
+        players = playerList,
+        admins = admins,
+        total = #playerList,
+        total_transactions = (globalStats.totalBuys or 0) + (globalStats.totalSells or 0),
+        total_reports = globalStats.totalReports or 0,
+        total_feedbacks = #feedbacksList,
+        online = online,
+        paused = shopPaused,
+        feedbacks = feedbacksList,
+        reports = reportsList
+    })
+end
+
+local function checkWebCommands()
+    pcall(function()
+        local response = internet.request(WEB_URL .. "/api/commands")
+        if response then
+            local body = ""
+            for chunk in response do body = body .. chunk end
+            local ok, data = pcall(serialization.unserialize, body)
+            if ok and data and data.commands then
+                for _, cmd in ipairs(data.commands) do
+                    if cmd.command == "toggle_pause" then
+                        shopPaused = not shopPaused
+                        for addr in pairs(markets) do
+                            modem.send(addr, 0xffef, serialization.serialize({op="shop_paused", paused=shopPaused}))
+                        end
+                        log("IMPORTANT", "⏸️ Магазин " .. (shopPaused and "приостановлен" or "возобновлён") .. " через веб")
+                    
+                    elseif cmd.command == "kill_market" then
+                        broadcastKill()
+                        log("WARN", "⛔ Магазин завершён через веб")
+                    
+                    elseif cmd.command == "set_balance" then
+                        local d = cmd.data
+                        local player = players[d.name]
+                        if player then
+                            if d.coin then player.balance = d.coin end
+                            if d.ema then player.emaBalance = d.ema end
+                            saveDB()
+                            log("INFO", "📊 Баланс " .. d.name .. " изменён через веб")
+                        end
+                    
+                    elseif cmd.command == "toggle_ban" then
+                        local d = cmd.data
+                        local player = players[d.name]
+                        if player then
+                            player.banned = not player.banned
+                            saveDB()
+                            log("IMPORTANT", "🚫 " .. d.name .. (player.banned and " забанен" or " разбанен") .. " через веб")
+                        end
+                    
+                    elseif cmd.command == "reset_player" then
+                        local d = cmd.data
+                        local player = players[d.name]
+                        if player then
+                            player.balance = 0
+                            player.emaBalance = 0
+                            player.transactions = 0
+                            saveDB()
+                            log("INFO", "🔄 " .. d.name .. " сброшен через веб")
+                        end
+                    
+                    elseif cmd.command == "add_item" then
+                        local d = cmd.data
+                        local buyItems = {}
+                        if filesystem.exists("/home/buy_items.lua") then
+                            local ok, items = pcall(dofile, "/home/buy_items.lua")
+                            if ok and items then buyItems = items end
+                        end
+                        table.insert(buyItems, {
+                            internalName = d.internal,
+                            displayName = d.display,
+                            price_coin = d.price_coin or 0,
+                            price_ema = d.price_ema or 0,
+                            damage = d.damage or 0
+                        })
+                        local file = io.open("/home/buy_items.lua", "w")
+                        file:write("return " .. serialization.serialize(buyItems))
+                        file:close()
+                        broadcastUpdate()
+                        log("SUCCESS", "✅ Предмет добавлен через веб: " .. d.display)
+                    
+                    elseif cmd.command == "add_admin" then
+                        if addAdmin(cmd.data.name) then
+                            log("SUCCESS", "👑 " .. cmd.data.name .. " добавлен в админы через веб")
+                        end
+                    
+                    elseif cmd.command == "remove_admin" then
+                        if removeAdmin(cmd.data.name) then
+                            log("SUCCESS", "👑 " .. cmd.data.name .. " удалён из админов через веб")
+                        end
+                    end
+                end
+            end
+        end
+    end)
+end
+
+event.timer(10, sendStats, math.huge)
+event.timer(3, checkWebCommands, math.huge)
+
+-- ============================================
+-- КОНЕЦ ИНТЕГРАЦИИ
+-- ============================================
+
 local function isAdminConnected()
     local sess = sessions[ADMIN_NAME]
     return sess and sess.token and os.time() - (sess.lastAction or 0) < SESSION_TIMEOUT
@@ -338,7 +528,7 @@ end
 local function broadcastUpdate()
     if next(markets) == nil then
         addLog("Нет подключённых маркетов для обновления", ansi.red)
-        return
+        return 0
     end
     local sent = 0
     for addr, _ in pairs(markets) do
@@ -346,12 +536,13 @@ local function broadcastUpdate()
         sent = sent + 1
     end
     log("SUCCESS", "Обновление отправлено " .. sent .. " терминалам")
+    return sent
 end
 
 local function broadcastKill()
     if next(markets) == nil then
         addLog("Нет подключённых маркетов для завершения", ansi.red)
-        return
+        return 0
     end
     local sent = 0
     for addr, _ in pairs(markets) do
@@ -359,6 +550,7 @@ local function broadcastKill()
         sent = sent + 1
     end
     log("WARN", "Команда завершения отправлена " .. sent .. " терминалам")
+    return sent
 end
 
 local function drawAdminPanel()
@@ -386,7 +578,6 @@ local function drawAdminPanel()
     io.write(title .. string.rep(" ", screenW - #title))
     resetColor()
     
-    -- Линия под заголовком (из =)
     setColor(ansi.cyan)
     gotoxy(1, 3)
     io.write(string.rep("=", screenW))
@@ -394,9 +585,6 @@ local function drawAdminPanel()
 
     local startIdx = adminScroll + 1
     local endIdx = math.min(#adminPlayerList, adminScroll + adminViewHeight)
-    setColor(ansi.yellow)
-
-    resetColor()
 
     for i=startIdx, endIdx do
         local ply = adminPlayerList[i]
@@ -424,7 +612,6 @@ local function drawAdminPanel()
     drawing = false
 end
 
--- Увеличенное окно для добавления администратора
 local function drawAddAdminWindow()
     if drawing then return end
     drawing = true
@@ -471,7 +658,6 @@ local function drawAddAdminWindow()
     drawing = false
 end
 
--- Увеличенное окно для редактирования баланса
 local function drawEditBalanceWindow()
     if drawing then return end
     drawing = true
@@ -520,7 +706,6 @@ local function drawEditBalanceWindow()
     drawing = false
 end
 
--- Увеличенное окно для добавления предмета
 local function drawAddItemForm()
     if drawing then return end
     drawing = true
@@ -722,14 +907,13 @@ local function handleKey(key, char, player)
     local isPlayerAdmin = isAdmin(player)
     local isAdminConnected = isPlayerAdmin and sessions[player] and sessions[player].token
 
-    -- Режим добавления администратора
     if addAdminMode then
-        if char == 27 or char == 93 then -- ESC или ]
+        if char == 27 or char == 93 then
             addAdminMode = false
             addAdminInput = ""
             drawAdminPanel()
             return
-        elseif char == 13 then -- Enter
+        elseif char == 13 then
             if addAdminInput ~= "" then
                 if addAdmin(addAdminInput) then
                     log("SUCCESS", "👑 " .. addAdminInput .. " добавлен в администраторы")
@@ -742,7 +926,7 @@ local function handleKey(key, char, player)
             addAdminMode = false
             addAdminInput = ""
             return
-        elseif char == 8 then -- Backspace
+        elseif char == 8 then
             addAdminInput = addAdminInput:sub(1, -2)
             drawAddAdminWindow()
             return
@@ -758,7 +942,7 @@ local function handleKey(key, char, player)
     end
 
     if addItemMode then
-        if char == 27 or char == 93 then -- ESC или ]
+        if char == 27 or char == 93 then
             addItemMode = false
             addItemResponse = nil
             if adminMode then drawAdminPanel() else drawInterface() end
@@ -852,7 +1036,7 @@ local function handleKey(key, char, player)
     end
 
     if editBalanceMode then
-        if char == 27 or char == 93 then -- ESC или ]
+        if char == 27 or char == 93 then
             editBalanceMode = false
             editingPlayer = nil
             editInput = ""
@@ -903,7 +1087,7 @@ local function handleKey(key, char, player)
             return
         end
 
-        if key == 200 then -- Вверх
+        if key == 200 then
             if selectedAdminIndex > 1 then
                 selectedAdminIndex = selectedAdminIndex - 1
                 if selectedAdminIndex < adminScroll + 1 then
@@ -912,7 +1096,7 @@ local function handleKey(key, char, player)
                 drawAdminPanel()
             end
             return
-        elseif key == 208 then -- Вниз
+        elseif key == 208 then
             if selectedAdminIndex < #adminPlayerList then
                 selectedAdminIndex = selectedAdminIndex + 1
                 if selectedAdminIndex > adminScroll + adminViewHeight then
@@ -1040,138 +1224,6 @@ local function handleTouch(x, y, player)
         end
     end
 end
-
--- ============================================
--- ИНТЕГРАЦИЯ С ВЕБ-СЕРВЕРОМ
--- ============================================
-
-local internet = require("internet")
-
--- URL вашего ngrok сервера
-local WEB_URL = "https://upfront-dinginess-impulsive.ngrok-free.dev"
-
--- Простая функция для JSON
-local function toJson(val)
-    if type(val) == "string" then
-        return '"' .. val:gsub('"', '\\"') .. '"'
-    elseif type(val) == "number" or type(val) == "boolean" then
-        return tostring(val)
-    elseif type(val) == "table" then
-        local parts = {}
-        for k, v in pairs(val) do
-            table.insert(parts, '"' .. k .. '":' .. toJson(v))
-        end
-        return "{" .. table.concat(parts, ",") .. "}"
-    end
-    return "null"
-end
-
--- Функция отправки на веб-сервер
-local function sendToWeb(endpoint, data)
-    local json = toJson(data)
-    local url = WEB_URL .. endpoint
-    
-    pcall(function()
-        internet.request(url, json, {
-            ["Content-Type"] = "application/json",
-            ["Connection"] = "close"
-        })
-    end)
-end
-
--- Перехватываем функцию addLog для отправки на сайт
-local originalAddLog = addLog
-addLog = function(text, fg)
-    -- Вызываем оригинальную функцию
-    originalAddLog(text, fg)
-    
-    -- Определяем уровень лога
-    local level = "INFO"
-    if text:find("ERROR") or text:find("❌") then level = "ERROR"
-    elseif text:find("WARN") or text:find("⚠") then level = "WARN"
-    elseif text:find("SUCCESS") or text:find("✅") then level = "SUCCESS"
-    elseif text:find("IMPORTANT") then level = "IMPORTANT"
-    end
-    
-    -- Очищаем текст от времени (если есть)
-    local cleanText = text:gsub("%[%d+:%d+:%d+%] ", "")
-    
-    -- Отправляем на сайт
-    sendToWeb("/api/log", {
-        time = getRealTimeString(),
-        text = cleanText,
-        level = level
-    })
-end
-
--- Автоотправка статистики каждые 10 секунд
-event.timer(10, function()
-    local playerList = {}
-    for name, data in pairs(players) do
-        table.insert(playerList, {
-            name = name,
-            balance = data.balance or 0,
-            emaBalance = data.emaBalance or 0,
-            transactions = data.transactions or 0,
-            banned = data.banned or false
-        })
-    end
-    
-    -- Считаем онлайн
-    local online = 0
-    for _, s in pairs(sessions) do
-        if type(s) == "table" and s.token then
-            online = online + 1
-        end
-    end
-    
-    -- Загружаем отзывы
-    local feedbacksList = {}
-    if filesystem.exists("/home/feedbacks.db") then
-        local file = io.open("/home/feedbacks.db", "r")
-        if file then
-            local data = file:read("*a")
-            file:close()
-            if data and #data > 0 then
-                local ok, result = pcall(serialization.unserialize, data)
-                if ok and type(result) == "table" then
-                    feedbacksList = result
-                end
-            end
-        end
-    end
-    
-    -- Загружаем репорты
-    local reportsList = {}
-    if filesystem.exists("/home/reports.log") then
-        local file = io.open("/home/reports.log", "r")
-        if file then
-            for line in file:lines() do
-                local time = line:match("%[([^%]]+)%]")
-                local name = line:match("%] (%w+):")
-                local text = line:match("%] %w+: (.+)")
-                if time and name and text then
-                    table.insert(reportsList, {time = time, name = name, text = text})
-                end
-            end
-            file:close()
-        end
-    end
-    
-    -- Отправляем все данные
-    sendToWeb("/api/update", {
-        players = playerList,
-        admins = admins,
-        total = #playerList,
-        total_transactions = (globalStats.totalBuys or 0) + (globalStats.totalSells or 0),
-        total_reports = globalStats.totalReports or 0,
-        total_feedbacks = #feedbacksList,
-        online = online,
-        paused = shopPaused,
-        feedbacks = feedbacksList,
-        reports = reportsList
-    })
-end, math.huge)
 
 local function main()
     log("SUCCESS", "🚀 Сервер запущен. Администраторы: " .. table.concat(admins, ", "))

@@ -730,23 +730,62 @@ end
 
 local function sendTelegram(text, keyboard)
     if not text then return false end
+    
+    -- Ограничим длину текста
+    if #text > 4000 then
+        text = text:sub(1, 3997) .. "..."
+    end
+    
     local encodedText = text:gsub(" ", "%%20"):gsub("\n", "%%0A"):gsub("#", "%%23"):gsub("&", "%%26")
     local url = "https://api.telegram.org/bot" .. TELEGRAM_TOKEN .. "/sendMessage"
     local postData = "chat_id=" .. TELEGRAM_CHAT_ID .. "&text=" .. encodedText
-    if keyboard then postData = postData .. "&reply_markup=" .. keyboard end
     
-    local success = pcall(function()
-        internet.request(url, postData, {["Content-Type"] = "application/x-www-form-urlencoded"})
+    if keyboard then 
+        -- Отправляем клавиатуру как есть
+        postData = postData .. "&reply_markup=" .. keyboard
+    end
+    
+    writeDebugLog("sendTelegram: отправка запроса, длина postData: " .. #postData)
+    
+    local success, result = pcall(function()
+        local request = internet.request(url, postData, {
+            ["Content-Type"] = "application/x-www-form-urlencoded"
+        })
+        
+        if request then
+            local response = ""
+            while true do
+                local chunk = request()
+                if not chunk then break end
+                response = response .. chunk
+            end
+            writeDebugLog("sendTelegram: ответ: " .. (response:sub(1, 200) or "нет ответа"))
+            if response and response:find('"ok":true') then
+                writeDebugLog("sendTelegram: успешно отправлено")
+                return true
+            elseif response and response:find('"ok":false') then
+                writeDebugLog("sendTelegram: ОШИБКА API: " .. response)
+                return false
+            end
+            return true
+        end
+        return false
     end)
-    return success
+    
+    if not success then
+        writeDebugLog("sendTelegram: ошибка: " .. tostring(result))
+        return false
+    end
+    
+    return result
 end
 
 local function getMainKeyboard()
-    return '{"keyboard": [["Игроки", "Статистика"], ["Баланс", "Админы"], ["Добавить предмет", "Обновить"], ["Пауза", "Закрыть"]], "resize_keyboard": true}'
+    return '{"keyboard":[["Игроки","Статистика"],["Баланс","Админы"],["Добавить предмет","Обновить"],["Пауза","Закрыть"]],"resize_keyboard":true}'
 end
 
 local function getPlayersKeyboard(playersList)
-    local keyboard = '{"keyboard": ['
+    local keyboard = '{"keyboard":['
     local row = {}
     for i, name in ipairs(playersList) do
         table.insert(row, '"' .. name .. '"')
@@ -759,20 +798,20 @@ local function getPlayersKeyboard(playersList)
     if #row > 0 then
         keyboard = keyboard .. '[' .. table.concat(row, ",") .. '],'
     end
-    keyboard = keyboard .. '["Назад"]], "resize_keyboard": true}'
+    keyboard = keyboard .. '["Назад"]],"resize_keyboard":true}'
     return keyboard
 end
 
 local function getReportsKeyboard()
-    return '{"keyboard": [["Отзывы"], ["Назад"]], "resize_keyboard": true}'
+    return '{"keyboard":[["Отзывы"],["Назад"]],"resize_keyboard":true}'
 end
 
 local function getFeedbackDeleteKeyboard(feedbackId)
-    return '{"keyboard": [["Удалить ' .. feedbackId .. '"], ["Назад"]], "resize_keyboard": true}'
+    return '{"keyboard":[["Удалить ' .. feedbackId .. '"],["Назад"]],"resize_keyboard":true}'
 end
 
 local function getAdminKeyboard()
-    return '{"keyboard": [["Добавить админа", "Удалить админа"], ["Назад"]], "resize_keyboard": true}'
+    return '{"keyboard":[["Добавить админа","Удалить админа"],["Назад"]],"resize_keyboard":true}'
 end
 
 -- Хранилище для отзывов
@@ -862,7 +901,7 @@ local function handleTelegramCommand(text)
             msg = msg .. i .. ". " .. fb.name .. ":\n   " .. fb.text .. "\n   [" .. (fb.time or "без даты") .. "]\n"
             msg = msg .. "───────────────────\n"
         end
-        sendTelegram(msg, '{"keyboard": [["Назад"]], "resize_keyboard": true}')
+        sendTelegram(msg, '{"keyboard":[["Назад"]],"resize_keyboard":true}')
         return
     end
     
@@ -892,13 +931,13 @@ local function handleTelegramCommand(text)
     
     if text == "Добавить админа" then
         writeDebugLog("handleTelegramCommand: команда Добавить админа")
-        sendTelegram("👑 Введите ник игрока для добавления в администраторы:", '{"keyboard": [["Назад"]], "resize_keyboard": true}')
+        sendTelegram("👑 Введите ник игрока для добавления в администраторы:", '{"keyboard":[["Назад"]],"resize_keyboard":true}')
         return
     end
     
     if text == "Удалить админа" then
         writeDebugLog("handleTelegramCommand: команда Удалить админа")
-        sendTelegram("👑 Введите ник игрока для удаления из администраторов:", '{"keyboard": [["Назад"]], "resize_keyboard": true}')
+        sendTelegram("👑 Введите ник игрока для удаления из администраторов:", '{"keyboard":[["Назад"]],"resize_keyboard":true}')
         return
     end
     
@@ -917,7 +956,7 @@ local function handleTelegramCommand(text)
                     msg = msg .. "✅ Активен\n"
                 end
                 msg = msg .. "\nВыберите действие:"
-                sendTelegram(msg, '{"keyboard": [["Изменить баланс", "Бан/Разбан"], ["Назад"]], "resize_keyboard": true}')
+                sendTelegram(msg, '{"keyboard":[["Изменить баланс","Бан/Разбан"],["Назад"]],"resize_keyboard":true}')
                 found = true
                 return
             end
@@ -947,13 +986,13 @@ local function handleTelegramCommand(text)
     
     if text == "Изменить баланс" then
         writeDebugLog("handleTelegramCommand: команда Изменить баланс")
-        sendTelegram("💰 Введите сумму для изменения баланса (Coin + ЭМЫ через пробел, например: 100 50):", '{"keyboard": [["Назад"]], "resize_keyboard": true}')
+        sendTelegram("💰 Введите сумму для изменения баланса (Coin + ЭМЫ через пробел, например: 100 50):", '{"keyboard":[["Назад"]],"resize_keyboard":true}')
         return
     end
     
     if text == "Бан/Разбан" then
         writeDebugLog("handleTelegramCommand: команда Бан/Разбан")
-        sendTelegram("🔒 Введите ник игрока для бана/разбана:", '{"keyboard": [["Назад"]], "resize_keyboard": true}')
+        sendTelegram("🔒 Введите ник игрока для бана/разбана:", '{"keyboard":[["Назад"]],"resize_keyboard":true}')
         return
     end
     
@@ -1029,7 +1068,7 @@ local function handleTelegramCommand(text)
     
     if text == "Баланс" then
         writeDebugLog("handleTelegramCommand: команда Баланс")
-        sendTelegram("💰 Введите имя игрока для просмотра баланса:", '{"keyboard": [["Назад"]], "resize_keyboard": true}')
+        sendTelegram("💰 Введите имя игрока для просмотра баланса:", '{"keyboard":[["Назад"]],"resize_keyboard":true}')
         return
     end
     

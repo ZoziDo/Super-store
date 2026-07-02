@@ -700,7 +700,6 @@ local function getOrCreatePlayer(name)
         }
         saveDB()
         log("SUCCESS", "🎮 Новый игрок: " .. name)
-        sendTelegram("🆕 **Новый игрок!**\n👤 " .. name .. "\n📅 " .. getRealDateTimeString())
     end
     return players[name]
 end
@@ -749,20 +748,58 @@ local function getPlayersKeyboard(playersList)
     return keyboard
 end
 
+local function getReportsKeyboard()
+    return '{"keyboard": [["Отзывы"], ["Назад"]], "resize_keyboard": true}'
+end
+
+local function getFeedbackDeleteKeyboard(feedbackId)
+    return '{"keyboard": [["Удалить ' .. feedbackId .. '"], ["Назад"]], "resize_keyboard": true}'
+end
+
+local function getAdminKeyboard()
+    return '{"keyboard": [["Добавить админа", "Удалить админа"], ["Назад"]], "resize_keyboard": true}'
+end
+
+-- Хранилище для отзывов
+local feedbacks = {}
+if filesystem.exists("/home/feedbacks.db") then
+    local file = io.open("/home/feedbacks.db", "r")
+    if file then
+        local data = file:read("*a")
+        file:close()
+        if data and #data > 0 then
+            local ok, result = pcall(serialization.unserialize, data)
+            if ok and type(result) == "table" then
+                feedbacks = result
+            end
+        end
+    end
+end
+
+local function saveFeedbacks()
+    local file = io.open("/home/feedbacks.db", "w")
+    if file then
+        file:write(serialization.serialize(feedbacks))
+        file:close()
+        return true
+    end
+    return false
+end
+
 local function handleTelegramCommand(text)
-    if not text or text == "" then return end
+    if not text or text == "" then return
     
     if text == "/start" or text == "Назад" then
-        sendTelegram("🛒 **PIM Market Admin**\n\nВыберите действие:", getMainKeyboard())
+        sendTelegram("🛒 PIM Market Admin\n\nВыберите действие:", getMainKeyboard())
         return
     end
     
     if text == "Игроки" then
-        local msg = "👥 **Список игроков:**\n═══════════════════\n"
+        local msg = "👥 Список игроков:\n═══════════════════\n"
         local playersKeys = {}
         for name, data in pairs(players) do
             msg = msg .. (#playersKeys + 1) .. ". " .. name
-            if data.banned then msg = msg .. " 🚫" end
+            if data.banned then msg = msg .. " 🚫"
             msg = msg .. "\n"
             table.insert(playersKeys, name)
             if #playersKeys >= 10 then
@@ -770,7 +807,7 @@ local function handleTelegramCommand(text)
                 break
             end
         end
-        if #playersKeys == 0 then msg = msg .. "Нет игроков" end
+        if #playersKeys == 0 then msg = msg .. "Нет игроков"
         sendTelegram(msg, getPlayersKeyboard(playersKeys))
         return
     end
@@ -782,28 +819,119 @@ local function handleTelegramCommand(text)
         for _, p in pairs(players) do
             totalPlayers = totalPlayers + 1
             totalTransactions = totalTransactions + (p.transactions or 0)
-            if p.banned then
-                bannedCount = bannedCount + 1
-            end
+            if p.banned then bannedCount = bannedCount + 1
         end
-    
-        local msg = "📊 **Статистика магазина**\n═══════════════════\n"
+        local msg = "📊 Статистика магазина\n═══════════════════\n"
         msg = msg .. "👥 Игроков: " .. totalPlayers .. "\n"
         msg = msg .. "💰 Транзакций: " .. totalTransactions .. "\n"
         msg = msg .. "🚫 Забанов: " .. bannedCount .. "\n"
         msg = msg .. "👑 Админов: " .. #admins .. "\n"
         msg = msg .. "⏸️ Пауза: " .. (shopPaused and "🔴 Включена" or "🟢 Выключена") .. "\n"
-        sendTelegram(msg, getMainKeyboard())
+        sendTelegram(msg, getReportsKeyboard())
+        return
+    end
+    
+    if text == "Отзывы" then
+        if #feedbacks == 0 then
+            sendTelegram("📝 Отзывов пока нет", getMainKeyboard())
+            return
+        end
+        local msg = "📝 Отзывы:\n═══════════════════\n"
+        for i, fb in ipairs(feedbacks) do
+            msg = msg .. i .. ". " .. fb.name .. ":\n   " .. fb.text .. "\n   [" .. (fb.time or "без даты") .. "]\n"
+            msg = msg .. "───────────────────\n"
+        end
+        sendTelegram(msg, '{"keyboard": [["Назад"]], "resize_keyboard": true}')
+        return
+    end
+    
+    if text:match("^Удалить ") then
+        local id = tonumber(text:match("Удалить (%d+)"))
+        if id and id >= 1 and id <= #feedbacks then
+            table.remove(feedbacks, id)
+            saveFeedbacks()
+            sendTelegram("✅ Отзыв удален!", getMainKeyboard())
+        else
+            sendTelegram("❌ Отзыв не найден", getMainKeyboard())
+        end
         return
     end
     
     if text == "Админы" then
-        local msg = "👑 **Администраторы:**\n═══════════════════\n"
+        local msg = "👑 Управление администраторами\n═══════════════════\n"
+        msg = msg .. "Текущие админы:\n"
         for i, name in ipairs(admins) do
             msg = msg .. i .. ". " .. name .. "\n"
         end
-        if #admins == 0 then msg = msg .. "Нет администраторов" end
-        sendTelegram(msg, getMainKeyboard())
+        sendTelegram(msg, getAdminKeyboard())
+        return
+    end
+    
+    if text == "Добавить админа" then
+        sendTelegram("👑 Введите ник игрока для добавления в администраторы:", '{"keyboard": [["Назад"]], "resize_keyboard": true}')
+        return
+    end
+    
+    if text == "Удалить админа" then
+        sendTelegram("👑 Введите ник игрока для удаления из администраторов:", '{"keyboard": [["Назад"]], "resize_keyboard": true}')
+        return
+    end
+    
+    -- Проверка на добавление админа
+    if text ~= "Назад" and text ~= "Игроки" and text ~= "Статистика" and text ~= "Админы" and text ~= "Пауза" and text ~= "Обновить" and text ~= "Закрыть" and text ~= "Добавить предмет" and text ~= "Баланс" and text ~= "Добавить админа" and text ~= "Удалить админа" and text ~= "Отзывы" and not text:match("^Удалить ") and not text:match("^/additem") and not text:match("^/") then
+        -- Проверяем, есть ли такой игрок
+        local found = false
+        for name, data in pairs(players) do
+            if name:lower() == text:lower() then
+                local msg = "👤 " .. name .. "\n═══════════════════\n"
+                msg = msg .. "💰 Coina: " .. string.format("%.2f", data.balance or 0) .. " ₵\n"
+                msg = msg .. "💚 ЭМЫ: " .. string.format("%.2f", data.emaBalance or 0) .. " ۞\n"
+                msg = msg .. "📊 Транзакций: " .. (data.transactions or 0) .. "\n"
+                if data.banned then 
+                    msg = msg .. "🚫 Забанен\n"
+                else
+                    msg = msg .. "✅ Активен\n"
+                end
+                msg = msg .. "\nВыберите действие:"
+                sendTelegram(msg, '{"keyboard": [["Изменить баланс", "Бан/Разбан"], ["Назад"]], "resize_keyboard": true}')
+                found = true
+                return
+            end
+        end
+        
+        -- Если не нашли игрока, пробуем добавить админа
+        if not found then
+            -- Проверяем, не является ли это добавлением админа
+            if not players[text] and not isAdmin(text) then
+                -- Добавляем админа
+                if addAdmin(text) then
+                    sendTelegram("👑 " .. text .. " добавлен в администраторы!", getMainKeyboard())
+                else
+                    sendTelegram("❌ Ошибка: " .. text .. " уже является администратором", getMainKeyboard())
+                end
+                return
+            end
+            -- Удаляем админа
+            if isAdmin(text) then
+                if removeAdmin(text) then
+                    sendTelegram("👑 " .. text .. " удален из администраторов!", getMainKeyboard())
+                else
+                    sendTelegram("❌ Нельзя удалить последнего администратора!", getMainKeyboard())
+                end
+                return
+            end
+            sendTelegram("❌ Игрок " .. text .. " не найден!", getMainKeyboard())
+        end
+        return
+    end
+    
+    if text == "Изменить баланс" then
+        sendTelegram("💰 Введите сумму для изменения баланса (Coin + ЭМЫ через пробел, например: 100 50):", '{"keyboard": [["Назад"]], "resize_keyboard": true}')
+        return
+    end
+    
+    if text == "Бан/Разбан" then
+        sendTelegram("🔒 Введите ник игрока для бана/разбана:", '{"keyboard": [["Назад"]], "resize_keyboard": true}')
         return
     end
     
@@ -812,28 +940,29 @@ local function handleTelegramCommand(text)
         for addr in pairs(markets) do
             modem.send(addr, 0xffef, serialization.serialize({op="shop_paused", paused=shopPaused}))
         end
-        sendTelegram("⏸️ Магазин **" .. (shopPaused and "🔴 ПРИОСТАНОВЛЕН" or "🟢 ВОЗОБНОВЛЕН") .. "**", getMainKeyboard())
+        sendTelegram("⏸️ Магазин " .. (shopPaused and "ПРИОСТАНОВЛЕН" or "ВОЗОБНОВЛЕН"), getMainKeyboard())
         return
     end
     
     if text == "Обновить" then
         local sent = broadcastUpdate()
-        sendTelegram("✅ **Обновление отправлено** " .. sent .. " терминалам!", getMainKeyboard())
+        sendTelegram("✅ Обновление отправлено " .. sent .. " терминалам!", getMainKeyboard())
         return
     end
     
     if text == "Закрыть" then
         local sent = broadcastKill()
-        sendTelegram("🚫 **Магазин закрыт!** " .. sent .. " терминалов отключены.", getMainKeyboard())
+        sendTelegram("🚫 Магазин закрыт! " .. sent .. " терминалов отключены.", getMainKeyboard())
         return
     end
     
     if text == "Добавить предмет" then
-        local msg = "📦 **Добавление предмета**\n\n"
+        local msg = "📦 Добавление предмета\n\n"
         msg = msg .. "Отправьте команду:\n"
-        msg = msg .. "`/additem internalName displayName цена_coin цена_ema`\n\n"
-        msg = msg .. "📌 **Пример:**\n"
-        msg = msg .. "`/additem minecraft:diamond Алмаз 10 5`"
+        msg = msg .. "/additem internalName displayName цена_coin цена_ema damage\n\n"
+        msg = msg .. "📌 Пример:\n"
+        msg = msg .. "/additem minecraft:diamond Алмаз 10 5 0\n\n"
+        msg = msg .. "Где damage = 0 если не нужен"
         sendTelegram(msg, getMainKeyboard())
         return
     end
@@ -841,59 +970,44 @@ local function handleTelegramCommand(text)
     if text:match("^/additem") then
         local parts = {}
         for part in text:gmatch("%S+") do table.insert(parts, part) end
-        if #parts >= 4 then
+        if #parts >= 5 then
             local internal = parts[2]
             local display = parts[3]
             local coin = tonumber(parts[4]) or 0
             local ema = tonumber(parts[5]) or 0
+            local damage = tonumber(parts[6]) or 0
             if coin < 0 then coin = 0 end
             if ema < 0 then ema = 0 end
+            if damage < 0 then damage = 0 end
             if coin == 0 and ema == 0 then
-                sendTelegram("❌ **Ошибка!**\nЦена не может быть нулевой", getMainKeyboard())
+                sendTelegram("❌ Ошибка! Цена не может быть нулевой", getMainKeyboard())
                 return
             end
             local buyItems = {}
             if filesystem.exists("/home/buy_items.lua") then
                 buyItems = dofile("/home/buy_items.lua") or {}
             end
-            table.insert(buyItems, { internalName = internal, displayName = display, price_coin = coin, price_ema = ema, damage = 0 })
+            table.insert(buyItems, { internalName = internal, displayName = display, price_coin = coin, price_ema = ema, damage = damage })
             local file = io.open("/home/buy_items.lua", "w")
             file:write("return " .. serialization.serialize(buyItems))
             file:close()
             broadcastUpdate()
-            local msg = "✅ **Предмет добавлен!**\n📦 " .. display .. "\n💰 " .. coin .. " ₵\n💚 " .. ema .. " ۞"
+            local msg = "✅ Предмет добавлен!\n📦 " .. display .. "\n💰 " .. coin .. " ₵\n💚 " .. ema .. " ۞\n🔢 Damage: " .. damage
             sendTelegram(msg, getMainKeyboard())
         else
-            sendTelegram("❌ **Ошибка!**\nФормат: `/additem internalName displayName цена_coin цена_ema`", getMainKeyboard())
+            sendTelegram("❌ Ошибка!\nФормат: /additem internalName displayName цена_coin цена_ema damage", getMainKeyboard())
         end
         return
     end
     
     if text == "Баланс" then
-        sendTelegram("💰 **Баланс игрока**\n\nВведите имя игрока:", '{"keyboard": [["Назад"]], "resize_keyboard": true}')
-        return
-    end
-    
-    -- Проверка имени игрока
-    if text ~= "Назад" and text ~= "Игроки" and text ~= "Статистика" and text ~= "Админы" and text ~= "Пауза" and text ~= "Обновить" and text ~= "Закрыть" and text ~= "Добавить предмет" and text ~= "Баланс" and not text:match("^/") then
-        for name, data in pairs(players) do
-            if name:lower() == text:lower() then
-                local msg = "👤 **" .. name .. "**\n═══════════════════\n"
-                msg = msg .. "💰 Coina: " .. string.format("%.2f", data.balance or 0) .. " ₵\n"
-                msg = msg .. "💚 ЭМЫ: " .. string.format("%.2f", data.emaBalance or 0) .. " ۞\n"
-                msg = msg .. "📊 Транзакций: " .. (data.transactions or 0) .. "\n"
-                if data.banned then msg = msg .. "🚫 **Забанен**" else msg = msg .. "✅ **Активен**" end
-                sendTelegram(msg, getMainKeyboard())
-                return
-            end
-        end
-        sendTelegram("❌ Игрок **" .. text .. "** не найден!", getMainKeyboard())
+        sendTelegram("💰 Введите имя игрока для просмотра баланса:", '{"keyboard": [["Назад"]], "resize_keyboard": true}')
         return
     end
 end
 
 -- ============================================
--- ФУНКЦИЯ ПРОВЕРКИ ОБНОВЛЕНИЙ TELEGRAM
+-- ФУНКЦИЯ ПРОВЕРКИ ОБНОВЛЕНИЙ TELEGRAM (БЕЗ ЛОГОВ)
 -- ============================================
 local function checkTelegramUpdates()
     -- Читаем lastUpdateId из файла
@@ -928,8 +1042,6 @@ local function checkTelegramUpdates()
     
     -- Парсим update_id
     local maxId = lastUpdateId
-    local foundMessages = false
-    
     for updateId in responseData:gmatch('"update_id":(%d+)') do
         local id = tonumber(updateId)
         if id and id > maxId then
@@ -937,21 +1049,16 @@ local function checkTelegramUpdates()
         end
     end
     
-    -- Парсим тексты
+    -- Парсим тексты (без логов!)
     for text in responseData:gmatch('"text":"([^"]+)"') do
         local decoded = text:gsub("\\u([0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F])", function(hex)
             return unicode.char(tonumber(hex, 16))
         end)
-        print("📥 Получено: " .. decoded)
         handleTelegramCommand(decoded)
-        foundMessages = true
     end
     
-    -- Обновляем lastUpdateId только если есть новые сообщения
     if maxId > lastUpdateId then
         lastUpdateId = maxId
-        print("📌 lastUpdateId обновлён: " .. lastUpdateId)
-        
         -- Сохраняем в файл
         local f2 = io.open("/tmp/last_id.txt", "w")
         if f2 then
@@ -1071,7 +1178,6 @@ end
 local function handleKey(key, char, player)
     local isPlayerAdmin = isAdmin(player)
 
-    -- Обработка режима добавления админа
     if addAdminMode then
         if char == 27 or char == 93 then
             addAdminMode = false
@@ -1106,7 +1212,6 @@ local function handleKey(key, char, player)
         return
     end
 
-    -- Обработка режима добавления предмета
     if addItemMode then
         if char == 27 or char == 93 then
             addItemMode = false
@@ -1201,7 +1306,6 @@ local function handleKey(key, char, player)
         return
     end
 
-    -- Обработка режима редактирования баланса
     if editBalanceMode then
         if char == 27 or char == 93 then
             editBalanceMode = false
@@ -1247,7 +1351,6 @@ local function handleKey(key, char, player)
         return  
     end
 
-    -- Обработка админ-режима
     if adminMode then
         if not isPlayerAdmin then
             adminMode = false
@@ -1379,7 +1482,7 @@ local function handleKey(key, char, player)
             return
         end
     end
-end  -- Этот end закрывает функцию handleKey
+end
 
 local function handleTouch(x, y, player)
     if not adminMode or editBalanceMode or addItemMode or addAdminMode then return end
@@ -1399,7 +1502,7 @@ end
 -- ============================================
 local function main()
     log("SUCCESS", "🚀 Сервер запущен. Администраторы: " .. table.concat(admins, ", "))
-    sendTelegram("🤖 **PIM Market Бот запущен!**\n\nНажмите /start для начала работы.", getMainKeyboard())
+    sendTelegram("🤖 PIM Market Бот запущен!\nНажмите /start для начала работы.", getMainKeyboard())
     drawInterface()
 
     local lastTelegramCheck = 0
@@ -1414,7 +1517,6 @@ local function main()
             local ok, err = pcall(checkTelegramUpdates)
             if not ok then
                 print("❌ Ошибка Telegram: " .. tostring(err))
-                -- Не вылетаем, просто продолжаем
             end
         end
 
@@ -1549,11 +1651,11 @@ local function main()
                 if internalName == "customnpcs:npcMoney" then
                     player.emaBalance = (player.emaBalance or 0) + value
                     log("SUCCESS", "💚 " .. msg.name .. " пополнил ЭМЫ: " .. (msg.item or "?") .. " x" .. qty .. " на " .. string.format("%.2f", value) .. " ۞")
-                    sendTelegram("💰 **Пополнение!**\n👤 " .. msg.name .. "\n📦 " .. (msg.item or "?") .. " x" .. qty .. "\n💚 +" .. string.format("%.2f", value) .. " ۞")
+                    sendTelegram("💰 Пополнение!\n👤 " .. msg.name .. "\n📦 " .. (msg.item or "?") .. " x" .. qty .. "\n💚 +" .. string.format("%.2f", value) .. " ۞")
                 else
                     player.balance = (player.balance or 0) + value
                     log("SUCCESS", "💰 " .. msg.name .. " пополнил Coina: " .. (msg.item or "?") .. " x" .. qty .. " на " .. string.format("%.2f", value) .. " ₵")
-                    sendTelegram("💰 **Пополнение!**\n👤 " .. msg.name .. "\n📦 " .. (msg.item or "?") .. " x" .. qty .. "\n💰 +" .. string.format("%.2f", value) .. " ₵")
+                    sendTelegram("💰 Пополнение!\n👤 " .. msg.name .. "\n📦 " .. (msg.item or "?") .. " x" .. qty .. "\n💰 +" .. string.format("%.2f", value) .. " ₵")
                 end
                 player.transactions = (player.transactions or 0) + 1
                 sessions[msg.name].lastAction = os.time()
@@ -1608,7 +1710,7 @@ local function main()
                     priceStr = priceStr .. string.format("%.2f", value_ema) .. "۞"
                 end
                 log("SUCCESS", "🛒 " .. msg.name .. " купил " .. (msg.item or "?") .. " x" .. (msg.qty or 0) .. " за " .. priceStr)
-                sendTelegram("🛒 **Покупка!**\n👤 " .. msg.name .. "\n📦 " .. (msg.item or "?") .. " x" .. (msg.qty or 0) .. "\n💳 " .. priceStr)
+                sendTelegram("🛒 Покупка!\n👤 " .. msg.name .. "\n📦 " .. (msg.item or "?") .. " x" .. (msg.qty or 0) .. "\n💳 " .. priceStr)
                 if not adminMode and not editBalanceMode and not addItemMode then drawInterface() end
                 goto continue
             elseif msg.op == "report" then
@@ -1621,7 +1723,7 @@ local function main()
                 saveGlobalStats()
                 log("IMPORTANT", "📩 Репорт от " .. msg.name .. " (" .. msg.time .. ")")
                 log("INFO", "   Текст: " .. (msg.text or ""))
-                sendTelegram("📩 **Репорт!**\n👤 " .. msg.name .. "\n📝 " .. (msg.text or ""))
+                sendTelegram("📩 Репорт!\n👤 " .. msg.name .. "\n📝 " .. (msg.text or ""))
                 local file = io.open("/home/reports.log", "a")
                 if file then
                     file:write("[" .. msg.time .. "] " .. msg.name .. ": " .. msg.text .. "\n")
@@ -1644,7 +1746,7 @@ local function main()
                     saveDB()
                     sessions[msg.name].lastAction = os.time()
                     log("IMPORTANT", "📝 " .. msg.name .. " принял пользовательское соглашение")
-                    sendTelegram("📝 **Соглашение принято!**\n👤 " .. msg.name)
+                    sendTelegram("📝 Соглашение принято!\n👤 " .. msg.name)
                     modem.send(from, 0xffef, serialization.serialize({ op = "agree", success = true, agreed = true }))
                 else
                     modem.send(from, 0xffef, serialization.serialize({ op = "agree", error = true, message = "Игрок не найден" }))
@@ -1728,7 +1830,6 @@ while true do
     local ok, err = pcall(main)
     if not ok then
         print("❌ Ошибка сервера: " .. tostring(err))
-        -- Перерисовываем интерфейс после ошибки
         pcall(drawInterface)
         os.sleep(5)
     end

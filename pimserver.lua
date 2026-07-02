@@ -896,7 +896,7 @@ local function handleWebCommand(msg, from)
             bannedCount = bannedCount,
             adminsCount = #admins,
             shopPaused = shopPaused,
-            onlineCount = 0 -- Можно добавить подсчет онлайн игроков
+            onlineCount = 0
         }))
         
     elseif msg.command == "get_logs" then

@@ -10,21 +10,57 @@ local computer = require("computer")
 local internet = require("internet")
 local TIMEZONE_OFFSET = 3 * 3600 
 
-local modem = component.modem
-modem.open(0xffef)
-modem.open(0xfffe)
+-- ============================================
+-- СИСТЕМА ПОДРОБНОГО ЛОГИРОВАНИЯ
+-- ============================================
+local function writeDebugLog(msg, level)
+    level = level or "INFO"
+    local file = io.open("/home/pimserver_detailed.log", "a")
+    if file then
+        file:write(os.date("%Y-%m-%d %H:%M:%S") .. " | [" .. level .. "] | " .. msg .. "\n")
+        file:close()
+    end
+    -- Также выводим в консоль для наглядности
+    if level == "ERROR" or level == "CRITICAL" then
+        print("❌ " .. msg)
+    elseif level == "WARNING" then
+        print("⚠️ " .. msg)
+    else
+        print("📋 " .. msg)
+    end
+end
 
+writeDebugLog("=== НАЧАЛО ЗАГРУЗКИ СЕРВЕРА ===", "CRITICAL")
+writeDebugLog("Версия: 1.0", "INFO")
+writeDebugLog("Время запуска: " .. os.date("%Y-%m-%d %H:%M:%S"), "INFO")
+
+local modem = component.modem
+writeDebugLog("Modem получен", "INFO")
+
+modem.open(0xffef)
+writeDebugLog("Порт 0xffef открыт", "INFO")
+modem.open(0xfffe)
+writeDebugLog("Порт 0xfffe открыт", "INFO")
+
+writeDebugLog("Установка игнорирования событий...", "INFO")
 event.ignore("interrupted", function() end)
 event.ignore("terminate", function() end)
+writeDebugLog("Игнорирование событий настроено", "INFO")
 
 -- ============================================
 -- TELEGRAM НАСТРОЙКИ
 -- ============================================
+writeDebugLog("Загрузка Telegram настроек...", "INFO")
 local TELEGRAM_TOKEN = "8780133006:AAF2Zg7Dv_mr-E1-bgVuGDVsKYvyuwizuaE"
 local TELEGRAM_CHAT_ID = "492178371"
+writeDebugLog("Telegram токен загружен", "INFO")
 
+writeDebugLog("Инициализация tmpfs...", "INFO")
 local tmpfs = component.proxy(computer.tmpAddress())
+writeDebugLog("tmpfs инициализирован", "INFO")
+
 local function getRealTimestamp()
+    writeDebugLog("getRealTimestamp вызван", "DEBUG")
     local handle = tmpfs.open("/time", "w")
     tmpfs.write(handle, "time")
     tmpfs.close(handle)
@@ -38,6 +74,8 @@ end
 local function getRealDateTimeString()
     return os.date("%d.%m.%Y %H:%M:%S", getRealTimestamp())
 end
+
+writeDebugLog("Функции времени созданы", "INFO")
 
 local ansi = {
     reset   = "\27[0m",
@@ -55,6 +93,7 @@ local ansi = {
     hide_cursor = "\27[?25l",
     show_cursor = "\27[?25h"
 }
+writeDebugLog("ANSI коды загружены", "INFO")
 
 local function setColor(fg, bg)
     io.write(fg or "")
@@ -76,6 +115,8 @@ local function fill(x, y, w, h, char)
     end
 end
 
+writeDebugLog("Функции отрисовки созданы", "INFO")
+
 local function timeToMidnight()
     local now = getRealTimestamp()
     local dt = os.date("*t", now)
@@ -88,31 +129,44 @@ local function timeToMidnight()
 end
 
 local ACCESS_PASSWORD = "secret"
+writeDebugLog("Пароль доступа загружен", "INFO")
 
 -- ===== СИСТЕМА АДМИНИСТРАТОРОВ =====
+writeDebugLog("Загрузка системы администраторов...", "INFO")
 local ADMINS_PATH = "/home/admins.db"
 local admins = {}
 
 if filesystem.exists(ADMINS_PATH) then
+    writeDebugLog("Файл админов найден", "INFO")
     local file = io.open(ADMINS_PATH, "r")
     if file then
         local raw = file:read("*a")
         file:close()
         if raw and #raw > 0 then
+            writeDebugLog("Загрузка данных админов, размер: " .. #raw .. " байт", "INFO")
             local success, data = pcall(serialization.unserialize, raw)
             if success and type(data) == "table" then
                 admins = data
+                writeDebugLog("Загружено админов: " .. #admins, "INFO")
+            else
+                writeDebugLog("Ошибка десериализации админов", "WARNING")
             end
+        else
+            writeDebugLog("Файл админов пуст", "WARNING")
         end
     end
+else
+    writeDebugLog("Файл админов не найден, создаем новый", "WARNING")
 end
 
 if #admins == 0 then
+    writeDebugLog("Создание администратора по умолчанию: ZoziDo", "INFO")
     admins = {"ZoziDo"}
     local file = io.open(ADMINS_PATH, "w")
     if file then
         file:write(serialization.serialize(admins))
         file:close()
+        writeDebugLog("Администратор сохранен", "INFO")
     end
 end
 
@@ -154,20 +208,35 @@ local function removeAdmin(playerName)
     return false
 end
 
+writeDebugLog("Система администраторов загружена", "INFO")
+
 -- ===== ДАННЫЕ =====
+writeDebugLog("Загрузка базы данных игроков...", "INFO")
 local DB_PATH = "/home/players.db"
 local players = {}
 if filesystem.exists(DB_PATH) then
+    writeDebugLog("Файл игроков найден", "INFO")
     local file = io.open(DB_PATH, "r")
     local raw = file:read("*a")
     file:close()
     if raw and #raw > 0 then
+        writeDebugLog("Загрузка данных игроков, размер: " .. #raw .. " байт", "INFO")
         local success, data = pcall(serialization.unserialize, raw)
-        if success and data then players = data end
+        if success and data then 
+            players = data
+            writeDebugLog("Загружено игроков: " .. #players, "INFO")
+        else
+            writeDebugLog("Ошибка десериализации игроков", "ERROR")
+        end
+    else
+        writeDebugLog("Файл игроков пуст", "WARNING")
     end
+else
+    writeDebugLog("Файл игроков не найден, создаем новый", "WARNING")
 end
 
 local function saveDB()
+    writeDebugLog("Сохранение базы данных игроков", "DEBUG")
     local file = io.open(DB_PATH, "w")
     file:write(serialization.serialize(players))
     file:close()
@@ -176,6 +245,7 @@ end
 local STATS_PATH = "/home/global_stats.db"
 local globalStats = { totalReports = 0, totalBuys = 0, totalSells = 0 }
 if filesystem.exists(STATS_PATH) then
+    writeDebugLog("Файл статистики найден", "INFO")
     local file = io.open(STATS_PATH, "r")
     local raw = file:read("*a")
     file:close()
@@ -185,17 +255,24 @@ if filesystem.exists(STATS_PATH) then
             globalStats.totalReports = data.totalReports or 0
             globalStats.totalBuys = data.totalBuys or 0
             globalStats.totalSells = data.totalSells or 0
+            writeDebugLog("Статистика загружена: Reports=" .. globalStats.totalReports .. ", Buys=" .. globalStats.totalBuys .. ", Sells=" .. globalStats.totalSells, "INFO")
         end
     end
+else
+    writeDebugLog("Файл статистики не найден, создаем новый", "WARNING")
 end
 
 local function saveGlobalStats()
+    writeDebugLog("Сохранение глобальной статистики", "DEBUG")
     local file = io.open(STATS_PATH, "w")
     file:write(serialization.serialize(globalStats))
     file:close()
 end
 
+writeDebugLog("База данных загружена", "INFO")
+
 -- ===== ПЕРЕМЕННЫЕ =====
+writeDebugLog("Инициализация переменных...", "INFO")
 local owner = nil
 local sessions = {}
 local markets = {}
@@ -223,6 +300,7 @@ local sellHistory = {}
 local MAX_SELL_HISTORY = 20
 local ACTIVITY_SIZE = 60
 local activityBuffer = {}
+writeDebugLog("Создание буфера активности...", "INFO")
 for i=1, ACTIVITY_SIZE do activityBuffer[i] = 0 end
 local activityIndex = 0
 local screenW, screenH = 80, 25
@@ -233,19 +311,10 @@ local maxLogLines = 14
 local drawing = false
 local lastUpdateId = 0
 local lastKeyTime = 0
-
--- ============================================
--- ФУНКЦИЯ ДЛЯ ЛОГИРОВАНИЯ ОШИБОК
--- ============================================
-local function writeDebugLog(msg)
-    local file = io.open("/home/debug.log", "a")
-    if file then
-        file:write(os.date("%Y-%m-%d %H:%M:%S") .. " | " .. msg .. "\n")
-        file:close()
-    end
-end
+writeDebugLog("Переменные инициализированы", "INFO")
 
 local function updateScreenSize()
+    writeDebugLog("updateScreenSize вызван", "DEBUG")
     local w, h = gpu.getResolution()
     if w > 200 then w = 200 end
     if w < 80 then w = 80 end
@@ -262,10 +331,14 @@ local function updateScreenSize()
 end
 
 local function addActivity()
+    writeDebugLog("addActivity вызван", "DEBUG")
     activityIndex = activityIndex % ACTIVITY_SIZE + 1
     activityBuffer[activityIndex] = 0
 end
+
+writeDebugLog("Установка таймера активности...", "INFO")
 event.timer(60, addActivity, math.huge)
+writeDebugLog("Таймер активности установлен", "INFO")
 
 local function recordTransaction()
     if activityBuffer[activityIndex] then
@@ -333,6 +406,7 @@ local function logIncoming(from, msg)
 end
 
 local function updateAdminPlayerList()
+    writeDebugLog("updateAdminPlayerList вызван", "DEBUG")
     adminPlayerList = {}
     for name, data in pairs(players) do
         table.insert(adminPlayerList, {name=name, data=data})
@@ -341,6 +415,7 @@ local function updateAdminPlayerList()
 end
 
 local function broadcastUpdate()
+    writeDebugLog("broadcastUpdate вызван", "INFO")
     if next(markets) == nil then
         addLog("Нет подключённых маркетов для обновления", ansi.red)
         return 0
@@ -355,6 +430,7 @@ local function broadcastUpdate()
 end
 
 local function broadcastKill()
+    writeDebugLog("broadcastKill вызван", "INFO")
     if next(markets) == nil then
         addLog("Нет подключённых маркетов для завершения", ansi.red)
         return 0
@@ -369,6 +445,7 @@ local function broadcastKill()
 end
 
 local function drawAdminPanel()
+    writeDebugLog("drawAdminPanel вызван", "DEBUG")
     if drawing then return end
     drawing = true
     io.write(ansi.hide_cursor .. ansi.clear)
@@ -570,6 +647,7 @@ local function drawAddItemForm()
 end
 
 function drawInterface()
+    writeDebugLog("drawInterface вызван", "DEBUG")
     if adminMode or editBalanceMode or addItemMode or addAdminMode then return end
     if drawing then return end
     drawing = true
@@ -700,6 +778,7 @@ function drawInterface()
 end
 
 local function getOrCreatePlayer(name)
+    writeDebugLog("getOrCreatePlayer: " .. name, "DEBUG")
     if not players[name] then
         players[name] = {
             balance = 0.0,
@@ -725,7 +804,10 @@ end
 -- TELEGRAM ФУНКЦИИ
 -- ============================================
 
+writeDebugLog("Инициализация Telegram функций...", "INFO")
+
 local function sendTelegram(text, keyboard)
+    writeDebugLog("sendTelegram вызван, длина текста: " .. #text, "DEBUG")
     if not text then return false end
     local encodedText = text:gsub(" ", "%%20"):gsub("\n", "%%0A"):gsub("#", "%%23"):gsub("&", "%%26")
     local url = "https://api.telegram.org/bot" .. TELEGRAM_TOKEN .. "/sendMessage"
@@ -775,6 +857,7 @@ end
 -- Хранилище для отзывов
 local feedbacks = {}
 if filesystem.exists("/home/feedbacks.db") then
+    writeDebugLog("Загрузка отзывов...", "INFO")
     local file = io.open("/home/feedbacks.db", "r")
     if file then
         local data = file:read("*a")
@@ -783,12 +866,14 @@ if filesystem.exists("/home/feedbacks.db") then
             local ok, result = pcall(serialization.unserialize, data)
             if ok and type(result) == "table" then
                 feedbacks = result
+                writeDebugLog("Загружено отзывов: " .. #feedbacks, "INFO")
             end
         end
     end
 end
 
 local function saveFeedbacks()
+    writeDebugLog("Сохранение отзывов", "DEBUG")
     local file = io.open("/home/feedbacks.db", "w")
     if file then
         file:write(serialization.serialize(feedbacks))
@@ -798,7 +883,10 @@ local function saveFeedbacks()
     return false
 end
 
+writeDebugLog("Telegram функции инициализированы", "INFO")
+
 local function handleTelegramCommand(text)
+    writeDebugLog("handleTelegramCommand: " .. tostring(text), "DEBUG")
     if not text or text == "" then return end
     
     if text == "/start" or text == "Назад" then
@@ -1016,6 +1104,7 @@ end
 -- ФУНКЦИЯ ПРОВЕРКИ ОБНОВЛЕНИЙ TELEGRAM
 -- ============================================
 local function checkTelegramUpdates()
+    writeDebugLog("checkTelegramUpdates начат", "DEBUG")
     local f = io.open("/tmp/last_id.txt", "r")
     if f then
         local data = f:read("*a")
@@ -1035,6 +1124,7 @@ local function checkTelegramUpdates()
     end)
     
     if not success or type(response) ~= "table" then
+        writeDebugLog("checkTelegramUpdates: ошибка запроса", "WARNING")
         return
     end
     
@@ -1072,6 +1162,7 @@ end
 
 -- ===== ВЕБ-АДМИН ОБРАБОТЧИК =====
 local function handleWebCommand(msg, from)
+    writeDebugLog("handleWebCommand: " .. msg.command, "DEBUG")
     if not isAdmin(msg.admin_name) then
         modem.send(from, 0xffef, serialization.serialize({op="web_response", error="Доступ запрещен"}))
         return
@@ -1178,9 +1269,9 @@ end
 -- ===== ОСНОВНЫЕ ОБРАБОТЧИКИ =====
 
 local function handleKey(key, char, player)
+    writeDebugLog("handleKey: key=" .. tostring(key) .. ", char=" .. tostring(char) .. ", player=" .. tostring(player), "DEBUG")
     local isPlayerAdmin = isAdmin(player)
     
-    -- Защита от слишком быстрых нажатий
     local currentTime = os.time()
     if currentTime - lastKeyTime < 0.15 then
         return
@@ -1494,6 +1585,7 @@ local function handleKey(key, char, player)
 end
 
 local function handleTouch(x, y, player)
+    writeDebugLog("handleTouch: x=" .. x .. ", y=" .. y .. ", player=" .. tostring(player), "DEBUG")
     if not adminMode or editBalanceMode or addItemMode or addAdminMode then return end
     if not isAdmin(player) then return end
     if y >= 4 and y <= 3 + adminViewHeight then
@@ -1509,41 +1601,51 @@ end
 -- ============================================
 -- ОСНОВНОЙ ЦИКЛ
 -- ============================================
+writeDebugLog("=== ЗАПУСК ОСНОВНОГО ЦИКЛА ===", "CRITICAL")
+
 local function main()
+    writeDebugLog("main() вызвана", "CRITICAL")
     log("SUCCESS", "🚀 Сервер запущен. Администраторы: " .. table.concat(admins, ", "))
     sendTelegram("🤖 PIM Market Бот запущен!\nНажмите /start для начала работы.", getMainKeyboard())
     drawInterface()
+    writeDebugLog("Интерфейс отрисован", "INFO")
 
     local lastTelegramCheck = 0
     local telegramCheckInterval = 2
 
     while true do
+        writeDebugLog("Ожидание события...", "DEBUG")
         local ev = {event.pull(0.1)}
         local etype = ev[1]
+        writeDebugLog("Получено событие: " .. tostring(etype), "DEBUG")
 
         if os.time() - lastTelegramCheck > telegramCheckInterval then
             lastTelegramCheck = os.time()
             local ok, err = pcall(checkTelegramUpdates)
             if not ok then
-                writeDebugLog("main: ОШИБКА checkTelegramUpdates: " .. tostring(err))
+                writeDebugLog("main: ОШИБКА checkTelegramUpdates: " .. tostring(err), "ERROR")
             end
         end
 
         if etype == "key_down" then
+            writeDebugLog("Обработка key_down", "DEBUG")
             local key = ev[4]
             local char = ev[3]
             local player = ev[5]
             handleKey(key, char, player)
         elseif etype == "touch" then
+            writeDebugLog("Обработка touch", "DEBUG")
             local x = ev[3]
             local y = ev[4]
             local player = ev[5]
             handleTouch(x, y, player)
         elseif etype == "modem_message" then
+            writeDebugLog("Обработка modem_message", "DEBUG")
             local from = ev[3]
             local raw = ev[6]
             local success, msg = pcall(serialization.unserialize, raw)
             if not success or not msg or type(msg) ~= "table" then
+                writeDebugLog("Ошибка десериализации modem_message", "WARNING")
                 goto continue
             end
 
@@ -1557,6 +1659,7 @@ local function main()
             logIncoming(from, msg)
 
             if msg.op == "register" then
+                writeDebugLog("Обработка register от " .. from, "DEBUG")
                 if msg.password ~= ACCESS_PASSWORD then
                     modem.send(from, 0xffef, serialization.serialize({op="error", message="Неверный пароль"}))
                     log("WARN", "❌ Попытка подключения с неверным паролем от " .. from)
@@ -1576,6 +1679,7 @@ local function main()
                 if not adminMode and not editBalanceMode and not addItemMode then drawInterface() end
                 goto continue
             elseif msg.op == "enter" then
+                writeDebugLog("Обработка enter от " .. from, "DEBUG")
                 if shopPaused then
                     modem.send(from, 0xffef, serialization.serialize({op="error", message="Магазин на паузе"}))
                     if not adminMode and not editBalanceMode and not addItemMode then drawInterface() end
@@ -1641,6 +1745,7 @@ local function main()
                 if not adminMode and not editBalanceMode and not addItemMode then drawInterface() end
                 goto continue
             elseif msg.op == "sell" then
+                writeDebugLog("Обработка sell от " .. from, "DEBUG")
                 if shopPaused then
                     modem.send(from, 0xffef, serialization.serialize({op="error", message="Магазин на паузе"}))
                     if not adminMode and not editBalanceMode and not addItemMode then drawInterface() end
@@ -1677,6 +1782,7 @@ local function main()
                 if not adminMode and not editBalanceMode and not addItemMode then drawInterface() end
                 goto continue
             elseif msg.op == "buy" then
+                writeDebugLog("Обработка buy от " .. from, "DEBUG")
                 if shopPaused then
                     modem.send(from, 0xffef, serialization.serialize({op="error", message="Магазин на паузе"}))
                     if not adminMode and not editBalanceMode and not addItemMode then drawInterface() end
@@ -1723,6 +1829,7 @@ local function main()
                 if not adminMode and not editBalanceMode and not addItemMode then drawInterface() end
                 goto continue
             elseif msg.op == "report" then
+                writeDebugLog("Обработка report от " .. from, "DEBUG")
                 if not validateSession(msg.name, msg.token) then
                     log("WARN", "❌ Неверный токен для report")
                     if not adminMode and not editBalanceMode and not addItemMode then drawInterface() end
@@ -1743,6 +1850,7 @@ local function main()
                 if not adminMode and not editBalanceMode and not addItemMode then drawInterface() end
                 goto continue
             elseif msg.op == "agree" then
+                writeDebugLog("Обработка agree от " .. from, "DEBUG")
                 if not validateSession(msg.name, msg.token) then
                     log("WARN", "❌ Неверный токен для agree")
                     modem.send(from, 0xffef, serialization.serialize({ op="agree", error = true, message = "Токен устарел" }))
@@ -1835,12 +1943,24 @@ end
 -- ============================================
 -- ЗАПУСК
 -- ============================================
+writeDebugLog("=== ЗАПУСК С ОБРАБОТКОЙ ОШИБОК ===", "CRITICAL")
+
 while true do
+    writeDebugLog("Запуск main()...", "CRITICAL")
     local ok, err = pcall(main)
     if not ok then
-        writeDebugLog("КРИТИЧЕСКАЯ ОШИБКА: " .. tostring(err))
+        writeDebugLog("КРИТИЧЕСКАЯ ОШИБКА: " .. tostring(err), "CRITICAL")
+        writeDebugLog("Стек вызовов:", "CRITICAL")
+        local stack = debug.traceback("", 2)
+        if stack then
+            for line in stack:gmatch("[^\n]+") do
+                writeDebugLog("  " .. line, "ERROR")
+            end
+        end
         print("❌ Ошибка сервера: " .. tostring(err))
+        print("📋 Подробности в /home/pimserver_detailed.log")
         pcall(drawInterface)
+        writeDebugLog("Перезапуск через 5 секунд...", "WARNING")
         os.sleep(5)
     end
 end

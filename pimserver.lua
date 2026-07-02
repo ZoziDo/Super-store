@@ -787,7 +787,7 @@ local function saveFeedbacks()
 end
 
 local function handleTelegramCommand(text)
-    if not text or text == "" then return end  
+    if not text or text == "" then return end
     
     if text == "/start" or text == "Назад" then
         sendTelegram("🛒 PIM Market Admin\n\nВыберите действие:", getMainKeyboard())
@@ -807,7 +807,7 @@ local function handleTelegramCommand(text)
                 break
             end
         end
-        if #playersKeys == 0 then msg = msg .. "Нет игроков" end  -- ← добавил end
+        if #playersKeys == 0 then msg = msg .. "Нет игроков"
         sendTelegram(msg, getPlayersKeyboard(playersKeys))
         return
     end
@@ -819,7 +819,7 @@ local function handleTelegramCommand(text)
         for _, p in pairs(players) do
             totalPlayers = totalPlayers + 1
             totalTransactions = totalTransactions + (p.transactions or 0)
-            if p.banned then bannedCount = bannedCount + 1 end  -- ← добавил end
+            if p.banned then bannedCount = bannedCount + 1
         end
         local msg = "📊 Статистика магазина\n═══════════════════\n"
         msg = msg .. "👥 Игроков: " .. totalPlayers .. "\n"
@@ -877,9 +877,7 @@ local function handleTelegramCommand(text)
         return
     end
     
-    -- Проверка на добавление админа
     if text ~= "Назад" and text ~= "Игроки" and text ~= "Статистика" and text ~= "Админы" and text ~= "Пауза" and text ~= "Обновить" and text ~= "Закрыть" and text ~= "Добавить предмет" and text ~= "Баланс" and text ~= "Добавить админа" and text ~= "Удалить админа" and text ~= "Отзывы" and not text:match("^Удалить ") and not text:match("^/additem") and not text:match("^/") then
-        -- Проверяем, есть ли такой игрок
         local found = false
         for name, data in pairs(players) do
             if name:lower() == text:lower() then
@@ -899,11 +897,8 @@ local function handleTelegramCommand(text)
             end
         end
         
-        -- Если не нашли игрока, пробуем добавить админа
         if not found then
-            -- Проверяем, не является ли это добавлением админа
             if not players[text] and not isAdmin(text) then
-                -- Добавляем админа
                 if addAdmin(text) then
                     sendTelegram("👑 " .. text .. " добавлен в администраторы!", getMainKeyboard())
                 else
@@ -911,7 +906,6 @@ local function handleTelegramCommand(text)
                 end
                 return
             end
-            -- Удаляем админа
             if isAdmin(text) then
                 if removeAdmin(text) then
                     sendTelegram("👑 " .. text .. " удален из администраторов!", getMainKeyboard())
@@ -1004,7 +998,7 @@ local function handleTelegramCommand(text)
         sendTelegram("💰 Введите имя игрока для просмотра баланса:", '{"keyboard": [["Назад"]], "resize_keyboard": true}')
         return
     end
-end
+end   -- <-- ЭТО end ЗАКРЫВАЕТ ФУНКЦИЮ handleTelegramCommand
 
 -- ============================================
 -- ФУНКЦИЯ ПРОВЕРКИ ОБНОВЛЕНИЙ TELEGRAM (БЕЗ ЛОГОВ)

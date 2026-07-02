@@ -728,38 +728,36 @@ local function sendTelegram(text, keyboard)
 end
 
 local function getMainKeyboard()
-    return '{"keyboard": [["👥 Игроки", "📊 Статистика"], ["💰 Баланс", "👑 Админы"], ["📦 Добавить предмет", "🔄 Обновить"], ["⏸️ Пауза", "🚫 Закрыть"]], "resize_keyboard": true}'
+    return '{"keyboard": [["Игроки", "Статистика"], ["Баланс", "Админы"], ["Добавить предмет", "Обновить"], ["Пауза", "Закрыть"]], "resize_keyboard": true}'
 end
 
 local function getPlayersKeyboard(playersList)
     local keyboard = '{"keyboard": ['
     local row = {}
-    local count = 0
     for i, name in ipairs(playersList) do
         table.insert(row, '"' .. name .. '"')
-        count = count + 1
         if #row == 2 then
             keyboard = keyboard .. '[' .. table.concat(row, ",") .. '],'
             row = {}
         end
-        if count >= 10 then break end
+        if i >= 10 then break end
     end
     if #row > 0 then
         keyboard = keyboard .. '[' .. table.concat(row, ",") .. '],'
     end
-    keyboard = keyboard .. '["🔙 Назад"]], "resize_keyboard": true}'
+    keyboard = keyboard .. '["Назад"]], "resize_keyboard": true}'
     return keyboard
 end
 
 local function handleTelegramCommand(text)
     if not text or text == "" then return end
     
-    if text == "/start" or text == "🔙 Назад" then
+    if text == "/start" or text == "Назад" then
         sendTelegram("🛒 **PIM Market Admin**\n\nВыберите действие:", getMainKeyboard())
         return
     end
     
-    if text == "👥 Игроки" then
+    if text == "Игроки" then
         local msg = "👥 **Список игроков:**\n═══════════════════\n"
         local playersKeys = {}
         for name, data in pairs(players) do
@@ -777,14 +775,14 @@ local function handleTelegramCommand(text)
         return
     end
     
-    if text == "📊 Статистика" then
+    if text == "Статистика" then
         local totalPlayers = 0
         local totalTransactions = 0
         local bannedCount = 0
         for _, p in pairs(players) do
             totalPlayers = totalPlayers + 1
             totalTransactions = totalTransactions + (p.transactions or 0)
-            if p.banned then bannedCount = bannedCount + 1 end
+            if p.banned then bannedCount = bannedCount + 1
         end
         local msg = "📊 **Статистика магазина**\n═══════════════════\n"
         msg = msg .. "👥 Игроков: " .. totalPlayers .. "\n"
@@ -796,7 +794,7 @@ local function handleTelegramCommand(text)
         return
     end
     
-    if text == "👑 Админы" then
+    if text == "Админы" then
         local msg = "👑 **Администраторы:**\n═══════════════════\n"
         for i, name in ipairs(admins) do
             msg = msg .. i .. ". " .. name .. "\n"
@@ -806,7 +804,7 @@ local function handleTelegramCommand(text)
         return
     end
     
-    if text == "⏸️ Пауза" then
+    if text == "Пауза" then
         shopPaused = not shopPaused
         for addr in pairs(markets) do
             modem.send(addr, 0xffef, serialization.serialize({op="shop_paused", paused=shopPaused}))
@@ -815,22 +813,19 @@ local function handleTelegramCommand(text)
         return
     end
     
-    if text == "🔄 Обновить" then
-        print("📤 Получена команда: ОБНОВИТЬ")
+    if text == "Обновить" then
         local sent = broadcastUpdate()
-        print("📤 Отправлено обновление, терминалов: " .. sent)
-        local msg = "✅ **Обновление отправлено** " .. sent .. " терминалам!"
-        sendTelegram(msg, getMainKeyboard())
+        sendTelegram("✅ **Обновление отправлено** " .. sent .. " терминалам!", getMainKeyboard())
         return
     end
     
-    if text == "🚫 Закрыть" then
+    if text == "Закрыть" then
         local sent = broadcastKill()
         sendTelegram("🚫 **Магазин закрыт!** " .. sent .. " терминалов отключены.", getMainKeyboard())
         return
     end
     
-    if text == "📦 Добавить предмет" then
+    if text == "Добавить предмет" then
         local msg = "📦 **Добавление предмета**\n\n"
         msg = msg .. "Отправьте команду:\n"
         msg = msg .. "`/additem internalName displayName цена_coin цена_ema`\n\n"
@@ -871,13 +866,13 @@ local function handleTelegramCommand(text)
         return
     end
     
-    if text == "💰 Баланс" then
-        sendTelegram("💰 **Баланс игрока**\n\nВведите имя игрока:", '{"keyboard": [["🔙 Назад"]], "resize_keyboard": true}')
+    if text == "Баланс" then
+        sendTelegram("💰 **Баланс игрока**\n\nВведите имя игрока:", '{"keyboard": [["Назад"]], "resize_keyboard": true}')
         return
     end
     
-    if not text:match("^/") and text ~= "🔙 Назад" and text ~= "👥 Игроки" and text ~= "📊 Статистика" and text ~= "👑 Админы" and text ~= "⏸️ Пауза" and text ~= "🔄 Обновить" and text ~= "🚫 Закрыть" and text ~= "📦 Добавить предмет" and text ~= "💰 Баланс" then
-        local found = false
+    -- Проверка имени игрока
+    if text ~= "Назад" and text ~= "Игроки" and text ~= "Статистика" and text ~= "Админы" and text ~= "Пауза" and text ~= "Обновить" and text ~= "Закрыть" and text ~= "Добавить предмет" and text ~= "Баланс" and not text:match("^/") then
         for name, data in pairs(players) do
             if name:lower() == text:lower() then
                 local msg = "👤 **" .. name .. "**\n═══════════════════\n"
@@ -886,13 +881,10 @@ local function handleTelegramCommand(text)
                 msg = msg .. "📊 Транзакций: " .. (data.transactions or 0) .. "\n"
                 if data.banned then msg = msg .. "🚫 **Забанен**" else msg = msg .. "✅ **Активен**" end
                 sendTelegram(msg, getMainKeyboard())
-                found = true
-                break
+                return
             end
         end
-        if not found then
-            sendTelegram("❌ Игрок **" .. text .. "** не найден!", getMainKeyboard())
-        end
+        sendTelegram("❌ Игрок **" .. text .. "** не найден!", getMainKeyboard())
         return
     end
 end
@@ -901,16 +893,6 @@ end
 -- ИСПРАВЛЕННАЯ ФУНКЦИЯ checkTelegramUpdates
 -- ============================================
 local function checkTelegramUpdates()
-    -- Читаем lastUpdateId из файла
-    local f = io.open("/tmp/last_id.txt", "r")
-    if f then
-        local data = f:read("*a")
-        f:close()
-        if data and #data > 0 then
-            lastUpdateId = tonumber(data) or 0
-        end
-    end
-    
     local url = "https://api.telegram.org/bot" .. TELEGRAM_TOKEN .. "/getUpdates?limit=5"
     if lastUpdateId > 0 then
         url = url .. "&offset=" .. (lastUpdateId + 1)
@@ -931,39 +913,42 @@ local function checkTelegramUpdates()
         responseData = responseData .. chunk
     end
     
+    -- ПОЛНОСТЬЮ ПЕРЕРАБОТАННЫЙ ПАРСИНГ
     local maxId = lastUpdateId
     
-    -- Ручной парсинг
-    for line in responseData:gmatch("[^\r\n]+") do
-        local updateId = line:match('"update_id":(%d+)')
-        if updateId then
-            local id = tonumber(updateId)
-            if id and id > maxId then
-                maxId = id
-            end
-        end
-        
-        local text = line:match('"text":"([^"]+)"')
-        if text then
-            text = text:gsub("\\u([0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F])", function(hex)
-                return unicode.char(tonumber(hex, 16))
-            end)
-            print("📥 Получено: " .. text)
-            handleTelegramCommand(text)
+    -- Ищем все update_id
+    for updateId in responseData:gmatch('"update_id":(%d+)') do
+        local id = tonumber(updateId)
+        if id and id > maxId then
+            maxId = id
         end
     end
     
-    -- Обновляем lastUpdateId
+    -- Ищем все тексты с правильной конвертацией Unicode
+    for text in responseData:gmatch('"text":"([^"]+)"') do
+        -- Конвертируем \uXXXX в символы
+        local decoded = text:gsub("\\u([0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F])", function(hex)
+            return unicode.char(tonumber(hex, 16))
+        end)
+        
+        -- Дополнительная конвертация для эмодзи (суррогатные пары)
+        decoded = decoded:gsub("\\uD83D\\uDC65", "👥")
+        decoded = decoded:gsub("\\uD83D\\uDCCA", "📊")
+        decoded = decoded:gsub("\\uD83D\\uDCB0", "💰")
+        decoded = decoded:gsub("\\uD83D\\uDC51", "👑")
+        decoded = decoded:gsub("\\uD83D\\uDCE6", "📦")
+        decoded = decoded:gsub("\\u23F8", "⏸️")
+        decoded = decoded:gsub("\\uD83D\\uDD04", "🔄")
+        decoded = decoded:gsub("\\uD83D\\uDEAB", "🚫")
+        decoded = decoded:gsub("\\uD83D\\uDD19", "🔙")
+        
+        print("📥 Получено: " .. decoded)
+        handleTelegramCommand(decoded)
+    end
+    
     if maxId > lastUpdateId then
         lastUpdateId = maxId
         print("📌 lastUpdateId обновлён: " .. lastUpdateId)
-        
-        -- Сохраняем в файл
-        local f2 = io.open("/tmp/last_id.txt", "w")
-        if f2 then
-            f2:write(lastUpdateId)
-            f2:close()
-        end
     end
 end
 

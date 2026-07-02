@@ -816,8 +816,11 @@ local function handleTelegramCommand(text)
     end
     
     if text == "🔄 Обновить" then
+        print("📤 Получена команда: ОБНОВИТЬ")
         local sent = broadcastUpdate()
-        sendTelegram("✅ **Обновление отправлено** " .. sent .. " терминалам!", getMainKeyboard())
+        print("📤 Отправлено обновление, терминалов: " .. sent)
+        local msg = "✅ **Обновление отправлено** " .. sent .. " терминалам!"
+        sendTelegram(msg, getMainKeyboard())
         return
     end
     

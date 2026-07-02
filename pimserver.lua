@@ -808,24 +808,38 @@ writeDebugLog("Инициализация Telegram функций...", "INFO")
 -- Очередь сообщений для асинхронной отправки
 local telegramQueue = {}
 local telegramProcessing = false
+local telegramTimer = nil
 
 -- АСИНХРОННАЯ отправка (не блокирует основной цикл)
-local function sendTelegramAsyncAsync(text, keyboard)
+local function sendTelegramAsync(text, keyboard)
     if not text then return end
+    writeDebugLog("sendTelegramAsync: добавлено в очередь, длина: " .. #text, "DEBUG")
     -- Добавляем в очередь
     table.insert(telegramQueue, {text = text, keyboard = keyboard})
     -- Запускаем обработку если не запущена
     if not telegramProcessing then
         telegramProcessing = true
-        -- Запускаем в отдельном сигнале
-        computer.pushSignal("telegram_process")
+        -- Используем таймер вместо сигнала
+        if telegramTimer then
+            event.cancel(telegramTimer)
+        end
+        telegramTimer = event.timer(0.1, function()
+            processTelegramQueue()
+        end)
     end
 end
 
 -- Обработка очереди сообщений
 local function processTelegramQueue()
+    writeDebugLog("processTelegramQueue: запущена, очередь: " .. #telegramQueue, "DEBUG")
+    
     if #telegramQueue == 0 then
         telegramProcessing = false
+        if telegramTimer then
+            event.cancel(telegramTimer)
+            telegramTimer = nil
+        end
+        writeDebugLog("processTelegramQueue: очередь пуста", "DEBUG")
         return
     end
     
@@ -849,18 +863,32 @@ local function processTelegramQueue()
         postData = postData .. "&reply_markup=" .. keyboard 
     end
     
+    writeDebugLog("processTelegramQueue: отправка запроса", "DEBUG")
+    
     -- Отправляем без ожидания ответа
-    pcall(function()
+    local success = pcall(function()
         internet.request(url, postData, {["Content-Type"] = "application/x-www-form-urlencoded"})
     end)
     
-    -- Продолжаем обработку
-    computer.pushSignal("telegram_process")
+    if not success then
+        writeDebugLog("processTelegramQueue: ОШИБКА отправки", "ERROR")
+    else
+        writeDebugLog("processTelegramQueue: отправлено успешно", "SUCCESS")
+    end
+    
+    -- Продолжаем обработку через таймер
+    if telegramTimer then
+        event.cancel(telegramTimer)
+    end
+    telegramTimer = event.timer(0.1, function()
+        processTelegramQueue()
+    end)
 end
 
 -- СИНХРОННАЯ отправка (ТОЛЬКО для запуска)
-local function sendTelegramAsyncSync(text, keyboard)
+local function sendTelegramSync(text, keyboard)
     if not text then return false end
+    writeDebugLog("sendTelegramSync: синхронная отправка", "DEBUG")
     local encodedText = text:gsub(" ", "%%20"):gsub("\n", "%%0A"):gsub("#", "%%23"):gsub("&", "%%26")
     local url = "https://api.telegram.org/bot" .. TELEGRAM_TOKEN .. "/sendMessage"
     local postData = "chat_id=" .. TELEGRAM_CHAT_ID .. "&text=" .. encodedText
@@ -1685,11 +1713,6 @@ local function main()
     while true do
         local ev = {event.pull(0.5)}
         local etype = ev[1]
-        
-        -- ОБРАБОТКА ОЧЕРЕДИ TELEGRAM (ДОБАВИТЬ!)
-        if etype == "telegram_process" then
-            processTelegramQueue()
-        end
         
         if etype == "key_down" or etype == "modem_message" or etype == "touch" then
             writeDebugLog("Получено событие: " .. tostring(etype), "INFO")

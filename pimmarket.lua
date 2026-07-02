@@ -712,44 +712,32 @@ local function toLowerCase(str)
     return str
 end
 
-    local function getFilteredItems()
-        local filtered = {}
-        local searchLower = toLowerCase(shopSearch)  -- Изменено
-        local searchWords = {}
-        if searchLower ~= "" then
-            for word in searchLower:gmatch("%S+") do
-                table.insert(searchWords, word)
-            end
+local function getFilteredItems()
+    local filtered = {}
+    local searchLower = toLowerCase(shopSearch)
+    local searchWords = {}
+    if searchLower ~= "" then
+        for word in searchLower:gmatch("%S+") do
+            table.insert(searchWords, word)
         end
-    
-          for _, item in ipairs(shopItems) do
-            local nameLower = string.lower(item.displayName or item.internalName)
-            local matchesSearch = false
-            if #searchWords == 0 then
-                matchesSearch = true
-            else
-                for _, word in ipairs(searchWords) do
-                    if string.find(nameLower, word, 1, true) then
-                        matchesSearch = true
-                        break
-                    end
+    end
+
+    for _, item in ipairs(shopItems) do
+        local nameLower = toLowerCase(item.displayName or item.internalName)
+        local matchesSearch = false
+        if #searchWords == 0 then
+            matchesSearch = true
+        else
+            for _, word in ipairs(searchWords) do
+                if string.find(nameLower, word, 1, true) then
+                    matchesSearch = true
+                    break
                 end
             end
-            if matchesSearch then
-                table.insert(filtered, item)
-            end
         end
-    
-        table.sort(filtered, function(a, b)
-            return sortableName(a.displayName) < sortableName(b.displayName)
-        end)
-    
-        maxItemWidth = 0
-        for _, item in ipairs(filtered) do
-            local len = unicode.len(item.displayName or item.internalName or "")
-            if len > maxItemWidth then maxItemWidth = len end
+        if matchesSearch then
+            table.insert(filtered, item)
         end
-        return filtered
     end
 
     table.sort(filtered, function(a, b)

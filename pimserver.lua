@@ -18,25 +18,10 @@ event.ignore("interrupted", function() end)
 event.ignore("terminate", function() end)
 
 -- ============================================
--- СИСТЕМА ЛОГИРОВАНИЯ ДЛЯ ОТЛАДКИ
--- ============================================
-local function writeDebugLog(msg)
-    local file = io.open("/home/debug.log", "a")
-    if file then
-        file:write(os.date("%Y-%m-%d %H:%M:%S") .. " | " .. msg .. "\n")
-        file:close()
-    end
-end
-
-writeDebugLog("=== СЕРВЕР ЗАПУЩЕН ===")
-
--- ============================================
 -- TELEGRAM НАСТРОЙКИ
 -- ============================================
 local TELEGRAM_TOKEN = "8780133006:AAF2Zg7Dv_mr-E1-bgVuGDVsKYvyuwizuaE"
 local TELEGRAM_CHAT_ID = "492178371"
-
-writeDebugLog("Telegram токен загружен")
 
 local tmpfs = component.proxy(computer.tmpAddress())
 local function getRealTimestamp()
@@ -248,6 +233,17 @@ local maxLogLines = 14
 local drawing = false
 local lastUpdateId = 0
 local lastKeyTime = 0
+
+-- ============================================
+-- ФУНКЦИЯ ДЛЯ ЛОГИРОВАНИЯ ОШИБОК
+-- ============================================
+local function writeDebugLog(msg)
+    local file = io.open("/home/debug.log", "a")
+    if file then
+        file:write(os.date("%Y-%m-%d %H:%M:%S") .. " | " .. msg .. "\n")
+        file:close()
+    end
+end
 
 local function updateScreenSize()
     local w, h = gpu.getResolution()
@@ -731,56 +727,23 @@ end
 
 local function sendTelegram(text, keyboard)
     if not text then return false end
-    
-    if #text > 4000 then
-        text = text:sub(1, 3997) .. "..."
-    end
-    
     local encodedText = text:gsub(" ", "%%20"):gsub("\n", "%%0A"):gsub("#", "%%23"):gsub("&", "%%26")
     local url = "https://api.telegram.org/bot" .. TELEGRAM_TOKEN .. "/sendMessage"
     local postData = "chat_id=" .. TELEGRAM_CHAT_ID .. "&text=" .. encodedText
+    if keyboard then postData = postData .. "&reply_markup=" .. keyboard end
     
-    if keyboard then 
-        postData = postData .. "&reply_markup=" .. keyboard
-    end
-    
-    local success, result = pcall(function()
-        local request = internet.request(url, postData, {
-            ["Content-Type"] = "application/x-www-form-urlencoded"
-        })
-        
-        if request then
-            local response = ""
-            while true do
-                local chunk = request()
-                if not chunk then break end
-                response = response .. chunk
-            end
-            if response and response:find('"ok":true') then
-                return true
-            elseif response and response:find('"ok":false') then
-                writeDebugLog("sendTelegram: ОШИБКА API: " .. response)
-                return false
-            end
-            return true
-        end
-        return false
+    local success = pcall(function()
+        internet.request(url, postData, {["Content-Type"] = "application/x-www-form-urlencoded"})
     end)
-    
-    if not success then
-        writeDebugLog("sendTelegram: ошибка: " .. tostring(result))
-        return false
-    end
-    
-    return result
+    return success
 end
 
 local function getMainKeyboard()
-    return '{"keyboard":[["Игроки","Статистика"],["Баланс","Админы"],["Добавить предмет","Обновить"],["Пауза","Закрыть"]],"resize_keyboard":true}'
+    return '{"keyboard": [["Игроки", "Статистика"], ["Баланс", "Админы"], ["Добавить предмет", "Обновить"], ["Пауза", "Закрыть"]], "resize_keyboard": true}'
 end
 
 local function getPlayersKeyboard(playersList)
-    local keyboard = '{"keyboard":['
+    local keyboard = '{"keyboard": ['
     local row = {}
     for i, name in ipairs(playersList) do
         table.insert(row, '"' .. name .. '"')
@@ -793,20 +756,20 @@ local function getPlayersKeyboard(playersList)
     if #row > 0 then
         keyboard = keyboard .. '[' .. table.concat(row, ",") .. '],'
     end
-    keyboard = keyboard .. '["Назад"]],"resize_keyboard":true}'
+    keyboard = keyboard .. '["Назад"]], "resize_keyboard": true}'
     return keyboard
 end
 
 local function getReportsKeyboard()
-    return '{"keyboard":[["Отзывы"],["Назад"]],"resize_keyboard":true}'
+    return '{"keyboard": [["Отзывы"], ["Назад"]], "resize_keyboard": true}'
 end
 
 local function getFeedbackDeleteKeyboard(feedbackId)
-    return '{"keyboard":[["Удалить ' .. feedbackId .. '"],["Назад"]],"resize_keyboard":true}'
+    return '{"keyboard": [["Удалить ' .. feedbackId .. '"], ["Назад"]], "resize_keyboard": true}'
 end
 
 local function getAdminKeyboard()
-    return '{"keyboard":[["Добавить админа","Удалить админа"],["Назад"]],"resize_keyboard":true}'
+    return '{"keyboard": [["Добавить админа", "Удалить админа"], ["Назад"]], "resize_keyboard": true}'
 end
 
 -- Хранилище для отзывов
@@ -836,18 +799,14 @@ local function saveFeedbacks()
 end
 
 local function handleTelegramCommand(text)
-    writeDebugLog("handleTelegramCommand: получен текст: " .. tostring(text))
-    
     if not text or text == "" then return end
     
     if text == "/start" or text == "Назад" then
-        writeDebugLog("handleTelegramCommand: команда /start или Назад")
         sendTelegram("🛒 PIM Market Admin\n\nВыберите действие:", getMainKeyboard())
         return
     end
     
     if text == "Игроки" then
-        writeDebugLog("handleTelegramCommand: команда Игроки")
         local msg = "👥 Список игроков:\n═══════════════════\n"
         local playersKeys = {}
         for name, data in pairs(players) do
@@ -866,7 +825,6 @@ local function handleTelegramCommand(text)
     end
     
     if text == "Статистика" then
-        writeDebugLog("handleTelegramCommand: команда Статистика")
         local totalPlayers = 0
         local totalTransactions = 0
         local bannedCount = 0
@@ -886,7 +844,6 @@ local function handleTelegramCommand(text)
     end
     
     if text == "Отзывы" then
-        writeDebugLog("handleTelegramCommand: команда Отзывы")
         if #feedbacks == 0 then
             sendTelegram("📝 Отзывов пока нет", getMainKeyboard())
             return
@@ -896,12 +853,11 @@ local function handleTelegramCommand(text)
             msg = msg .. i .. ". " .. fb.name .. ":\n   " .. fb.text .. "\n   [" .. (fb.time or "без даты") .. "]\n"
             msg = msg .. "───────────────────\n"
         end
-        sendTelegram(msg, '{"keyboard":[["Назад"]],"resize_keyboard":true}')
+        sendTelegram(msg, '{"keyboard": [["Назад"]], "resize_keyboard": true}')
         return
     end
     
     if text:match("^Удалить ") then
-        writeDebugLog("handleTelegramCommand: команда Удалить")
         local id = tonumber(text:match("Удалить (%d+)"))
         if id and id >= 1 and id <= #feedbacks then
             table.remove(feedbacks, id)
@@ -914,7 +870,6 @@ local function handleTelegramCommand(text)
     end
     
     if text == "Админы" then
-        writeDebugLog("handleTelegramCommand: команда Админы")
         local msg = "👑 Управление администраторами\n═══════════════════\n"
         msg = msg .. "Текущие админы:\n"
         for i, name in ipairs(admins) do
@@ -925,19 +880,16 @@ local function handleTelegramCommand(text)
     end
     
     if text == "Добавить админа" then
-        writeDebugLog("handleTelegramCommand: команда Добавить админа")
-        sendTelegram("👑 Введите ник игрока для добавления в администраторы:", '{"keyboard":[["Назад"]],"resize_keyboard":true}')
+        sendTelegram("👑 Введите ник игрока для добавления в администраторы:", '{"keyboard": [["Назад"]], "resize_keyboard": true}')
         return
     end
     
     if text == "Удалить админа" then
-        writeDebugLog("handleTelegramCommand: команда Удалить админа")
-        sendTelegram("👑 Введите ник игрока для удаления из администраторов:", '{"keyboard":[["Назад"]],"resize_keyboard":true}')
+        sendTelegram("👑 Введите ник игрока для удаления из администраторов:", '{"keyboard": [["Назад"]], "resize_keyboard": true}')
         return
     end
     
     if text ~= "Назад" and text ~= "Игроки" and text ~= "Статистика" and text ~= "Админы" and text ~= "Пауза" and text ~= "Обновить" and text ~= "Закрыть" and text ~= "Добавить предмет" and text ~= "Баланс" and text ~= "Добавить админа" and text ~= "Удалить админа" and text ~= "Отзывы" and not text:match("^Удалить ") and not text:match("^/additem") and not text:match("^/") then
-        writeDebugLog("handleTelegramCommand: обработка ника: " .. text)
         local found = false
         for name, data in pairs(players) do
             if name:lower() == text:lower() then
@@ -951,7 +903,7 @@ local function handleTelegramCommand(text)
                     msg = msg .. "✅ Активен\n"
                 end
                 msg = msg .. "\nВыберите действие:"
-                sendTelegram(msg, '{"keyboard":[["Изменить баланс","Бан/Разбан"],["Назад"]],"resize_keyboard":true}')
+                sendTelegram(msg, '{"keyboard": [["Изменить баланс", "Бан/Разбан"], ["Назад"]], "resize_keyboard": true}')
                 found = true
                 return
             end
@@ -980,19 +932,16 @@ local function handleTelegramCommand(text)
     end
     
     if text == "Изменить баланс" then
-        writeDebugLog("handleTelegramCommand: команда Изменить баланс")
-        sendTelegram("💰 Введите сумму для изменения баланса (Coin + ЭМЫ через пробел, например: 100 50):", '{"keyboard":[["Назад"]],"resize_keyboard":true}')
+        sendTelegram("💰 Введите сумму для изменения баланса (Coin + ЭМЫ через пробел, например: 100 50):", '{"keyboard": [["Назад"]], "resize_keyboard": true}')
         return
     end
     
     if text == "Бан/Разбан" then
-        writeDebugLog("handleTelegramCommand: команда Бан/Разбан")
-        sendTelegram("🔒 Введите ник игрока для бана/разбана:", '{"keyboard":[["Назад"]],"resize_keyboard":true}')
+        sendTelegram("🔒 Введите ник игрока для бана/разбана:", '{"keyboard": [["Назад"]], "resize_keyboard": true}')
         return
     end
     
     if text == "Пауза" then
-        writeDebugLog("handleTelegramCommand: команда Пауза")
         shopPaused = not shopPaused
         for addr in pairs(markets) do
             modem.send(addr, 0xffef, serialization.serialize({op="shop_paused", paused=shopPaused}))
@@ -1002,21 +951,18 @@ local function handleTelegramCommand(text)
     end
     
     if text == "Обновить" then
-        writeDebugLog("handleTelegramCommand: команда Обновить")
         local sent = broadcastUpdate()
         sendTelegram("✅ Обновление отправлено " .. sent .. " терминалам!", getMainKeyboard())
         return
     end
     
     if text == "Закрыть" then
-        writeDebugLog("handleTelegramCommand: команда Закрыть")
         local sent = broadcastKill()
         sendTelegram("🚫 Магазин закрыт! " .. sent .. " терминалов отключены.", getMainKeyboard())
         return
     end
     
     if text == "Добавить предмет" then
-        writeDebugLog("handleTelegramCommand: команда Добавить предмет")
         local msg = "📦 Добавление предмета\n\n"
         msg = msg .. "Отправьте команду:\n"
         msg = msg .. "/additem internalName displayName цена_coin цена_ema damage\n\n"
@@ -1028,7 +974,6 @@ local function handleTelegramCommand(text)
     end
     
     if text:match("^/additem") then
-        writeDebugLog("handleTelegramCommand: команда /additem")
         local parts = {}
         for part in text:gmatch("%S+") do table.insert(parts, part) end
         if #parts >= 5 then
@@ -1062,27 +1007,21 @@ local function handleTelegramCommand(text)
     end
     
     if text == "Баланс" then
-        writeDebugLog("handleTelegramCommand: команда Баланс")
-        sendTelegram("💰 Введите имя игрока для просмотра баланса:", '{"keyboard":[["Назад"]],"resize_keyboard":true}')
+        sendTelegram("💰 Введите имя игрока для просмотра баланса:", '{"keyboard": [["Назад"]], "resize_keyboard": true}')
         return
     end
-    
-    writeDebugLog("handleTelegramCommand: неизвестная команда: " .. text)
 end
 
 -- ============================================
 -- ФУНКЦИЯ ПРОВЕРКИ ОБНОВЛЕНИЙ TELEGRAM
 -- ============================================
 local function checkTelegramUpdates()
-    writeDebugLog("checkTelegramUpdates: начат")
-    
     local f = io.open("/tmp/last_id.txt", "r")
     if f then
         local data = f:read("*a")
         f:close()
         if data and #data > 0 then
             lastUpdateId = tonumber(data) or 0
-            writeDebugLog("checkTelegramUpdates: lastUpdateId = " .. lastUpdateId)
         end
     end
     
@@ -1091,14 +1030,11 @@ local function checkTelegramUpdates()
         url = url .. "&offset=" .. (lastUpdateId + 1)
     end
     
-    writeDebugLog("checkTelegramUpdates: запрос к API")
-    
     local success, response = pcall(function()
         return internet.request(url)
     end)
     
     if not success or type(response) ~= "table" then
-        writeDebugLog("checkTelegramUpdates: ошибка запроса")
         return
     end
     
@@ -1109,8 +1045,6 @@ local function checkTelegramUpdates()
         responseData = responseData .. chunk
     end
     
-    writeDebugLog("checkTelegramUpdates: получен ответ, длина: " .. #responseData)
-    
     local maxId = lastUpdateId
     for updateId in responseData:gmatch('"update_id":(%d+)') do
         local id = tonumber(updateId)
@@ -1119,21 +1053,11 @@ local function checkTelegramUpdates()
         end
     end
     
-    local hasUpdates = false
     for text in responseData:gmatch('"text":"([^"]+)"') do
-        hasUpdates = true
         local decoded = text:gsub("\\u([0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F])", function(hex)
             return unicode.char(tonumber(hex, 16))
         end)
-        writeDebugLog("checkTelegramUpdates: команда: " .. decoded)
-        local ok, err = pcall(handleTelegramCommand, decoded)
-        if not ok then
-            writeDebugLog("checkTelegramUpdates: ОШИБКА обработки: " .. tostring(err))
-        end
-    end
-    
-    if not hasUpdates then
-        writeDebugLog("checkTelegramUpdates: новых команд нет")
+        pcall(handleTelegramCommand, decoded)
     end
     
     if maxId > lastUpdateId then
@@ -1142,7 +1066,6 @@ local function checkTelegramUpdates()
         if f2 then
             f2:write(lastUpdateId)
             f2:close()
-            writeDebugLog("checkTelegramUpdates: lastUpdateId сохранен: " .. lastUpdateId)
         end
     end
 end
@@ -1259,12 +1182,11 @@ local function handleKey(key, char, player)
     
     -- Защита от слишком быстрых нажатий
     local currentTime = os.time()
-    if currentTime - lastKeyTime < 0.1 then
+    if currentTime - lastKeyTime < 0.15 then
         return
     end
     lastKeyTime = currentTime
 
-    -- Обработка модальных окон
     if addAdminMode then
         if char == 27 or char == 93 then
             addAdminMode = false
@@ -1438,7 +1360,6 @@ local function handleKey(key, char, player)
         return  
     end
 
-    -- Обработка админ-панели
     if adminMode then
         if not isPlayerAdmin then
             adminMode = false
@@ -1468,7 +1389,6 @@ local function handleKey(key, char, player)
         end
     end
 
-    -- Обработка буквенных клавиш
     local pressed = nil
     if char and char >= 1 and char <= 255 then
         pressed = string.lower(string.char(char))
@@ -1590,7 +1510,6 @@ end
 -- ОСНОВНОЙ ЦИКЛ
 -- ============================================
 local function main()
-    writeDebugLog("main: функция запущена")
     log("SUCCESS", "🚀 Сервер запущен. Администраторы: " .. table.concat(admins, ", "))
     sendTelegram("🤖 PIM Market Бот запущен!\nНажмите /start для начала работы.", getMainKeyboard())
     drawInterface()
@@ -1599,7 +1518,7 @@ local function main()
     local telegramCheckInterval = 2
 
     while true do
-        local ev = {event.pull(0.05)}
+        local ev = {event.pull(0.1)}
         local etype = ev[1]
 
         if os.time() - lastTelegramCheck > telegramCheckInterval then
@@ -1607,7 +1526,6 @@ local function main()
             local ok, err = pcall(checkTelegramUpdates)
             if not ok then
                 writeDebugLog("main: ОШИБКА checkTelegramUpdates: " .. tostring(err))
-                print("❌ Ошибка Telegram: " .. tostring(err))
             end
         end
 
@@ -1917,10 +1835,7 @@ end
 -- ============================================
 -- ЗАПУСК
 -- ============================================
-writeDebugLog("=== ЗАПУСК СЕРВЕРА ===")
-
 while true do
-    writeDebugLog("Запуск main()...")
     local ok, err = pcall(main)
     if not ok then
         writeDebugLog("КРИТИЧЕСКАЯ ОШИБКА: " .. tostring(err))

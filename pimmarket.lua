@@ -1878,7 +1878,7 @@ local function applyIncrementalChanges(itemsFile, changes, itemType)
 end
 
 -- ============================================================
--- ОБРАБОТКА КОМАНД (ПОЛНАЯ ВЕРСИЯ - ADD/UPDATE/DELETE)
+-- ОБРАБОТКА КОМАНД (ПОЛНАЯ ВЕРСИЯ)
 -- ============================================================
 
 local function checkWebCommands()
@@ -1950,7 +1950,6 @@ local function checkWebCommands()
             local colon = body:find(':', start)
             if not colon then return nil end
             
-            -- Пропускаем пробелы
             local pos = colon + 1
             while pos <= #body and body:sub(pos, pos):match("%s") do
                 pos = pos + 1
@@ -1958,13 +1957,11 @@ local function checkWebCommands()
             
             if pos > #body then return nil end
             
-            -- Если значение в кавычках (строка)
             if body:sub(pos, pos) == '"' then
                 local quote_end = body:find('"', pos + 1)
                 if not quote_end then return nil end
                 return body:sub(pos + 1, quote_end - 1)
             else
-                -- Числовое значение
                 local num_str = ""
                 local i = pos
                 while i <= #body do
@@ -2058,7 +2055,6 @@ local function checkWebCommands()
                 end
                 if exists then
                     writeDebugLog("⚠️ Товар уже существует, обновляем...")
-                    -- Обновляем существующий
                     for i, existing in ipairs(items) do
                         if existing.internalName == internalName and (existing.damage or 0) == (damage or 0) then
                             for k, v in pairs(item) do

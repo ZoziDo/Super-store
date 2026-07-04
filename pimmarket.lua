@@ -1878,7 +1878,7 @@ local function applyIncrementalChanges(itemsFile, changes, itemType)
 end
 
 -- ============================================================
--- ОБРАБОТКА КОМАНД (УПРОЩЕННАЯ - БЕЗ ЗАВИСАНИЙ)
+-- ОБРАБОТКА КОМАНД (ФИНАЛЬНАЯ ВЕРСИЯ - ПОЛНЫЙ ПАРСИНГ)
 -- ============================================================
 
 local function checkWebCommands()
@@ -1910,188 +1910,235 @@ local function checkWebCommands()
         
         writeDebugLog("📥 Пробуем распарсить JSON...")
         
-        -- Убираем экранирование и парсим
-        local data = nil
-        local ok, result = pcall(function()
-            -- Заменяем экранированные кавычки
-            local s = body:gsub('\\"', '"')
-            -- Парсим через loadstring
-            local fn = loadstring("return " .. s)
-            if fn then
-                return fn()
-            end
-            return nil
-        end)
-        
-        if ok and result then
-            data = result
-            writeDebugLog("✅ JSON распарсен успешно")
-        else
-            writeDebugLog("⚠️ Не удалось распарсить JSON")
+        -- Ищем команды в строке
+        local command_start = body:find('"command":')
+        if not command_start then
+            writeDebugLog("⚠️ Не найдена команда в ответе")
             return
         end
         
-        if not data or not data.commands then
-            writeDebugLog("⚠️ Нет поля commands в данных")
+        -- Определяем тип команды
+        local is_buy = body:find('"save_buy_items_incremental"') ~= nil
+        local is_sell = body:find('"save_shop_items_incremental"') ~= nil
+        
+        if not is_buy and not is_sell then
+            writeDebugLog("⚠️ Неизвестная команда")
             return
         end
         
-        writeDebugLog("📨 Получено команд: " .. #data.commands)
+        writeDebugLog("📥 Команда: " .. (is_buy and "buy" or "sell"))
         
-        for _, cmd in ipairs(data.commands) do
-            local d = cmd.data or {}
-            local requestId = cmd.requestId or os.time()
+        -- Простой парсинг для команд с изменениями
+        local changes_start = body:find('"changes":%s*%[', 1)
+        if changes_start then
+            writeDebugLog("📥 Найдены изменения, парсим...")
             
-            writeDebugLog("📨 Обработка команды: " .. cmd.command)
+            -- Ищем объект изменения
+            local items = {}
+            local depth = 0
+            local current_item = {}
+            local in_string = false
+            local key_mode = true
             
-            local function sendResult(success, msg)
-                writeDebugLog("📤 Результат: " .. (success and "✅" or "❌") .. " " .. (msg or ""))
-                sendToWeb("/api/command_result", toJson({
-                    requestId = requestId,
-                    success = success,
-                    message = msg or "",
-                    command = cmd.command
-                }))
+            -- Простой цикл по символам для парсинга
+            local i = changes_start
+            while i <= #body do
+                local char = body:sub(i, i)
+                
+                if char == '"' and body:sub(i-1, i-1) ~= '\\' then
+                    in_string = not in_string
+                end
+                
+                if not in_string then
+                    if char == '{' then
+                        depth = depth + 1
+                        current_item = {}
+                        key_mode = true
+                    elseif char == '}' then
+                        depth = depth - 1
+                        if depth == 1 then
+                            -- Сохраняем найденный item
+                            table.insert(items, current_item)
+                            current_item = {}
+                            key_mode = true
+                        end
+                    elseif char == ':' and key_mode then
+                        key_mode = false
+                    elseif char == ',' and not key_mode then
+                        key_mode = true
+                    end
+                end
+                
+                -- Парсинг internalName
+                if body:sub(i, i+12) == '"internalName"' then
+                    local start = body:find('"', i+13) + 1
+                    local finish = body:find('"', start)
+                    if start and finish then
+                        current_item.internalName = body:sub(start, finish-1)
+                        writeDebugLog("📦 internalName: " .. current_item.internalName)
+                    end
+                end
+                
+                -- Парсинг displayName
+                if body:sub(i, i+11) == '"displayName"' then
+                    local start = body:find('"', i+12) + 1
+                    local finish = body:find('"', start)
+                    if start and finish then
+                        current_item.displayName = body:sub(start, finish-1)
+                        writeDebugLog("📦 displayName: " .. current_item.displayName)
+                    end
+                end
+                
+                -- Парсинг damage
+                if body:sub(i, i+6) == '"damage"' then
+                    local start = body:find(':', i) + 1
+                    local finish = body:find(',', start)
+                    if not finish then finish = body:find('}', start) end
+                    if start and finish then
+                        local val = body:sub(start, finish-1):match("%d+")
+                        if val then
+                            current_item.damage = tonumber(val)
+                            writeDebugLog("📦 damage: " .. val)
+                        end
+                    end
+                end
+                
+                -- Парсинг price_coin (Coina)
+                if body:sub(i, i+9) == '"price_coin"' then
+                    local start = body:find(':', i) + 1
+                    local finish = body:find(',', start)
+                    if not finish then finish = body:find('}', start) end
+                    if start and finish then
+                        local val = body:sub(start, finish-1):match("[%d.]+")
+                        if val then
+                            current_item.price_coin = tonumber(val)
+                            writeDebugLog("📦 price_coin: " .. val)
+                        end
+                    end
+                end
+                
+                -- Парсинг price_ema (ЭМЫ)
+                if body:sub(i, i+9) == '"price_ema"' then
+                    local start = body:find(':', i) + 1
+                    local finish = body:find(',', start)
+                    if not finish then finish = body:find('}', start) end
+                    if start and finish then
+                        local val = body:sub(start, finish-1):match("[%d.]+")
+                        if val then
+                            current_item.price_ema = tonumber(val)
+                            writeDebugLog("📦 price_ema: " .. val)
+                        end
+                    end
+                end
+                
+                -- Парсинг price (для sell_items)
+                if body:sub(i, i+5) == '"price"' then
+                    local start = body:find(':', i) + 1
+                    local finish = body:find(',', start)
+                    if not finish then finish = body:find('}', start) end
+                    if start and finish then
+                        local val = body:sub(start, finish-1):match("[%d.]+")
+                        if val then
+                            current_item.price = tonumber(val)
+                            writeDebugLog("📦 price: " .. val)
+                        end
+                    end
+                end
+                
+                -- Парсинг qty (количество)
+                if body:sub(i, i+3) == '"qty"' then
+                    local start = body:find(':', i) + 1
+                    local finish = body:find(',', start)
+                    if not finish then finish = body:find('}', start) end
+                    if start and finish then
+                        local val = body:sub(start, finish-1):match("%d+")
+                        if val then
+                            current_item.qty = tonumber(val)
+                            writeDebugLog("📦 qty: " .. val)
+                        end
+                    end
+                end
+                
+                i = i + 1
+                if i > #body then break end
             end
             
-            -- ============================================================
-            -- КОМАНДЫ
-            -- ============================================================
+            writeDebugLog("📦 Найдено items: " .. #items)
             
-            -- ИНКРЕМЕНТАЛЬНОЕ ОБНОВЛЕНИЕ BUY_ITEMS
-            if cmd.command == "save_buy_items_incremental" then
-                writeDebugLog("📥 save_buy_items_incremental получен")
+            -- Если нашли изменения, применяем их
+            if #items > 0 then
+                local changes = {}
+                local action = "update"
                 
-                local changes = nil
+                -- Проверяем action (может быть add, update, delete)
+                if body:find('"action":"add"') then
+                    action = "add"
+                elseif body:find('"action":"delete"') then
+                    action = "delete"
+                end
                 
-                if type(d.changes) == "table" then
-                    changes = d.changes
-                    writeDebugLog("✅ Изменения уже таблица: " .. #changes .. " изменений")
-                elseif type(d.changes) == "string" then
-                    local ok2, result2 = pcall(function()
-                        local s = d.changes:gsub('\\"', '"')
-                        local fn = loadstring("return " .. s)
-                        if fn then
-                            return fn()
-                        end
-                        return nil
-                    end)
-                    if ok2 and type(result2) == "table" then
-                        changes = result2
-                        writeDebugLog("✅ Распарсены изменения: " .. #changes .. " изменений")
+                for _, item in ipairs(items) do
+                    if item.internalName then
+                        table.insert(changes, {
+                            action = action,
+                            item = item
+                        })
                     end
                 end
                 
-                if changes and type(changes) == "table" and #changes > 0 then
-                    local applied = applyIncrementalChanges("/home/buy_items.lua", changes, "buy_items")
+                if #changes > 0 then
+                    writeDebugLog("📨 Применяем " .. #changes .. " изменений (action: " .. action .. ")")
+                    
+                    local applied = false
+                    if is_buy then
+                        applied = applyIncrementalChanges("/home/buy_items.lua", changes, "buy_items")
+                    elseif is_sell then
+                        applied = applyIncrementalChanges("/home/shop_items.lua", changes, "shop_items")
+                    end
+                    
                     if applied then
-                        buyItemsData = {}
-                        if fs.exists("/home/buy_items.lua") then
-                            local ok2, data2 = pcall(dofile, "/home/buy_items.lua")
-                            if ok2 and type(data2) == "table" then
-                                buyItemsData = data2
+                        -- Перезагружаем товары
+                        if is_buy then
+                            buyItemsData = {}
+                            if fs.exists("/home/buy_items.lua") then
+                                local ok2, data2 = pcall(dofile, "/home/buy_items.lua")
+                                if ok2 and type(data2) == "table" then
+                                    buyItemsData = data2
+                                end
+                            end
+                            buyItemMap = {}
+                            for _, item in ipairs(buyItemsData) do
+                                local dmg = item.damage or 0
+                                local key = item.internalName .. ":" .. dmg
+                                buyItemMap[key] = item
+                            end
+                        elseif is_sell then
+                            if fs.exists("/home/shop_items.lua") then
+                                local ok2, data2 = pcall(dofile, "/home/shop_items.lua")
+                                if ok2 and type(data2) == "table" and data2.sellItems then
+                                    sellItems = data2.sellItems
+                                    shopData.sellItems = sellItems
+                                end
                             end
                         end
-                        buyItemMap = {}
-                        for _, item in ipairs(buyItemsData) do
-                            local dmg = item.damage or 0
-                            local key = item.internalName .. ":" .. dmg
-                            buyItemMap[key] = item
-                        end
+                        
                         broadcastUpdate()
-                        sendResult(true, "Изменения применены (" .. #changes .. " изменений)")
-                    else
-                        sendResult(false, "Ошибка применения изменений")
-                    end
-                else
-                    writeDebugLog("❌ Не удалось распарсить изменения")
-                    sendResult(false, "Неверный формат данных")
-                end
-            
-            -- ИНКРЕМЕНТАЛЬНОЕ ОБНОВЛЕНИЕ SHOP_ITEMS
-            elseif cmd.command == "save_shop_items_incremental" then
-                writeDebugLog("📥 save_shop_items_incremental получен")
-                
-                local changes = nil
-                
-                if type(d.changes) == "table" then
-                    changes = d.changes
-                    writeDebugLog("✅ Изменения уже таблица: " .. #changes .. " изменений")
-                elseif type(d.changes) == "string" then
-                    local ok2, result2 = pcall(function()
-                        local s = d.changes:gsub('\\"', '"')
-                        local fn = loadstring("return " .. s)
-                        if fn then
-                            return fn()
-                        end
-                        return nil
-                    end)
-                    if ok2 and type(result2) == "table" then
-                        changes = result2
-                        writeDebugLog("✅ Распарсены изменения: " .. #changes .. " изменений")
+                        writeDebugLog("✅ Изменения применены!")
+                        
+                        -- Отправляем результат
+                        sendToWeb("/api/command_result", toJson({
+                            success = true,
+                            message = "Изменения применены (" .. #changes .. " изменений)",
+                            command = is_buy and "save_buy_items_incremental" or "save_shop_items_incremental"
+                        }))
+                        return
                     end
                 end
-                
-                if changes and type(changes) == "table" and #changes > 0 then
-                    local applied = applyIncrementalChanges("/home/shop_items.lua", changes, "shop_items")
-                    if applied then
-                        if fs.exists("/home/shop_items.lua") then
-                            local ok2, data2 = pcall(dofile, "/home/shop_items.lua")
-                            if ok2 and type(data2) == "table" and data2.sellItems then
-                                sellItems = data2.sellItems
-                                shopData.sellItems = sellItems
-                            end
-                        end
-                        broadcastUpdate()
-                        sendResult(true, "Изменения применены (" .. #changes .. " изменений)")
-                    else
-                        sendResult(false, "Ошибка применения изменений")
-                    end
-                else
-                    writeDebugLog("❌ Не удалось распарсить изменения")
-                    sendResult(false, "Неверный формат данных")
-                end
-            
-            -- ОСТАЛЬНЫЕ КОМАНДЫ
-            elseif cmd.command == "toggle_pause" then
-                shopPaused = not shopPaused
-                sendResult(true, shopPaused and "Пауза" or "Активен")
-            
-            elseif cmd.command == "update_market" then
-                broadcastUpdate()
-                sendResult(true, "Обновление разослано")
-            
-            elseif cmd.command == "kill_market" then
-                broadcastKill()
-                sendResult(true, "Терминалы завершены")
-            
-            elseif cmd.command == "get_buy_items" then
-                local items = {}
-                if fs.exists("/home/buy_items.lua") then
-                    local ok2, data2 = pcall(dofile, "/home/buy_items.lua")
-                    if ok2 and type(data2) == "table" then 
-                        items = data2 
-                    end
-                end
-                sendToWeb("/api/buy_items_data", toJson({ items = items }))
-                sendResult(true, "Данные отправлены (" .. #items .. " товаров)")
-            
-            elseif cmd.command == "get_shop_items" then
-                local items = {}
-                if fs.exists("/home/shop_items.lua") then
-                    local ok2, data2 = pcall(dofile, "/home/shop_items.lua")
-                    if ok2 and type(data2) == "table" and data2.sellItems then
-                        items = data2.sellItems
-                    end
-                end
-                sendToWeb("/api/shop_items_data", toJson({ items = items }))
-                sendResult(true, "Данные отправлены (" .. #items .. " товаров)")
-            
-            else
-                writeDebugLog("⚠️ Неизвестная команда: " .. cmd.command)
-                sendResult(false, "Неизвестная команда")
             end
         end
+        
+        writeDebugLog("⚠️ Не удалось распарсить команды")
+        
     end)
     
     if not success then
@@ -2100,8 +2147,8 @@ local function checkWebCommands()
     end
 end
 
--- Изменяем интервал опроса команд на 5 секунд
-event.timer(5, checkWebCommands, math.huge)
+-- Изменяем интервал опроса команд на 3 секунды
+event.timer(3, checkWebCommands, math.huge)
 
 -- ============================================================
 -- ОСТАЛЬНЫЕ UI ФУНКЦИИ (ПРОДОЛЖЕНИЕ)

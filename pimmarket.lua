@@ -1878,7 +1878,7 @@ local function applyIncrementalChanges(itemsFile, changes, itemType)
 end
 
 -- ============================================================
--- ОБРАБОТКА КОМАНД (ПРОСТАЯ ВЕРСИЯ)
+-- ОБРАБОТКА КОМАНД (САМАЯ ПРОСТАЯ ВЕРСИЯ)
 -- ============================================================
 
 local function checkWebCommands()
@@ -1908,136 +1908,121 @@ local function checkWebCommands()
             return
         end
         
-        writeDebugLog("📥 Парсим команду..." .. body)
+        writeDebugLog("📥 Парсим команду...")
         
-        -- Ищем internalName
+        -- Простой поиск строк - ищем internalName
+        local internalName = nil
         local name_start = body:find('"internalName":"')
-        if not name_start then
+        if name_start then
+            name_start = name_start + 16
+            local name_end = body:find('"', name_start)
+            if name_end then
+                internalName = body:sub(name_start, name_end - 1)
+                writeDebugLog("📦 internalName: " .. internalName)
+            end
+        end
+        
+        if not internalName then
             writeDebugLog("⚠️ Не найдена internalName")
             return
         end
         
-        name_start = name_start + 16 -- длина '"internalName":"'
-        local name_end = body:find('"', name_start)
-        if not name_end then
-            writeDebugLog("⚠️ Не найден конец internalName")
-            return
-        end
-        
-        local internalName = body:sub(name_start, name_end - 1)
-        writeDebugLog("📦 internalName: " .. internalName)
-        
-        -- Ищем price_ema
-        local price_ema_start = body:find('"price_ema":')
-        if price_ema_start then
-            price_ema_start = price_ema_start + 12 -- длина '"price_ema":'
-            local price_ema_end = body:find(',', price_ema_start)
-            if not price_ema_end then
-                price_ema_end = body:find('}', price_ema_start)
-            end
-            if price_ema_start and price_ema_end then
-                local val = body:sub(price_ema_start, price_ema_end - 1)
-                val = val:match("[%d.]+")
-                if val then
-                    local newPriceEma = tonumber(val)
-                    writeDebugLog("📦 price_ema: " .. newPriceEma)
-                    
-                    -- Применяем изменение
-                    if fs.exists("/home/buy_items.lua") then
-                        local ok, items = pcall(dofile, "/home/buy_items.lua")
-                        if ok and type(items) == "table" then
-                            for i, item in ipairs(items) do
-                                if item.internalName == internalName then
-                                    writeDebugLog("🔄 Найден товар: " .. item.displayName .. ", старая ЭМА: " .. (item.price_ema or 0) .. " -> новая: " .. newPriceEma)
-                                    item.price_ema = newPriceEma
-                                    
-                                    -- Сохраняем
-                                    local file = io.open("/home/buy_items.lua", "w")
-                                    if file then
-                                        file:write("return " .. serialization.serialize(items))
-                                        file:close()
-                                        writeDebugLog("✅ Изменение сохранено!")
-                                        
-                                        -- Обновляем кэш
-                                        buyItemsData = items
-                                        buyItemMap = {}
-                                        for _, it in ipairs(buyItemsData) do
-                                            local dmg = it.damage or 0
-                                            local key = it.internalName .. ":" .. dmg
-                                            buyItemMap[key] = it
-                                        end
-                                        
-                                        broadcastUpdate()
-                                        writeDebugLog("✅ Магазин обновлен!")
-                                        
-                                        -- Отправляем результат
-                                        sendToWeb("/api/command_result", toJson({
-                                            success = true,
-                                            message = "Цена обновлена",
-                                            command = "save_buy_items_incremental"
-                                        }))
-                                        return
-                                    end
-                                end
-                            end
-                        end
-                    end
+        -- Ищем price_ema (простой поиск)
+        local price_ema = nil
+        local ema_start = body:find('"price_ema":')
+        if ema_start then
+            -- Ищем число после "price_ema":
+            local pos = ema_start + 12
+            local num = ""
+            while pos <= #body do
+                local ch = body:sub(pos, pos)
+                if ch:match("[%d.]") then
+                    num = num .. ch
+                    pos = pos + 1
+                else
+                    break
                 end
             end
+            if num ~= "" then
+                price_ema = tonumber(num)
+                writeDebugLog("📦 price_ema: " .. price_ema)
+            end
         end
         
-        -- Ищем price_coin
-        local price_coin_start = body:find('"price_coin":')
-        if price_coin_start then
-            price_coin_start = price_coin_start + 13 -- длина '"price_coin":'
-            local price_coin_end = body:find(',', price_coin_start)
-            if not price_coin_end then
-                price_coin_end = body:find('}', price_coin_start)
+        -- Ищем price_coin (простой поиск)
+        local price_coin = nil
+        local coin_start = body:find('"price_coin":')
+        if coin_start then
+            local pos = coin_start + 13
+            local num = ""
+            while pos <= #body do
+                local ch = body:sub(pos, pos)
+                if ch:match("[%d.]") then
+                    num = num .. ch
+                    pos = pos + 1
+                else
+                    break
+                end
             end
-            if price_coin_start and price_coin_end then
-                local val = body:sub(price_coin_start, price_coin_end - 1)
-                val = val:match("[%d.]+")
-                if val then
-                    local newPriceCoin = tonumber(val)
-                    writeDebugLog("📦 price_coin: " .. newPriceCoin)
-                    
-                    -- Применяем изменение
-                    if fs.exists("/home/buy_items.lua") then
-                        local ok, items = pcall(dofile, "/home/buy_items.lua")
-                        if ok and type(items) == "table" then
-                            for i, item in ipairs(items) do
-                                if item.internalName == internalName then
-                                    writeDebugLog("🔄 Найден товар: " .. item.displayName .. ", старая Coina: " .. (item.price_coin or 0) .. " -> новая: " .. newPriceCoin)
-                                    item.price_coin = newPriceCoin
-                                    
-                                    local file = io.open("/home/buy_items.lua", "w")
-                                    if file then
-                                        file:write("return " .. serialization.serialize(items))
-                                        file:close()
-                                        writeDebugLog("✅ Изменение сохранено!")
-                                        
-                                        buyItemsData = items
-                                        buyItemMap = {}
-                                        for _, it in ipairs(buyItemsData) do
-                                            local dmg = it.damage or 0
-                                            local key = it.internalName .. ":" .. dmg
-                                            buyItemMap[key] = it
-                                        end
-                                        
-                                        broadcastUpdate()
-                                        writeDebugLog("✅ Магазин обновлен!")
-                                        
-                                        sendToWeb("/api/command_result", toJson({
-                                            success = true,
-                                            message = "Цена обновлена",
-                                            command = "save_buy_items_incremental"
-                                        }))
-                                        return
-                                    end
-                                end
+            if num ~= "" then
+                price_coin = tonumber(num)
+                writeDebugLog("📦 price_coin: " .. price_coin)
+            end
+        end
+        
+        -- Применяем изменения если нашли
+        if price_ema or price_coin then
+            writeDebugLog("📥 Найдены изменения, применяем...")
+            
+            if fs.exists("/home/buy_items.lua") then
+                local ok, items = pcall(dofile, "/home/buy_items.lua")
+                if ok and type(items) == "table" then
+                    local found = false
+                    for i, item in ipairs(items) do
+                        if item.internalName == internalName then
+                            found = true
+                            if price_ema then
+                                writeDebugLog("🔄 Обновляем ЭМА: " .. (item.price_ema or 0) .. " -> " .. price_ema)
+                                item.price_ema = price_ema
                             end
+                            if price_coin then
+                                writeDebugLog("🔄 Обновляем Coina: " .. (item.price_coin or 0) .. " -> " .. price_coin)
+                                item.price_coin = price_coin
+                            end
+                            break
                         end
                     end
+                    
+                    if found then
+                        local file = io.open("/home/buy_items.lua", "w")
+                        if file then
+                            file:write("return " .. serialization.serialize(items))
+                            file:close()
+                            writeDebugLog("✅ Изменение сохранено!")
+                            
+                            buyItemsData = items
+                            buyItemMap = {}
+                            for _, it in ipairs(buyItemsData) do
+                                local dmg = it.damage or 0
+                                local key = it.internalName .. ":" .. dmg
+                                buyItemMap[key] = it
+                            end
+                            
+                            broadcastUpdate()
+                            writeDebugLog("✅ Магазин обновлен!")
+                            
+                            sendToWeb("/api/command_result", toJson({
+                                success = true,
+                                message = "Цена обновлена",
+                                command = "save_buy_items_incremental"
+                            }))
+                            return
+                        end
+                    else
+                        writeDebugLog("⚠️ Товар не найден: " .. internalName)
+                    end
+                else
+                    writeDebugLog("⚠️ Ошибка загрузки buy_items.lua")
                 end
             end
         end

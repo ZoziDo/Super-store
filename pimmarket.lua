@@ -496,12 +496,15 @@ end
 
 local function addTransaction(type, playerName, item, qty, value_coin, value_ema)
     writeDebugLog("addTransaction: " .. type .. " " .. (playerName or "?"))
-    if type == "buy" then
-        globalStats.totalBuys = (globalStats.totalBuys or 0) + 1
-        globalStats.totalRevenue = (globalStats.totalRevenue or 0) + (value_coin or 0) + (value_ema or 0)
-    elseif type == "sell" then
+    
+    if type == "sell" then
+        -- ТОЛЬКО ПРОДАЖИ считаются выручкой!
         globalStats.totalSells = (globalStats.totalSells or 0) + 1
         globalStats.totalRevenue = (globalStats.totalRevenue or 0) + (value_coin or 0) + (value_ema or 0)
+    elseif type == "buy" then
+        -- ПОКУПКИ НЕ СЧИТАЮТСЯ ВЫРУЧКОЙ
+        globalStats.totalBuys = (globalStats.totalBuys or 0) + 1
+        -- totalRevenue НЕ увеличиваем!
     end
     saveGlobalStats()
     

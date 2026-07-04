@@ -54,17 +54,6 @@ local function safeCall(func, ...)
     return true, ok
 end
 
--- Проверка переменной на nil
-local function checkVar(name, value)
-    if value == nil then
-        local msg = "⚠️ ПЕРЕМЕННАЯ " .. name .. " = nil"
-        print(msg)
-        writeErrorLog(msg)
-        return false
-    end
-    return true
-end
-
 -- Записываем старт
 writeErrorLog("=" .. string.rep("=", 50))
 writeErrorLog("🚀 ЗАПУСК PIM MARKET")
@@ -830,6 +819,123 @@ local feedbacksTotalPages = 1
 local feedbackInput = ""
 local feedbackEditMode = false
 local playerHasFeedback = false
+
+-- ============================================================
+-- ПАРСЕР JSON ДЛЯ OC (БЕЗ ЗАВИСАНИЙ)
+-- ============================================================
+
+-- Простой JSON парсер для OC с защитой от зависаний
+local function parseJSON(json_str)
+    if not json_str or json_str == "" then
+        return nil
+    end
+    
+    writeDebugLog("📥 Парсим JSON, длина: " .. #json_str)
+    
+    -- Ограничиваем время выполнения
+    local startTime = os.clock()
+    local timeout = 10 -- 10 секунд максимум
+    
+    -- Пробуем через loadstring (быстрый способ)
+    local ok, result = pcall(function()
+        -- Убираем экранирование кавычек
+        local str = json_str:gsub('\\"', '"')
+        -- Создаем функцию для парсинга
+        local fn = loadstring("return " .. str)
+        if fn then
+            return fn()
+        end
+        return nil
+    end)
+    
+    if ok and result then
+        writeDebugLog("✅ JSON распарсен через loadstring")
+        return result
+    end
+    
+    -- Если время вышло, прекращаем парсинг
+    if os.clock() - startTime > timeout then
+        writeErrorLog("⚠️ Таймаут парсинга JSON!")
+        return nil
+    end
+    
+    -- Пробуем через serialization (для Lua формата)
+    local ok2, result2 = pcall(serialization.unserialize, json_str)
+    if ok2 and type(result2) == "table" then
+        writeDebugLog("✅ JSON распарсен через serialization")
+        return result2
+    end
+    
+    writeDebugLog("❌ Не удалось распарсить JSON")
+    return nil
+end
+
+-- Функция для безопасной обработки JSON строки с товарами
+local function parseItemsFromJSON(json_str)
+    if not json_str or json_str == "" then
+        return nil
+    end
+    
+    writeDebugLog("📥 Парсим товары из JSON, длина: " .. #json_str)
+    
+    -- Пробуем разные способы парсинга
+    
+    -- Способ 1: через loadstring с обработкой экранирования
+    local ok1, result1 = pcall(function()
+        local str = json_str
+        -- Убираем двойное экранирование
+        str = str:gsub('\\"', '"')
+        -- Заменяем JSON на Lua таблицу
+        str = str:gsub('{', 'return {')
+        local fn = loadstring(str)
+        if fn then
+            return fn()
+        end
+        return nil
+    end)
+    
+    if ok1 and type(result1) == "table" then
+        writeDebugLog("✅ Товары распарсены через loadstring: " .. #result1)
+        return result1
+    end
+    
+    -- Способ 2: через serialization
+    local ok2, result2 = pcall(serialization.unserialize, json_str)
+    if ok2 and type(result2) == "table" then
+        writeDebugLog("✅ Товары распарсены через serialization: " .. #result2)
+        return result2
+    end
+    
+    -- Способ 3: ручной парсинг (для простых JSON)
+    if #json_str < 5000 then
+        local ok3, result3 = pcall(function()
+            local str = json_str
+            -- Заменяем ключи
+            str = str:gsub('"([%w_]+)":', '%1 = ')
+            -- Убираем кавычки у строк
+            str = str:gsub('"([^"]*)"', '"%1"')
+            -- Заменяем массивы
+            str = str:gsub('%[', '{')
+            str = str:gsub('%]', '}')
+            -- Убираем экранирование
+            str = str:gsub('\\"', '"')
+            -- Создаем функцию
+            local fn = loadstring("return " .. str)
+            if fn then
+                return fn()
+            end
+            return nil
+        end)
+        
+        if ok3 and type(result3) == "table" then
+            writeDebugLog("✅ Товары распарсены через ручной парсинг: " .. #result3)
+            return result3
+        end
+    end
+    
+    writeDebugLog("❌ Не удалось распарсить товары")
+    return nil
+end
 
 -- ============================================================
 -- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
@@ -1682,17 +1788,14 @@ local function drawReportScreen()
 end
 
 -- ============================================================
--- ОБРАБОТКА КОМАНД (ИСПРАВЛЕННАЯ)
--- ============================================================
-
--- ============================================================
--- ОБРАБОТКА КОМАНД (ИСПРАВЛЕННАЯ С JSON)
+-- ОБРАБОТКА КОМАНД (ИСПРАВЛЕННАЯ - БЕЗ ЗАВИСАНИЙ)
 -- ============================================================
 
 local function checkWebCommands()
     writeDebugLog("🔍 checkWebCommands() вызвана")
     
-    pcall(function()
+    -- Используем pcall для защиты от зависаний
+    local success = pcall(function()
         local response = internet.request(WEB_URL .. "/api/commands")
         if not response then
             writeDebugLog("⚠️ Нет ответа от /api/commands")
@@ -1704,30 +1807,15 @@ local function checkWebCommands()
             body = body .. chunk 
         end
         
-        writeDebugLog("📥 Получен ответ: " .. body:sub(1, 200))
-        
         -- Проверяем, есть ли команды
         if body:find('"commands":[]') then
             writeDebugLog("⚠️ Нет команд в ответе")
             return
         end
         
-        -- Парсим JSON вручную
-        local function parseJSON(str)
-            local ok, result = pcall(function()
-                -- Используем loadstring для парсинга JSON в Lua
-                local json_str = str:gsub('"', '"'):gsub('"', '"')
-                local fn = loadstring("return " .. json_str)
-                if fn then
-                    return fn()
-                end
-            end)
-            if ok then
-                return result
-            end
-            return nil
-        end
+        writeDebugLog("📥 Получен ответ, длина: " .. #body)
         
+        -- Парсим основной JSON
         local data = parseJSON(body)
         if not data or not data.commands then
             writeDebugLog("⚠️ Не удалось распарсить команды")
@@ -1822,7 +1910,7 @@ local function checkWebCommands()
                 end
             
             -- ============================================================
-            -- КОМАНДЫ ДЛЯ ТОВАРОВ (С ПОДДЕРЖКОЙ JSON)
+            -- КОМАНДЫ ДЛЯ ТОВАРОВ (БЕЗ ЗАВИСАНИЙ)
             -- ============================================================
             
             elseif cmd.command == "get_buy_items" then
@@ -1853,40 +1941,15 @@ local function checkWebCommands()
                 
                 local items = nil
                 
-                -- Пробуем распарсить items (это JSON строка от Python)
+                -- Если d.items это строка - это JSON от Python
                 if type(d.items) == "string" then
-                    writeDebugLog("📥 Парсим JSON строку: " .. d.items:sub(1, 100))
+                    writeDebugLog("📥 Получена строка с товарами, длина: " .. #d.items)
                     
                     -- Парсим JSON
-                    local function parseJSON(str)
-                        local ok, result = pcall(function()
-                            -- Заменяем JSON на Lua таблицу
-                            local json_str = str
-                            -- Убираем экранирование кавычек
-                            json_str = json_str:gsub('\\"', '"')
-                            -- Парсим через loadstring
-                            local fn = loadstring("return " .. json_str)
-                            if fn then
-                                return fn()
-                            end
-                        end)
-                        if ok then
-                            return result
-                        end
-                        return nil
-                    end
+                    items = parseItemsFromJSON(d.items)
                     
-                    local parsed = parseJSON(d.items)
-                    if parsed and type(parsed) == "table" then
-                        items = parsed
-                        writeDebugLog("✅ items распарсены из JSON: " .. #items .. " товаров")
-                    else
-                        -- Пробуем через стандартный unserialize (на случай если это Lua)
-                        local ok, result = pcall(serialization.unserialize, d.items)
-                        if ok and type(result) == "table" then
-                            items = result
-                            writeDebugLog("✅ items распарсены через unserialize: " .. #items .. " товаров")
-                        end
+                    if items then
+                        writeDebugLog("✅ items распарсены: " .. #items .. " товаров")
                     end
                 elseif type(d.items) == "table" then
                     items = d.items
@@ -1894,12 +1957,12 @@ local function checkWebCommands()
                 end
                 
                 if items and type(items) == "table" and #items > 0 then
-                    -- Проверяем структуру items
+                    -- Проверяем структуру
                     local valid = true
                     for _, item in ipairs(items) do
                         if not item.internalName then
                             valid = false
-                            writeDebugLog("⚠️ item без internalName: " .. tostring(item))
+                            writeDebugLog("⚠️ item без internalName")
                             break
                         end
                     end
@@ -1910,13 +1973,16 @@ local function checkWebCommands()
                         return
                     end
                     
+                    -- Сохраняем в файл
                     local file = io.open("/home/buy_items.lua", "w")
                     if file then
-                        file:write("return " .. serialization.serialize(items))
+                        -- Сериализуем в Lua формат
+                        local serialized = serialization.serialize(items)
+                        file:write("return " .. serialized)
                         file:close()
                         writeDebugLog("💾 Сохранены buy_items: " .. #items .. " товаров")
                         
-                        -- ОБНОВЛЯЕМ КЭШ
+                        -- Обновляем кэш
                         buyItemsData = items
                         buyItemMap = {}
                         for _, item in ipairs(buyItemsData) do
@@ -1931,7 +1997,7 @@ local function checkWebCommands()
                         sendResult(false, "Ошибка записи файла")
                     end
                 else
-                    writeDebugLog("❌ Не удалось распарсить items, тип: " .. type(items))
+                    writeDebugLog("❌ Не удалось распарсить items")
                     sendResult(false, "Неверный формат данных")
                 end
             
@@ -1941,36 +2007,11 @@ local function checkWebCommands()
                 
                 local items = nil
                 
-                -- Пробуем распарсить items (это JSON строка от Python)
                 if type(d.items) == "string" then
-                    writeDebugLog("📥 Парсим JSON строку: " .. d.items:sub(1, 100))
-                    
-                    -- Парсим JSON
-                    local function parseJSON(str)
-                        local ok, result = pcall(function()
-                            local json_str = str:gsub('\\"', '"')
-                            local fn = loadstring("return " .. json_str)
-                            if fn then
-                                return fn()
-                            end
-                        end)
-                        if ok then
-                            return result
-                        end
-                        return nil
-                    end
-                    
-                    local parsed = parseJSON(d.items)
-                    if parsed and type(parsed) == "table" then
-                        items = parsed
-                        writeDebugLog("✅ items распарсены из JSON: " .. #items .. " товаров")
-                    else
-                        -- Пробуем через стандартный unserialize
-                        local ok, result = pcall(serialization.unserialize, d.items)
-                        if ok and type(result) == "table" then
-                            items = result
-                            writeDebugLog("✅ items распарсены через unserialize: " .. #items .. " товаров")
-                        end
+                    writeDebugLog("📥 Получена строка с товарами, длина: " .. #d.items)
+                    items = parseItemsFromJSON(d.items)
+                    if items then
+                        writeDebugLog("✅ items распарсены: " .. #items .. " товаров")
                     end
                 elseif type(d.items) == "table" then
                     items = d.items
@@ -1983,7 +2024,7 @@ local function checkWebCommands()
                     for _, item in ipairs(items) do
                         if not item.internalName then
                             valid = false
-                            writeDebugLog("⚠️ item без internalName: " .. tostring(item))
+                            writeDebugLog("⚠️ item без internalName")
                             break
                         end
                     end
@@ -2010,7 +2051,7 @@ local function checkWebCommands()
                         sendResult(false, "Ошибка записи файла")
                     end
                 else
-                    writeDebugLog("❌ Не удалось распарсить items, тип: " .. type(items))
+                    writeDebugLog("❌ Не удалось распарсить items")
                     sendResult(false, "Неверный формат данных")
                 end
             
@@ -2046,9 +2087,14 @@ local function checkWebCommands()
             end
         end
     end)
+    
+    if not success then
+        writeErrorLog("❌ Ошибка в checkWebCommands: " .. tostring(success))
+    end
 end
 
-event.timer(3, checkWebCommands, math.huge)
+-- Изменяем интервал опроса команд на 5 секунд вместо 3 (меньше нагрузки)
+event.timer(5, checkWebCommands, math.huge)
 
 -- ============================================================
 -- ОСТАЛЬНЫЕ UI ФУНКЦИИ (ПРОДОЛЖЕНИЕ)
@@ -3574,7 +3620,8 @@ local function main()
                                 file:close()
                                 if data and #data > 0 then
                                     local ok, result = pcall(serialization.unserialize, data)
-                                    if ok and type(result) == "table" then feedbacks = result end                                end
+                                    if ok and type(result) == "table" then feedbacks = result end
+                                end
                             end
                         end
                         table.insert(feedbacks, 1, {

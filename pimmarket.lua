@@ -136,9 +136,6 @@ local function forceCheckCommands()
     end)
 end
 
--- Вызываем принудительно каждые 5 секунд (вместо обычного таймера)
-event.timer(5, forceCheckCommands, math.huge)
-
 local function toJson(val)
     if type(val) == "string" then return '"' .. val:gsub('"', '\\"') .. '"'
     elseif type(val) == "number" or type(val) == "boolean" then return tostring(val)
@@ -1701,220 +1698,233 @@ end
 -- ============================================================
 
 local function checkWebCommands()
+    writeDebugLog("🔍 checkWebCommands() вызвана")
+    
     pcall(function()
-        writeDebugLog("🔍 Проверка команд...")
         local response = internet.request(WEB_URL .. "/api/commands")
-        if response then
-            local body = ""
-            for chunk in response do body = body .. chunk end
-            writeDebugLog("📥 Получен ответ от /api/commands: " .. body:sub(1, 200))
-            local ok, data = pcall(serialization.unserialize, body)
-            if ok and data and data.commands then
-                writeDebugLog("📨 Получено команд: " .. #data.commands)
-                for _, cmd in ipairs(data.commands) do
-                    local d = cmd.data or {}
-                    local requestId = cmd.requestId
-                    local cmdId = cmd.id or cmd.requestId or os.time()
-                    
-                    -- Функция отправки результата с ID
-                    local function sendResult(success, msg)
-                        writeDebugLog("📤 Отправка результата для команды " .. cmd.command .. ": " .. (success and "✅" or "❌") .. " " .. (msg or ""))
-                        sendToWeb("/api/command_result", toJson({
-                            requestId = requestId,
-                            success = success,
-                            message = msg or "",
-                            id = cmdId,
-                            command = cmd.command
-                        }))
-                    end
-
-                    -- ============================================================
-                    -- СУЩЕСТВУЮЩИЕ КОМАНДЫ
-                    -- ============================================================
-                    
-                    if cmd.command == "toggle_pause" then
-                        shopPaused = not shopPaused
-                        for addr in pairs(markets) do
-                            modem.send(addr, 0xffef, serialization.serialize({op="shop_paused", paused=shopPaused}))
-                        end
-                        sendResult(true, shopPaused and "Магазин на паузе" or "Магазин активен")
-                    
-                    elseif cmd.command == "update_market" then
-                        broadcastUpdate()
-                        sendResult(true, "Обновление разослано")
-                    
-                    elseif cmd.command == "kill_market" then
-                        broadcastKill()
-                        sendResult(true, "Терминалы завершены")
-                    
-                    elseif cmd.command == "set_balance" then
-                        local player = players[d.name]
-                        if player then
-                            if d.coin then player.balance = d.coin end
-                            if d.ema then player.emaBalance = d.ema end
-                            saveDB()
-                            sendResult(true, "Баланс обновлён")
-                        else
-                            sendResult(false, "Игрок не найден")
-                        end
-                    
-                    elseif cmd.command == "toggle_ban" then
-                        local player = players[d.name]
-                        if player then
-                            player.banned = not player.banned
-                            saveDB()
-                            sendResult(true, player.banned and "Забанен" or "Разбанен")
-                        else
-                            sendResult(false, "Игрок не найден")
-                        end
-                    
-                    elseif cmd.command == "reset_player" then
-                        local player = players[d.name]
-                        if player then
-                            player.balance = 0
-                            player.emaBalance = 0
-                            player.transactions = 0
-                            saveDB()
-                            sendResult(true, "Игрок сброшен")
-                        else
-                            sendResult(false, "Игрок не найден")
-                        end
-                    
-                    elseif cmd.command == "add_admin" then
-                        if addAdmin(d.name) then
-                            sendResult(true, "Админ добавлен")
-                        else
-                            sendResult(false, "Уже админ или ошибка")
-                        end
-                    
-                    elseif cmd.command == "remove_admin" then
-                        if removeAdmin(d.name) then
-                            sendResult(true, "Админ удалён")
-                        else
-                            sendResult(false, "Нельзя удалить")
-                        end
-                    
-                    -- ============================================================
-                    -- НОВЫЕ КОМАНДЫ ДЛЯ РАБОТЫ С ТОВАРАМИ
-                    -- ============================================================
-                    
-                    elseif cmd.command == "get_buy_items" then
-                        local items = {}
-                        if fs.exists("/home/buy_items.lua") then
-                            local ok, data = pcall(dofile, "/home/buy_items.lua")
-                            if ok and type(data) == "table" then 
-                                items = data 
-                            end
-                        end
-                        sendToWeb("/api/buy_items_data", toJson({ items = items }))
-                        sendResult(true, "Данные отправлены (" .. #items .. " товаров)")
-                    
-                    elseif cmd.command == "get_shop_items" then
-                        local items = {}
-                        if fs.exists("/home/shop_items.lua") then
-                            local ok, data = pcall(dofile, "/home/shop_items.lua")
-                            if ok and type(data) == "table" and data.sellItems then
-                                items = data.sellItems
-                            end
-                        end
-                        sendToWeb("/api/shop_items_data", toJson({ items = items }))
-                        sendResult(true, "Данные отправлены (" .. #items .. " товаров)")
-                    
-                    elseif cmd.command == "save_buy_items" then
-                        local ok, items = pcall(serialization.unserialize, d.items)
-                        writeDebugLog("📥 save_buy_items: " .. tostring(d.items))
-                        if ok and type(items) == "table" then
-                            local file = io.open("/home/buy_items.lua", "w")
-                            if file then
-                                file:write("return " .. serialization.serialize(items))
-                                file:close()
-                                writeDebugLog("💾 Сохранены buy_items: " .. #items .. " товаров")
-                                
-                                -- ОБНОВЛЯЕМ КЭШ В ПАМЯТИ
-                                buyItemsData = items
-                                buyItemMap = {}
-                                for _, item in ipairs(buyItemsData) do
-                                    local dmg = item.damage or 0
-                                    local key = item.internalName .. ":" .. dmg
-                                    buyItemMap[key] = item
-                                end
-                                
-                                -- ОТПРАВЛЯЕМ ОБНОВЛЕНИЕ ТЕРМИНАЛАМ
-                                broadcastUpdate()
-                                sendResult(true, "buy_items.lua обновлён (" .. #items .. " товаров)")
-                            else
-                                sendResult(false, "Ошибка записи файла")
-                            end
-                        else
-                            sendResult(false, "Неверный формат данных")
-                        end
-                    
-                    elseif cmd.command == "save_shop_items" then
-                        local ok, items = pcall(serialization.unserialize, d.items)
-                        writeDebugLog("📥 save_shop_items: " .. tostring(d.items))
-                        if ok and type(items) == "table" then
-                            local out = "local items = {}\nitems.sellItems = " .. serialization.serialize(items) .. "\nitems.vanillaItems = {}\nreturn items"
-                            local file = io.open("/home/shop_items.lua", "w")
-                            if file then
-                                file:write(out)
-                                file:close()
-                                writeDebugLog("💾 Сохранены sell_items: " .. #items .. " товаров")
-                                
-                                -- ОБНОВЛЯЕМ КЭШ В ПАМЯТИ
-                                sellItems = items
-                                shopData.sellItems = items
-                                
-                                -- ОТПРАВЛЯЕМ ОБНОВЛЕНИЕ ТЕРМИНАЛАМ
-                                broadcastUpdate()
-                                sendResult(true, "shop_items.lua обновлён (" .. #items .. " товаров)")
-                            else
-                                sendResult(false, "Ошибка записи файла")
-                            end
-                        else
-                            sendResult(false, "Неверный формат данных")
-                        end
-                    
-                    elseif cmd.command == "delete_feedback" then
-                        local feedbacks = {}
-                        if fs.exists(FEEDBACKS_PATH) then
-                            local file = io.open(FEEDBACKS_PATH, "r")
-                            if file then
-                                local data = file:read("*a")
-                                file:close()
-                                if data and #data > 0 then
-                                    local ok, result = pcall(serialization.unserialize, data)
-                                    if ok and type(result) == "table" then feedbacks = result end
-                                end
-                            end
-                        end
-                        if d.index and d.index >= 1 and d.index <= #feedbacks then
-                            table.remove(feedbacks, d.index)
-                            local file = io.open(FEEDBACKS_PATH, "w")
-                            if file then
-                                file:write(serialization.serialize(feedbacks))
-                                file:close()
-                                sendResult(true, "Отзыв удалён")
-                            else
-                                sendResult(false, "Ошибка записи")
-                            end
-                        else
-                            sendResult(false, "Неверный индекс")
-                        end
-                    
-                    else
-                        sendResult(false, "Неизвестная команда: " .. tostring(cmd.command))
+        if not response then
+            writeDebugLog("⚠️ Нет ответа от /api/commands")
+            return
+        end
+        
+        local body = ""
+        for chunk in response do 
+            body = body .. chunk 
+        end
+        
+        writeDebugLog("📥 Получен ответ: " .. body:sub(1, 300))
+        
+        local ok, data = pcall(serialization.unserialize, body)
+        if not ok then
+            writeDebugLog("❌ Ошибка парсинга: " .. tostring(data))
+            return
+        end
+        
+        if not data or not data.commands then
+            writeDebugLog("⚠️ Нет команд в ответе")
+            return
+        end
+        
+        writeDebugLog("📨 Получено команд: " .. #data.commands)
+        
+        for _, cmd in ipairs(data.commands) do
+            local d = cmd.data or {}
+            local requestId = cmd.requestId
+            local cmdId = cmd.id or requestId or os.time()
+            
+            writeDebugLog("📨 Обработка команды: " .. cmd.command)
+            
+            -- Функция отправки результата
+            local function sendResult(success, msg)
+                writeDebugLog("📤 Результат: " .. (success and "✅" or "❌") .. " " .. (msg or ""))
+                sendToWeb("/api/command_result", toJson({
+                    requestId = requestId,
+                    success = success,
+                    message = msg or "",
+                    id = cmdId,
+                    command = cmd.command
+                }))
+            end
+            
+            -- ============================================================
+            -- ОБРАБОТКА КОМАНД
+            -- ============================================================
+            
+            if cmd.command == "toggle_pause" then
+                shopPaused = not shopPaused
+                for addr in pairs(markets) do
+                    modem.send(addr, 0xffef, serialization.serialize({op="shop_paused", paused=shopPaused}))
+                end
+                sendResult(true, shopPaused and "Магазин на паузе" or "Магазин активен")
+            
+            elseif cmd.command == "update_market" then
+                broadcastUpdate()
+                sendResult(true, "Обновление разослано")
+            
+            elseif cmd.command == "kill_market" then
+                broadcastKill()
+                sendResult(true, "Терминалы завершены")
+            
+            elseif cmd.command == "set_balance" then
+                local player = players[d.name]
+                if player then
+                    if d.coin then player.balance = d.coin end
+                    if d.ema then player.emaBalance = d.ema end
+                    saveDB()
+                    sendResult(true, "Баланс обновлён")
+                else
+                    sendResult(false, "Игрок не найден")
+                end
+            
+            elseif cmd.command == "toggle_ban" then
+                local player = players[d.name]
+                if player then
+                    player.banned = not player.banned
+                    saveDB()
+                    sendResult(true, player.banned and "Забанен" or "Разбанен")
+                else
+                    sendResult(false, "Игрок не найден")
+                end
+            
+            elseif cmd.command == "reset_player" then
+                local player = players[d.name]
+                if player then
+                    player.balance = 0
+                    player.emaBalance = 0
+                    player.transactions = 0
+                    saveDB()
+                    sendResult(true, "Игрок сброшен")
+                else
+                    sendResult(false, "Игрок не найден")
+                end
+            
+            elseif cmd.command == "add_admin" then
+                if addAdmin(d.name) then
+                    sendResult(true, "Админ добавлен")
+                else
+                    sendResult(false, "Уже админ или ошибка")
+                end
+            
+            elseif cmd.command == "remove_admin" then
+                if removeAdmin(d.name) then
+                    sendResult(true, "Админ удалён")
+                else
+                    sendResult(false, "Нельзя удалить")
+                end
+            
+            -- ============================================================
+            -- КОМАНДЫ ДЛЯ ТОВАРОВ
+            -- ============================================================
+            
+            elseif cmd.command == "get_buy_items" then
+                local items = {}
+                if fs.exists("/home/buy_items.lua") then
+                    local ok, data = pcall(dofile, "/home/buy_items.lua")
+                    if ok and type(data) == "table" then 
+                        items = data 
                     end
                 end
+                sendToWeb("/api/buy_items_data", toJson({ items = items }))
+                sendResult(true, "Данные отправлены (" .. #items .. " товаров)")
+            
+            elseif cmd.command == "get_shop_items" then
+                local items = {}
+                if fs.exists("/home/shop_items.lua") then
+                    local ok, data = pcall(dofile, "/home/shop_items.lua")
+                    if ok and type(data) == "table" and data.sellItems then
+                        items = data.sellItems
+                    end
+                end
+                sendToWeb("/api/shop_items_data", toJson({ items = items }))
+                sendResult(true, "Данные отправлены (" .. #items .. " товаров)")
+            
+            elseif cmd.command == "save_buy_items" then
+                writeDebugLog("📥 save_buy_items: " .. tostring(d.items))
+                local ok, items = pcall(serialization.unserialize, d.items)
+                if ok and type(items) == "table" then
+                    local file = io.open("/home/buy_items.lua", "w")
+                    if file then
+                        file:write("return " .. serialization.serialize(items))
+                        file:close()
+                        writeDebugLog("💾 Сохранены buy_items: " .. #items .. " товаров")
+                        
+                        -- ОБНОВЛЯЕМ КЭШ
+                        buyItemsData = items
+                        buyItemMap = {}
+                        for _, item in ipairs(buyItemsData) do
+                            local dmg = item.damage or 0
+                            local key = item.internalName .. ":" .. dmg
+                            buyItemMap[key] = item
+                        end
+                        
+                        broadcastUpdate()
+                        sendResult(true, "buy_items.lua обновлён (" .. #items .. " товаров)")
+                    else
+                        sendResult(false, "Ошибка записи файла")
+                    end
+                else
+                    sendResult(false, "Неверный формат данных")
+                end
+            
+            elseif cmd.command == "save_shop_items" then
+                writeDebugLog("📥 save_shop_items: " .. tostring(d.items))
+                local ok, items = pcall(serialization.unserialize, d.items)
+                if ok and type(items) == "table" then
+                    local out = "local items = {}\nitems.sellItems = " .. serialization.serialize(items) .. "\nitems.vanillaItems = {}\nreturn items"
+                    local file = io.open("/home/shop_items.lua", "w")
+                    if file then
+                        file:write(out)
+                        file:close()
+                        writeDebugLog("💾 Сохранены sell_items: " .. #items .. " товаров")
+                        
+                        -- ОБНОВЛЯЕМ КЭШ
+                        sellItems = items
+                        shopData.sellItems = items
+                        
+                        broadcastUpdate()
+                        sendResult(true, "shop_items.lua обновлён (" .. #items .. " товаров)")
+                    else
+                        sendResult(false, "Ошибка записи файла")
+                    end
+                else
+                    sendResult(false, "Неверный формат данных")
+                end
+            
+            elseif cmd.command == "delete_feedback" then
+                local feedbacks = {}
+                if fs.exists(FEEDBACKS_PATH) then
+                    local file = io.open(FEEDBACKS_PATH, "r")
+                    if file then
+                        local data = file:read("*a")
+                        file:close()
+                        if data and #data > 0 then
+                            local ok, result = pcall(serialization.unserialize, data)
+                            if ok and type(result) == "table" then feedbacks = result end
+                        end
+                    end
+                end
+                if d.index and d.index >= 1 and d.index <= #feedbacks then
+                    table.remove(feedbacks, d.index)
+                    local file = io.open(FEEDBACKS_PATH, "w")
+                    if file then
+                        file:write(serialization.serialize(feedbacks))
+                        file:close()
+                        sendResult(true, "Отзыв удалён")
+                    else
+                        sendResult(false, "Ошибка записи")
+                    end
+                else
+                    sendResult(false, "Неверный индекс")
+                end
+            
             else
-                writeDebugLog("⚠️ Нет команд или ошибка парсинга")
+                sendResult(false, "Неизвестная команда: " .. tostring(cmd.command))
             end
-        else
-            writeDebugLog("⚠️ Нет ответа от /api/commands")
         end
     end)
 end
 
-event.timer(10, checkWebCommands, math.huge)
+event.timer(5, checkWebCommands, math.huge)
 
 -- ============================================================
 -- ОБРАБОТКА ОБНОВЛЕНИЙ ОТ СЕРВЕРА (ДЛЯ ТЕРМИНАЛА)

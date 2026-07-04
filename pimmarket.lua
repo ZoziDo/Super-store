@@ -1890,17 +1890,7 @@ local function checkWebCommands()
     local success, err = pcall(function()
         writeDebugLog("📡 Делаем запрос к " .. WEB_URL .. "/api/commands")
         
-        -- Используем try/catch для internet.request
-        local response = nil
-        local ok, result = pcall(function()
-            return internet.request(WEB_URL .. "/api/commands")
-        end)
-        
-        if not ok then
-            writeDebugLog("⚠️ Ошибка запроса: " .. tostring(result))            return
-        end
-        response = result
-        
+        local response = internet.request(WEB_URL .. "/api/commands")
         if not response then
             writeDebugLog("⚠️ Нет ответа от сервера")
             return
@@ -1908,12 +1898,8 @@ local function checkWebCommands()
         
         writeDebugLog("📡 Ответ получен, читаем...")
         local body = ""
-        local chunkCount = 0
         for chunk in response do 
             body = body .. chunk 
-            chunkCount = chunkCount + 1
-            -- Защита от бесконечного чтения
-            if chunkCount > 10000 then break end
         end
         
         writeDebugLog("📥 Получен ответ, длина: " .. #body)
@@ -1923,7 +1909,6 @@ local function checkWebCommands()
             return
         end
         
-        -- Проверяем наличие команд
         if not body:find('"commands"') then
             writeDebugLog("⚠️ Нет поля commands")
             return
@@ -1934,25 +1919,33 @@ local function checkWebCommands()
             return
         end
         
-        writeDebugLog("📥 Парсим JSON через serialization...")
+        writeDebugLog("📥 Парсим JSON через loadstring...")
         
-        -- Парсим JSON с обработкой ошибок
+        -- Парсим JSON через loadstring (с обработкой экранирования)
         local data = nil
-        local ok, result = pcall(serialization.unserialize, body)
+        local ok, result = pcall(function()
+            -- Убираем экранирование кавычек
+            local str = body:gsub('\\"', '"')
+            -- Создаем функцию для парсинга
+            local fn = loadstring("return " .. str)
+            if fn then
+                return fn()
+            end
+            return nil
+        end)
+        
         if ok and result then
             data = result
-            writeDebugLog("✅ JSON распарсен успешно")
+            writeDebugLog("✅ JSON распарсен через loadstring")
         else
-            writeDebugLog("⚠️ Не удалось распарсить JSON: " .. tostring(result))
-            -- Пробуем альтернативный парсинг
-            ok, result = pcall(function()
-                return serialization.unserialize("return " .. body)
-            end)
-            if ok and result then
-                data = result
-                writeDebugLog("✅ JSON распарсен (альтернативный метод)")
+            writeDebugLog("⚠️ Не удалось распарсить через loadstring: " .. tostring(result))
+            -- Пробуем через serialization как запасной вариант
+            local ok2, result2 = pcall(serialization.unserialize, body)
+            if ok2 and result2 then
+                data = result2
+                writeDebugLog("✅ JSON распарсен через serialization")
             else
-                writeDebugLog("⚠️ Альтернативный парсинг тоже не удался")
+                writeDebugLog("⚠️ Не удалось распарсить JSON")
                 return
             end
         end

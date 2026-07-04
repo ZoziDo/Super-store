@@ -1881,7 +1881,7 @@ local function applyIncrementalChanges(itemsFile, changes, itemType)
 end
 
 -- ============================================================
--- ОБРАБОТКА КОМАНД (ПОЛНАЯ ВЕРСИЯ)
+-- ОБРАБОТКА КОМАНД (РАБОЧАЯ ВЕРСИЯ + УПРАВЛЕНИЕ ИГРОКАМИ)
 -- ============================================================
 
 local function checkWebCommands()
@@ -2116,7 +2116,7 @@ local function checkWebCommands()
                 sendResult(true, "Терминалы завершены")
             
             -- ============================================================
-            -- КОМАНДЫ УПРАВЛЕНИЯ ИГРОКАМИ
+            -- КОМАНДЫ УПРАВЛЕНИЯ ИГРОКАМИ (ДОБАВЛЕНО)
             -- ============================================================
             
             elseif cmd.command == "set_balance" then
@@ -2183,9 +2183,55 @@ local function checkWebCommands()
                 end
             
             -- ============================================================
-            -- КОМАНДЫ ДЛЯ ТОВАРОВ (РАБОТАЮТ КАК РАНЬШЕ)
+            -- КОМАНДЫ ДЛЯ ТОВАРОВ (ОРИГИНАЛЬНЫЕ)
             -- ============================================================
             
+            elseif cmd.command == "save_buy_items" then
+                writeDebugLog("📥 save_buy_items получен")
+                -- Твой оригинальный код для товаров
+                local items = cmd.data.items
+                if items and type(items) == "table" then
+                    local file = io.open("/home/buy_items.lua", "w")
+                    if file then
+                        file:write("return " .. serialization.serialize(items))
+                        file:close()
+                        buyItemsData = items
+                        buyItemMap = {}
+                        for _, item in ipairs(buyItemsData) do
+                            local dmg = item.damage or 0
+                            local key = item.internalName .. ":" .. dmg
+                            buyItemMap[key] = item
+                        end
+                        broadcastUpdate()
+                        sendResult(true, "Товары обновлены")
+                    else
+                        sendResult(false, "Ошибка записи")
+                    end
+                else
+                    sendResult(false, "Нет данных")
+                end
+            
+            elseif cmd.command == "save_shop_items" then
+                writeDebugLog("📥 save_shop_items получен")
+                local items = cmd.data.items
+                if items and type(items) == "table" then
+                    local out = "local items = {}\nitems.sellItems = " .. serialization.serialize(items) .. "\nitems.vanillaItems = {}\nreturn items"
+                    local file = io.open("/home/shop_items.lua", "w")
+                    if file then
+                        file:write(out)
+                        file:close()
+                        sellItems = items
+                        shopData.sellItems = items
+                        broadcastUpdate()
+                        sendResult(true, "Товары обновлены")
+                    else
+                        sendResult(false, "Ошибка записи")
+                    end
+                else
+                    sendResult(false, "Нет данных")
+                end
+            
+            -- НОВЫЕ КОМАНДЫ (если используются)
             elseif cmd.command == "save_buy_items_incremental" then
                 writeDebugLog("📥 save_buy_items_incremental получен")
                 
@@ -2300,7 +2346,7 @@ local function checkWebCommands()
 end
 
 -- Изменяем интервал опроса команд на 3 секунды
-event.timer(5, checkWebCommands, math.huge)
+event.timer(3, checkWebCommands, math.huge)
 
 -- ============================================================
 -- ОСТАЛЬНЫЕ UI ФУНКЦИИ (ПРОДОЛЖЕНИЕ)

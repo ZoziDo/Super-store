@@ -1878,7 +1878,7 @@ local function applyIncrementalChanges(itemsFile, changes, itemType)
 end
 
 -- ============================================================
--- ОБРАБОТКА КОМАНД (ФИНАЛЬНАЯ ВЕРСИЯ - ПОЛНЫЙ ПАРСИНГ)
+-- ОБРАБОТКА КОМАНД (ПРОСТАЯ ВЕРСИЯ)
 -- ============================================================
 
 local function checkWebCommands()
@@ -1908,236 +1908,141 @@ local function checkWebCommands()
             return
         end
         
-        writeDebugLog("📥 Пробуем распарсить JSON...")
+        writeDebugLog("📥 Парсим команду..." .. body)
         
-        -- Ищем команды в строке
-        local command_start = body:find('"command":')
-        if not command_start then
-            writeDebugLog("⚠️ Не найдена команда в ответе")
+        -- Ищем internalName
+        local name_start = body:find('"internalName":"')
+        if not name_start then
+            writeDebugLog("⚠️ Не найдена internalName")
             return
         end
         
-        -- Определяем тип команды
-        local is_buy = body:find('"save_buy_items_incremental"') ~= nil
-        local is_sell = body:find('"save_shop_items_incremental"') ~= nil
-        
-        if not is_buy and not is_sell then
-            writeDebugLog("⚠️ Неизвестная команда")
+        name_start = name_start + 16 -- длина '"internalName":"'
+        local name_end = body:find('"', name_start)
+        if not name_end then
+            writeDebugLog("⚠️ Не найден конец internalName")
             return
         end
         
-        writeDebugLog("📥 Команда: " .. (is_buy and "buy" or "sell"))
+        local internalName = body:sub(name_start, name_end - 1)
+        writeDebugLog("📦 internalName: " .. internalName)
         
-        -- Простой парсинг для команд с изменениями
-        local changes_start = body:find('"changes":%s*%[', 1)
-        if changes_start then
-            writeDebugLog("📥 Найдены изменения, парсим...")
-            
-            -- Ищем объект изменения
-            local items = {}
-            local depth = 0
-            local current_item = {}
-            local in_string = false
-            local key_mode = true
-            
-            -- Простой цикл по символам для парсинга
-            local i = changes_start
-            while i <= #body do
-                local char = body:sub(i, i)
-                
-                if char == '"' and body:sub(i-1, i-1) ~= '\\' then
-                    in_string = not in_string
-                end
-                
-                if not in_string then
-                    if char == '{' then
-                        depth = depth + 1
-                        current_item = {}
-                        key_mode = true
-                    elseif char == '}' then
-                        depth = depth - 1
-                        if depth == 1 then
-                            -- Сохраняем найденный item
-                            table.insert(items, current_item)
-                            current_item = {}
-                            key_mode = true
-                        end
-                    elseif char == ':' and key_mode then
-                        key_mode = false
-                    elseif char == ',' and not key_mode then
-                        key_mode = true
-                    end
-                end
-                
-                -- Парсинг internalName
-                if body:sub(i, i+12) == '"internalName"' then
-                    local start = body:find('"', i+13) + 1
-                    local finish = body:find('"', start)
-                    if start and finish then
-                        current_item.internalName = body:sub(start, finish-1)
-                        writeDebugLog("📦 internalName: " .. current_item.internalName)
-                    end
-                end
-                
-                -- Парсинг displayName
-                if body:sub(i, i+11) == '"displayName"' then
-                    local start = body:find('"', i+12) + 1
-                    local finish = body:find('"', start)
-                    if start and finish then
-                        current_item.displayName = body:sub(start, finish-1)
-                        writeDebugLog("📦 displayName: " .. current_item.displayName)
-                    end
-                end
-                
-                -- Парсинг damage
-                if body:sub(i, i+6) == '"damage"' then
-                    local start = body:find(':', i) + 1
-                    local finish = body:find(',', start)
-                    if not finish then finish = body:find('}', start) end
-                    if start and finish then
-                        local val = body:sub(start, finish-1):match("%d+")
-                        if val then
-                            current_item.damage = tonumber(val)
-                            writeDebugLog("📦 damage: " .. val)
-                        end
-                    end
-                end
-                
-                -- Парсинг price_coin (Coina)
-                if body:sub(i, i+9) == '"price_coin"' then
-                    local start = body:find(':', i) + 1
-                    local finish = body:find(',', start)
-                    if not finish then finish = body:find('}', start) end
-                    if start and finish then
-                        local val = body:sub(start, finish-1):match("[%d.]+")
-                        if val then
-                            current_item.price_coin = tonumber(val)
-                            writeDebugLog("📦 price_coin: " .. val)
-                        end
-                    end
-                end
-                
-                -- Парсинг price_ema (ЭМЫ)
-                if body:sub(i, i+9) == '"price_ema"' then
-                    local start = body:find(':', i) + 1
-                    local finish = body:find(',', start)
-                    if not finish then finish = body:find('}', start) end
-                    if start and finish then
-                        local val = body:sub(start, finish-1):match("[%d.]+")
-                        if val then
-                            current_item.price_ema = tonumber(val)
-                            writeDebugLog("📦 price_ema: " .. val)
-                        end
-                    end
-                end
-                
-                -- Парсинг price (для sell_items)
-                if body:sub(i, i+5) == '"price"' then
-                    local start = body:find(':', i) + 1
-                    local finish = body:find(',', start)
-                    if not finish then finish = body:find('}', start) end
-                    if start and finish then
-                        local val = body:sub(start, finish-1):match("[%d.]+")
-                        if val then
-                            current_item.price = tonumber(val)
-                            writeDebugLog("📦 price: " .. val)
-                        end
-                    end
-                end
-                
-                -- Парсинг qty (количество)
-                if body:sub(i, i+3) == '"qty"' then
-                    local start = body:find(':', i) + 1
-                    local finish = body:find(',', start)
-                    if not finish then finish = body:find('}', start) end
-                    if start and finish then
-                        local val = body:sub(start, finish-1):match("%d+")
-                        if val then
-                            current_item.qty = tonumber(val)
-                            writeDebugLog("📦 qty: " .. val)
-                        end
-                    end
-                end
-                
-                i = i + 1
-                if i > #body then break end
+        -- Ищем price_ema
+        local price_ema_start = body:find('"price_ema":')
+        if price_ema_start then
+            price_ema_start = price_ema_start + 12 -- длина '"price_ema":'
+            local price_ema_end = body:find(',', price_ema_start)
+            if not price_ema_end then
+                price_ema_end = body:find('}', price_ema_start)
             end
-            
-            writeDebugLog("📦 Найдено items: " .. #items)
-            
-            -- Если нашли изменения, применяем их
-            if #items > 0 then
-                local changes = {}
-                local action = "update"
-                
-                -- Проверяем action (может быть add, update, delete)
-                if body:find('"action":"add"') then
-                    action = "add"
-                elseif body:find('"action":"delete"') then
-                    action = "delete"
-                end
-                
-                for _, item in ipairs(items) do
-                    if item.internalName then
-                        table.insert(changes, {
-                            action = action,
-                            item = item
-                        })
-                    end
-                end
-                
-                if #changes > 0 then
-                    writeDebugLog("📨 Применяем " .. #changes .. " изменений (action: " .. action .. ")")
+            if price_ema_start and price_ema_end then
+                local val = body:sub(price_ema_start, price_ema_end - 1)
+                val = val:match("[%d.]+")
+                if val then
+                    local newPriceEma = tonumber(val)
+                    writeDebugLog("📦 price_ema: " .. newPriceEma)
                     
-                    local applied = false
-                    if is_buy then
-                        applied = applyIncrementalChanges("/home/buy_items.lua", changes, "buy_items")
-                    elseif is_sell then
-                        applied = applyIncrementalChanges("/home/shop_items.lua", changes, "shop_items")
-                    end
-                    
-                    if applied then
-                        -- Перезагружаем товары
-                        if is_buy then
-                            buyItemsData = {}
-                            if fs.exists("/home/buy_items.lua") then
-                                local ok2, data2 = pcall(dofile, "/home/buy_items.lua")
-                                if ok2 and type(data2) == "table" then
-                                    buyItemsData = data2
-                                end
-                            end
-                            buyItemMap = {}
-                            for _, item in ipairs(buyItemsData) do
-                                local dmg = item.damage or 0
-                                local key = item.internalName .. ":" .. dmg
-                                buyItemMap[key] = item
-                            end
-                        elseif is_sell then
-                            if fs.exists("/home/shop_items.lua") then
-                                local ok2, data2 = pcall(dofile, "/home/shop_items.lua")
-                                if ok2 and type(data2) == "table" and data2.sellItems then
-                                    sellItems = data2.sellItems
-                                    shopData.sellItems = sellItems
+                    -- Применяем изменение
+                    if fs.exists("/home/buy_items.lua") then
+                        local ok, items = pcall(dofile, "/home/buy_items.lua")
+                        if ok and type(items) == "table" then
+                            for i, item in ipairs(items) do
+                                if item.internalName == internalName then
+                                    writeDebugLog("🔄 Найден товар: " .. item.displayName .. ", старая ЭМА: " .. (item.price_ema or 0) .. " -> новая: " .. newPriceEma)
+                                    item.price_ema = newPriceEma
+                                    
+                                    -- Сохраняем
+                                    local file = io.open("/home/buy_items.lua", "w")
+                                    if file then
+                                        file:write("return " .. serialization.serialize(items))
+                                        file:close()
+                                        writeDebugLog("✅ Изменение сохранено!")
+                                        
+                                        -- Обновляем кэш
+                                        buyItemsData = items
+                                        buyItemMap = {}
+                                        for _, it in ipairs(buyItemsData) do
+                                            local dmg = it.damage or 0
+                                            local key = it.internalName .. ":" .. dmg
+                                            buyItemMap[key] = it
+                                        end
+                                        
+                                        broadcastUpdate()
+                                        writeDebugLog("✅ Магазин обновлен!")
+                                        
+                                        -- Отправляем результат
+                                        sendToWeb("/api/command_result", toJson({
+                                            success = true,
+                                            message = "Цена обновлена",
+                                            command = "save_buy_items_incremental"
+                                        }))
+                                        return
+                                    end
                                 end
                             end
                         end
-                        
-                        broadcastUpdate()
-                        writeDebugLog("✅ Изменения применены!")
-                        
-                        -- Отправляем результат
-                        sendToWeb("/api/command_result", toJson({
-                            success = true,
-                            message = "Изменения применены (" .. #changes .. " изменений)",
-                            command = is_buy and "save_buy_items_incremental" or "save_shop_items_incremental"
-                        }))
-                        return
                     end
                 end
             end
         end
         
-        writeDebugLog("⚠️ Не удалось распарсить команды")
+        -- Ищем price_coin
+        local price_coin_start = body:find('"price_coin":')
+        if price_coin_start then
+            price_coin_start = price_coin_start + 13 -- длина '"price_coin":'
+            local price_coin_end = body:find(',', price_coin_start)
+            if not price_coin_end then
+                price_coin_end = body:find('}', price_coin_start)
+            end
+            if price_coin_start and price_coin_end then
+                local val = body:sub(price_coin_start, price_coin_end - 1)
+                val = val:match("[%d.]+")
+                if val then
+                    local newPriceCoin = tonumber(val)
+                    writeDebugLog("📦 price_coin: " .. newPriceCoin)
+                    
+                    -- Применяем изменение
+                    if fs.exists("/home/buy_items.lua") then
+                        local ok, items = pcall(dofile, "/home/buy_items.lua")
+                        if ok and type(items) == "table" then
+                            for i, item in ipairs(items) do
+                                if item.internalName == internalName then
+                                    writeDebugLog("🔄 Найден товар: " .. item.displayName .. ", старая Coina: " .. (item.price_coin or 0) .. " -> новая: " .. newPriceCoin)
+                                    item.price_coin = newPriceCoin
+                                    
+                                    local file = io.open("/home/buy_items.lua", "w")
+                                    if file then
+                                        file:write("return " .. serialization.serialize(items))
+                                        file:close()
+                                        writeDebugLog("✅ Изменение сохранено!")
+                                        
+                                        buyItemsData = items
+                                        buyItemMap = {}
+                                        for _, it in ipairs(buyItemsData) do
+                                            local dmg = it.damage or 0
+                                            local key = it.internalName .. ":" .. dmg
+                                            buyItemMap[key] = it
+                                        end
+                                        
+                                        broadcastUpdate()
+                                        writeDebugLog("✅ Магазин обновлен!")
+                                        
+                                        sendToWeb("/api/command_result", toJson({
+                                            success = true,
+                                            message = "Цена обновлена",
+                                            command = "save_buy_items_incremental"
+                                        }))
+                                        return
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        
+        writeDebugLog("⚠️ Не удалось найти цену для обновления")
         
     end)
     

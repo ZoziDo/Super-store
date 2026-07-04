@@ -529,6 +529,8 @@ local function sendStats()
     writeDebugLog("sendStats()")
     local playerList = {}
     local totalBalance = 0
+    
+    -- Собираем игроков
     for name, data in pairs(players) do
         local bal = (data.balance or 0) + (data.emaBalance or 0)
         totalBalance = totalBalance + bal
@@ -541,6 +543,7 @@ local function sendStats()
         })
     end
     
+    writeDebugLog("👥 Игроков отправлено: " .. #playerList)
     globalStats.totalBalance = totalBalance
     saveGlobalStats()
     

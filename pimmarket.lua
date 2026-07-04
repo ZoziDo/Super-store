@@ -1878,7 +1878,7 @@ local function applyIncrementalChanges(itemsFile, changes, itemType)
 end
 
 -- ============================================================
--- ОБРАБОТКА КОМАНД (САМАЯ ПРОСТАЯ ВЕРСИЯ)
+-- ОБРАБОТКА КОМАНД (ФИНАЛЬНАЯ РАБОЧАЯ ВЕРСИЯ)
 -- ============================================================
 
 local function checkWebCommands()
@@ -1900,78 +1900,96 @@ local function checkWebCommands()
         end
         
         writeDebugLog("📥 Получен ответ, длина: " .. #body)
-        writeDebugLog("📥 Первые 200 символов: " .. body:sub(1, 200))
         
-        -- Проверяем, есть ли команды
-        if body:find('"commands":[]') then
+        -- Проверяем, есть ли команды (игнорируем пробелы)
+        if #body < 20 then
+            writeDebugLog("⚠️ Ответ слишком короткий, команд нет")
+            return
+        end
+        
+        -- Проверяем наличие "commands"
+        if not body:find('"commands"') then
+            writeDebugLog("⚠️ Нет поля commands")
+            return
+        end
+        
+        -- Проверяем пустые команды
+        if body:find('"commands"%s*:%s*%[%s*%]') then
             writeDebugLog("⚠️ Нет команд в ответе")
             return
         end
         
         writeDebugLog("📥 Парсим команду...")
         
-        -- Простой поиск строк - ищем internalName
+        -- ПРОСТОЙ ПОИСК - ищем internalName
         local internalName = nil
-        local name_start = body:find('"internalName":"')
-        if name_start then
-            name_start = name_start + 16
-            local name_end = body:find('"', name_start)
-            if name_end then
-                internalName = body:sub(name_start, name_end - 1)
-                writeDebugLog("📦 internalName: " .. internalName)
-            end
-        end
-        
-        if not internalName then
+        local name_start = body:find('"internalName"')
+        if not name_start then
             writeDebugLog("⚠️ Не найдена internalName")
             return
         end
         
-        -- Ищем price_ema (простой поиск)
+        -- Находим значение internalName
+        local colon_pos = body:find(':', name_start)
+        if not colon_pos then return end
+        local quote1 = body:find('"', colon_pos + 1)
+        if not quote1 then return end
+        local quote2 = body:find('"', quote1 + 1)
+        if not quote2 then return end
+        
+        internalName = body:sub(quote1 + 1, quote2 - 1)
+        writeDebugLog("📦 internalName: " .. internalName)
+        
+        -- Ищем price_ema
         local price_ema = nil
-        local ema_start = body:find('"price_ema":')
+        local ema_start = body:find('"price_ema"')
         if ema_start then
-            -- Ищем число после "price_ema":
-            local pos = ema_start + 12
-            local num = ""
-            while pos <= #body do
-                local ch = body:sub(pos, pos)
-                if ch:match("[%d.]") then
-                    num = num .. ch
-                    pos = pos + 1
-                else
-                    break
+            local colon_pos2 = body:find(':', ema_start)
+            if colon_pos2 then
+                local num_start = colon_pos2 + 1
+                local num_str = ""
+                for i = num_start, #body do
+                    local ch = body:sub(i, i)
+                    if ch:match("[%d.]") then
+                        num_str = num_str .. ch
+                    elseif ch == ',' or ch == '}' or ch == ' ' then
+                        if num_str ~= "" then break end
+                    end
+                    if ch == '}' or ch == ',' then break end
                 end
-            end
-            if num ~= "" then
-                price_ema = tonumber(num)
-                writeDebugLog("📦 price_ema: " .. price_ema)
+                if num_str ~= "" then
+                    price_ema = tonumber(num_str)
+                    writeDebugLog("📦 price_ema: " .. price_ema)
+                end
             end
         end
         
-        -- Ищем price_coin (простой поиск)
+        -- Ищем price_coin
         local price_coin = nil
-        local coin_start = body:find('"price_coin":')
+        local coin_start = body:find('"price_coin"')
         if coin_start then
-            local pos = coin_start + 13
-            local num = ""
-            while pos <= #body do
-                local ch = body:sub(pos, pos)
-                if ch:match("[%d.]") then
-                    num = num .. ch
-                    pos = pos + 1
-                else
-                    break
+            local colon_pos2 = body:find(':', coin_start)
+            if colon_pos2 then
+                local num_start = colon_pos2 + 1
+                local num_str = ""
+                for i = num_start, #body do
+                    local ch = body:sub(i, i)
+                    if ch:match("[%d.]") then
+                        num_str = num_str .. ch
+                    elseif ch == ',' or ch == '}' or ch == ' ' then
+                        if num_str ~= "" then break end
+                    end
+                    if ch == '}' or ch == ',' then break end
                 end
-            end
-            if num ~= "" then
-                price_coin = tonumber(num)
-                writeDebugLog("📦 price_coin: " .. price_coin)
+                if num_str ~= "" then
+                    price_coin = tonumber(num_str)
+                    writeDebugLog("📦 price_coin: " .. price_coin)
+                end
             end
         end
         
-        -- Применяем изменения если нашли
-        if price_ema or price_coin then
+        -- Применяем изменения
+        if (price_ema or price_coin) and internalName then
             writeDebugLog("📥 Найдены изменения, применяем...")
             
             if fs.exists("/home/buy_items.lua") then
@@ -2021,13 +2039,11 @@ local function checkWebCommands()
                     else
                         writeDebugLog("⚠️ Товар не найден: " .. internalName)
                     end
-                else
-                    writeDebugLog("⚠️ Ошибка загрузки buy_items.lua")
                 end
             end
         end
         
-        writeDebugLog("⚠️ Не удалось найти цену для обновления")
+        writeDebugLog("⚠️ Нет изменений для применения")
         
     end)
     

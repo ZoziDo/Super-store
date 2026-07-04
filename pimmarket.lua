@@ -65,9 +65,6 @@ local function checkVar(name, value)
     return true
 end
 
--- Переопределяем gpu.set с проверкой
-local original_gpu_set = gpu.set
-gpu.set = function(x, y, text)
     if not text then
         writeErrorLog("❌ gpu.set() вызван с nil! x=" .. tostring(x) .. ", y=" .. tostring(y))
         return
@@ -79,9 +76,6 @@ gpu.set = function(x, y, text)
     return original_gpu_set(x, y, text)
 end
 
--- Переопределяем unicode.len с проверкой
-local original_unicode_len = unicode.len
-unicode.len = function(text)
     if not text then
         writeErrorLog("❌ unicode.len() вызван с nil!")
         return 0

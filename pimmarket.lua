@@ -573,30 +573,31 @@ local function sendStats()
         end
     end
     
-    local buyItems = {}
-    if fs.exists("/home/buy_items.lua") then
-        local ok, data = pcall(dofile, "/home/buy_items.lua")
-        if ok and type(data) == "table" then 
-            buyItems = data 
-            writeDebugLog("📦 Загружены buy_items: " .. #buyItems .. " товаров")
-        else
-            writeErrorLog("❌ Ошибка загрузки buy_items.lua")
+    -- Используем глобальные переменные, уже загруженные forceLoadItems()
+    local buyItems = buyItemsData or {}
+    local sellItems = sellItems or {}
+
+    if #buyItems == 0 then
+        writeDebugLog("⚠️ buyItems пуст, пробуем загрузить снова...")
+        if fs.exists("/home/buy_items.lua") then
+            local ok, data = pcall(dofile, "/home/buy_items.lua")
+            if ok and type(data) == "table" then 
+                buyItems = data 
+                buyItemsData = data
+                writeDebugLog("📦 Повторно загружены buy_items: " .. #buyItems .. " товаров")
+            end
         end
-    else
-        writeErrorLog("⚠️ Файл /home/buy_items.lua не найден")
     end
-    
-    local sellItems = {}
-    if fs.exists("/home/shop_items.lua") then
-        local ok, data = pcall(dofile, "/home/shop_items.lua")
-        if ok and type(data) == "table" and data.sellItems then
-            sellItems = data.sellItems
-            writeDebugLog("📦 Загружены sell_items: " .. #sellItems .. " товаров")
-        else
-            writeErrorLog("❌ Ошибка загрузки shop_items.lua")
+
+    if #sellItems == 0 then
+        writeDebugLog("⚠️ sellItems пуст, пробуем загрузить снова...")
+        if fs.exists("/home/shop_items.lua") then
+            local ok, data = pcall(dofile, "/home/shop_items.lua")
+            if ok and type(data) == "table" and data.sellItems then
+                sellItems = data.sellItems
+                writeDebugLog("📦 Повторно загружены sell_items: " .. #sellItems .. " товаров")
+            end
         end
-    else
-        writeErrorLog("⚠️ Файл /home/shop_items.lua не найден")
     end
     
     sendToWeb("/api/update", toJson({
@@ -651,6 +652,68 @@ for _, item in ipairs(buyItemsData) do
     local key = item.internalName .. ":" .. dmg
     buyItemMap[key] = item
 end
+
+-- ============================================================
+-- ПРИНУДИТЕЛЬНАЯ ЗАГРУЗКА ТОВАРОВ ПРИ СТАРТЕ
+-- ============================================================
+
+-- Функция для принудительной загрузки товаров
+local function forceLoadItems()
+    writeDebugLog("🔄 Принудительная загрузка товаров...")
+    
+    -- Загружаем buy_items
+    buyItemsData = {}
+    if fs.exists("/home/buy_items.lua") then
+        local ok, data = pcall(dofile, "/home/buy_items.lua")
+        if ok and type(data) == "table" then
+            buyItemsData = data
+            writeDebugLog("✅ Загружены buy_items: " .. #buyItemsData .. " товаров")
+        else
+            writeErrorLog("❌ Ошибка загрузки buy_items.lua")
+        end
+    else
+        writeErrorLog("⚠️ Файл /home/buy_items.lua не найден")
+    end
+    
+    -- Обновляем карту
+    buyItemMap = {}
+    for _, item in ipairs(buyItemsData) do
+        local dmg = item.damage or 0
+        local key = item.internalName .. ":" .. dmg
+        buyItemMap[key] = item
+    end
+    
+    -- Загружаем sell_items
+    if fs.exists("/home/shop_items.lua") then
+        local ok, data = pcall(dofile, "/home/shop_items.lua")
+        if ok and type(data) == "table" and data.sellItems then
+            sellItems = data.sellItems
+            shopData.sellItems = sellItems
+            writeDebugLog("✅ Загружены sell_items: " .. #sellItems .. " товаров")
+        else
+            writeErrorLog("❌ Ошибка загрузки shop_items.lua")
+        end
+    else
+        writeErrorLog("⚠️ Файл /home/shop_items.lua не найден")
+    end
+    
+    writeDebugLog("✅ Принудительная загрузка завершена")
+end
+
+-- Вызываем принудительную загрузку при старте
+forceLoadItems()
+
+-- Также вызываем через 2 секунды (на случай, если файлы еще не готовы)
+event.timer(2, function()
+    writeDebugLog("🔄 Повторная загрузка товаров через 2 секунды...")
+    forceLoadItems()
+end)
+
+-- И через 5 секунд (для надежности)
+event.timer(5, function()
+    writeDebugLog("🔄 Повторная загрузка товаров через 5 секунд...")
+    forceLoadItems()
+end)
 
 local drawAgreementScreen
 if fs.exists("/home/agreement.lua") then

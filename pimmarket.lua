@@ -1671,20 +1671,29 @@ end
 
 local function checkWebCommands()
     pcall(function()
+        writeDebugLog("🔍 Проверка команд...")
         local response = internet.request(WEB_URL .. "/api/commands")
         if response then
             local body = ""
             for chunk in response do body = body .. chunk end
+            writeDebugLog("📥 Получен ответ от /api/commands: " .. body:sub(1, 200))
             local ok, data = pcall(serialization.unserialize, body)
             if ok and data and data.commands then
+                writeDebugLog("📨 Получено команд: " .. #data.commands)
                 for _, cmd in ipairs(data.commands) do
                     local d = cmd.data or {}
                     local requestId = cmd.requestId
-                    local function reply(success, msg)
+                    local cmdId = cmd.id or cmd.requestId or os.time()
+                    
+                    -- Функция отправки результата с ID
+                    local function sendResult(success, msg)
+                        writeDebugLog("📤 Отправка результата для команды " .. cmd.command .. ": " .. (success and "✅" or "❌") .. " " .. (msg or ""))
                         sendToWeb("/api/command_result", toJson({
                             requestId = requestId,
                             success = success,
-                            message = msg or ""
+                            message = msg or "",
+                            id = cmdId,
+                            command = cmd.command
                         }))
                     end
 
@@ -1697,15 +1706,15 @@ local function checkWebCommands()
                         for addr in pairs(markets) do
                             modem.send(addr, 0xffef, serialization.serialize({op="shop_paused", paused=shopPaused}))
                         end
-                        reply(true, shopPaused and "Магазин на паузе" or "Магазин активен")
+                        sendResult(true, shopPaused and "Магазин на паузе" or "Магазин активен")
                     
                     elseif cmd.command == "update_market" then
                         broadcastUpdate()
-                        reply(true, "Обновление разослано")
+                        sendResult(true, "Обновление разослано")
                     
                     elseif cmd.command == "kill_market" then
                         broadcastKill()
-                        reply(true, "Терминалы завершены")
+                        sendResult(true, "Терминалы завершены")
                     
                     elseif cmd.command == "set_balance" then
                         local player = players[d.name]
@@ -1713,9 +1722,9 @@ local function checkWebCommands()
                             if d.coin then player.balance = d.coin end
                             if d.ema then player.emaBalance = d.ema end
                             saveDB()
-                            reply(true, "Баланс обновлён")
+                            sendResult(true, "Баланс обновлён")
                         else
-                            reply(false, "Игрок не найден")
+                            sendResult(false, "Игрок не найден")
                         end
                     
                     elseif cmd.command == "toggle_ban" then
@@ -1723,9 +1732,9 @@ local function checkWebCommands()
                         if player then
                             player.banned = not player.banned
                             saveDB()
-                            reply(true, player.banned and "Забанен" or "Разбанен")
+                            sendResult(true, player.banned and "Забанен" or "Разбанен")
                         else
-                            reply(false, "Игрок не найден")
+                            sendResult(false, "Игрок не найден")
                         end
                     
                     elseif cmd.command == "reset_player" then
@@ -1735,23 +1744,23 @@ local function checkWebCommands()
                             player.emaBalance = 0
                             player.transactions = 0
                             saveDB()
-                            reply(true, "Игрок сброшен")
+                            sendResult(true, "Игрок сброшен")
                         else
-                            reply(false, "Игрок не найден")
+                            sendResult(false, "Игрок не найден")
                         end
                     
                     elseif cmd.command == "add_admin" then
                         if addAdmin(d.name) then
-                            reply(true, "Админ добавлен")
+                            sendResult(true, "Админ добавлен")
                         else
-                            reply(false, "Уже админ или ошибка")
+                            sendResult(false, "Уже админ или ошибка")
                         end
                     
                     elseif cmd.command == "remove_admin" then
                         if removeAdmin(d.name) then
-                            reply(true, "Админ удалён")
+                            sendResult(true, "Админ удалён")
                         else
-                            reply(false, "Нельзя удалить")
+                            sendResult(false, "Нельзя удалить")
                         end
                     
                     -- ============================================================
@@ -1767,7 +1776,7 @@ local function checkWebCommands()
                             end
                         end
                         sendToWeb("/api/buy_items_data", toJson({ items = items }))
-                        reply(true, "Данные отправлены (" .. #items .. " товаров)")
+                        sendResult(true, "Данные отправлены (" .. #items .. " товаров)")
                     
                     elseif cmd.command == "get_shop_items" then
                         local items = {}
@@ -1778,10 +1787,11 @@ local function checkWebCommands()
                             end
                         end
                         sendToWeb("/api/shop_items_data", toJson({ items = items }))
-                        reply(true, "Данные отправлены (" .. #items .. " товаров)")
+                        sendResult(true, "Данные отправлены (" .. #items .. " товаров)")
                     
                     elseif cmd.command == "save_buy_items" then
                         local ok, items = pcall(serialization.unserialize, d.items)
+                        writeDebugLog("📥 save_buy_items: " .. tostring(d.items))
                         if ok and type(items) == "table" then
                             local file = io.open("/home/buy_items.lua", "w")
                             if file then
@@ -1800,16 +1810,17 @@ local function checkWebCommands()
                                 
                                 -- ОТПРАВЛЯЕМ ОБНОВЛЕНИЕ ТЕРМИНАЛАМ
                                 broadcastUpdate()
-                                reply(true, "buy_items.lua обновлён (" .. #items .. " товаров)")
+                                sendResult(true, "buy_items.lua обновлён (" .. #items .. " товаров)")
                             else
-                                reply(false, "Ошибка записи файла")
+                                sendResult(false, "Ошибка записи файла")
                             end
                         else
-                            reply(false, "Неверный формат данных")
+                            sendResult(false, "Неверный формат данных")
                         end
                     
                     elseif cmd.command == "save_shop_items" then
                         local ok, items = pcall(serialization.unserialize, d.items)
+                        writeDebugLog("📥 save_shop_items: " .. tostring(d.items))
                         if ok and type(items) == "table" then
                             local out = "local items = {}\nitems.sellItems = " .. serialization.serialize(items) .. "\nitems.vanillaItems = {}\nreturn items"
                             local file = io.open("/home/shop_items.lua", "w")
@@ -1824,12 +1835,12 @@ local function checkWebCommands()
                                 
                                 -- ОТПРАВЛЯЕМ ОБНОВЛЕНИЕ ТЕРМИНАЛАМ
                                 broadcastUpdate()
-                                reply(true, "shop_items.lua обновлён (" .. #items .. " товаров)")
+                                sendResult(true, "shop_items.lua обновлён (" .. #items .. " товаров)")
                             else
-                                reply(false, "Ошибка записи файла")
+                                sendResult(false, "Ошибка записи файла")
                             end
                         else
-                            reply(false, "Неверный формат данных")
+                            sendResult(false, "Неверный формат данных")
                         end
                     
                     elseif cmd.command == "delete_feedback" then
@@ -1851,19 +1862,23 @@ local function checkWebCommands()
                             if file then
                                 file:write(serialization.serialize(feedbacks))
                                 file:close()
-                                reply(true, "Отзыв удалён")
+                                sendResult(true, "Отзыв удалён")
                             else
-                                reply(false, "Ошибка записи")
+                                sendResult(false, "Ошибка записи")
                             end
                         else
-                            reply(false, "Неверный индекс")
+                            sendResult(false, "Неверный индекс")
                         end
                     
                     else
-                        reply(false, "Неизвестная команда: " .. tostring(cmd.command))
+                        sendResult(false, "Неизвестная команда: " .. tostring(cmd.command))
                     end
                 end
+            else
+                writeDebugLog("⚠️ Нет команд или ошибка парсинга")
             end
+        else
+            writeDebugLog("⚠️ Нет ответа от /api/commands")
         end
     end)
 end

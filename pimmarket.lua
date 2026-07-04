@@ -650,7 +650,7 @@ local function sendStats()
     writeDebugLog("📤 Отправлены данные: " .. #playerList .. " игроков, " .. #buyItems .. " товаров для покупки, " .. #sellItems .. " товаров для продажи")
 end
 
-event.timer(5, sendStats, math.huge)
+event.timer(30, sendStats, math.huge)
 
 -- ============================================================
 -- ЗАГРУЗКА ТОВАРОВ И СОГЛАШЕНИЯ
@@ -1875,7 +1875,7 @@ local function checkWebCommands()
     end)
 end
 
-event.timer(3, checkWebCommands, math.huge)
+event.timer(10, checkWebCommands, math.huge)
 
 -- ============================================================
 -- ОСТАЛЬНЫЕ UI ФУНКЦИИ (ПРОДОЛЖЕНИЕ)

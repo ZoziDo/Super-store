@@ -827,117 +827,192 @@ local playerHasFeedback = false
 -- ПАРСЕР JSON ДЛЯ OC (БЕЗ ЗАВИСАНИЙ)
 -- ============================================================
 
--- Простой JSON парсер для OC с защитой от зависаний
+-- ============================================================
+-- ПАРСЕР JSON ДЛЯ OPENCOMPUTERS (БЕЗ ВНЕШНИХ БИБЛИОТЕК)
+-- ============================================================
+
 local function parseJSON(json_str)
     if not json_str or json_str == "" then
         return nil
     end
     
-    writeDebugLog("📥 Парсим JSON, длина: " .. #json_str)
+    writeDebugLog("📥 Парсим JSON: " .. string.sub(json_str, 1, 100))
     
-    -- Ограничиваем время выполнения
-    local startTime = os.clock()
-    local timeout = 10 -- 10 секунд максимум
+    -- Убираем пробелы и переносы
+    json_str = json_str:gsub("%s+", " ")
     
-    -- Пробуем через loadstring (быстрый способ)
-    local ok, result = pcall(function()
-        -- Убираем экранирование кавычек
-        local str = json_str:gsub('\\"', '"')
-        -- Создаем функцию для парсинга
-        local fn = loadstring("return " .. str)
-        if fn then
-            return fn()
+    -- Обрабатываем пустой массив
+    if json_str == '{"commands": []}' or json_str == '{"commands":[]}' then
+        return { commands = {} }
+    end
+    
+    local data = {}
+    local pos = 1
+    local len = #json_str
+    
+    -- Пропускаем пробелы
+    local function skipWhitespace()
+        while pos <= len and json_str:sub(pos, pos):match("%s") do
+            pos = pos + 1
         end
-        return nil
-    end)
-    
-    if ok and result then
-        writeDebugLog("✅ JSON распарсен через loadstring")
-        return result
     end
     
-    -- Если время вышло, прекращаем парсинг
-    if os.clock() - startTime > timeout then
-        writeErrorLog("⚠️ Таймаут парсинга JSON!")
-        return nil
-    end
-    
-    -- Пробуем через serialization (для Lua формата)
-    local ok2, result2 = pcall(serialization.unserialize, json_str)
-    if ok2 and type(result2) == "table" then
-        writeDebugLog("✅ JSON распарсен через serialization")
-        return result2
-    end
-    
-    writeDebugLog("❌ Не удалось распарсить JSON")
-    return nil
-end
-
--- Функция для безопасной обработки JSON строки с товарами
-local function parseItemsFromJSON(json_str)
-    if not json_str or json_str == "" then
-        return nil
-    end
-    
-    writeDebugLog("📥 Парсим товары из JSON, длина: " .. #json_str)
-    
-    -- Пробуем разные способы парсинга
-    
-    -- Способ 1: через loadstring с обработкой экранирования
-    local ok1, result1 = pcall(function()
-        local str = json_str
-        -- Убираем двойное экранирование
-        str = str:gsub('\\"', '"')
-        -- Заменяем JSON на Lua таблицу
-        str = str:gsub('{', 'return {')
-        local fn = loadstring(str)
-        if fn then
-            return fn()
-        end
-        return nil
-    end)
-    
-    if ok1 and type(result1) == "table" then
-        writeDebugLog("✅ Товары распарсены через loadstring: " .. #result1)
-        return result1
-    end
-    
-    -- Способ 2: через serialization
-    local ok2, result2 = pcall(serialization.unserialize, json_str)
-    if ok2 and type(result2) == "table" then
-        writeDebugLog("✅ Товары распарсены через serialization: " .. #result2)
-        return result2
-    end
-    
-    -- Способ 3: ручной парсинг (для простых JSON)
-    if #json_str < 5000 then
-        local ok3, result3 = pcall(function()
-            local str = json_str
-            -- Заменяем ключи
-            str = str:gsub('"([%w_]+)":', '%1 = ')
-            -- Убираем кавычки у строк
-            str = str:gsub('"([^"]*)"', '"%1"')
-            -- Заменяем массивы
-            str = str:gsub('%[', '{')
-            str = str:gsub('%]', '}')
-            -- Убираем экранирование
-            str = str:gsub('\\"', '"')
-            -- Создаем функцию
-            local fn = loadstring("return " .. str)
-            if fn then
-                return fn()
-            end
+    -- Парсим строку
+    local function parseString()
+        if json_str:sub(pos, pos) ~= '"' then
             return nil
-        end)
-        
-        if ok3 and type(result3) == "table" then
-            writeDebugLog("✅ Товары распарсены через ручной парсинг: " .. #result3)
-            return result3
         end
+        pos = pos + 1
+        local start = pos
+        while pos <= len do
+            local ch = json_str:sub(pos, pos)
+            if ch == '"' then
+                local str = json_str:sub(start, pos - 1)
+                pos = pos + 1
+                -- Заменяем экранированные кавычки
+                str = str:gsub('\\"', '"')
+                return str
+            elseif ch == '\\' then
+                pos = pos + 2 -- пропускаем экранирование
+            else
+                pos = pos + 1
+            end
+        end
+        return nil
     end
     
-    writeDebugLog("❌ Не удалось распарсить товары")
-    return nil
+    -- Парсим число
+    local function parseNumber()
+        local start = pos
+        while pos <= len do
+            local ch = json_str:sub(pos, pos)
+            if not ch:match("[%d%.%-]") then
+                break
+            end
+            pos = pos + 1
+        end
+        if pos > start then
+            local num = json_str:sub(start, pos - 1)
+            return tonumber(num)
+        end
+        return nil
+    end
+    
+    -- Парсим массив
+    local function parseArray()
+        if json_str:sub(pos, pos) ~= '[' then
+            return nil
+        end
+        pos = pos + 1
+        local arr = {}
+        skipWhitespace()
+        if json_str:sub(pos, pos) == ']' then
+            pos = pos + 1
+            return arr
+        end
+        while true do
+            skipWhitespace()
+            local val = parseValue()
+            if val ~= nil then
+                table.insert(arr, val)
+            end
+            skipWhitespace()
+            local ch = json_str:sub(pos, pos)
+            if ch == ']' then
+                pos = pos + 1
+                break
+            elseif ch == ',' then
+                pos = pos + 1
+            else
+                break
+            end
+        end
+        return arr
+    end
+    
+    -- Парсим объект
+    local function parseObject()
+        if json_str:sub(pos, pos) ~= '{' then
+            return nil
+        end
+        pos = pos + 1
+        local obj = {}
+        skipWhitespace()
+        if json_str:sub(pos, pos) == '}' then
+            pos = pos + 1
+            return obj
+        end
+        while true do
+            skipWhitespace()
+            local key = parseString()
+            skipWhitespace()
+            if json_str:sub(pos, pos) == ':' then
+                pos = pos + 1
+            else
+                break
+            end
+            skipWhitespace()
+            local val = parseValue()
+            if key and val ~= nil then
+                obj[key] = val
+            end
+            skipWhitespace()
+            local ch = json_str:sub(pos, pos)
+            if ch == '}' then
+                pos = pos + 1
+                break
+            elseif ch == ',' then
+                pos = pos + 1
+            else
+                break
+            end
+        end
+        return obj
+    end
+    
+    -- Парсим значение
+    local function parseValue()
+        skipWhitespace()
+        local ch = json_str:sub(pos, pos)
+        if ch == '"' then
+            return parseString()
+        elseif ch == '{' then
+            return parseObject()
+        elseif ch == '[' then
+            return parseArray()
+        elseif ch == 'n' then
+            -- null
+            if json_str:sub(pos, pos + 3) == 'null' then
+                pos = pos + 4
+                return nil
+            end
+        elseif ch == 't' then
+            if json_str:sub(pos, pos + 3) == 'true' then
+                pos = pos + 4
+                return true
+            end
+        elseif ch == 'f' then
+            if json_str:sub(pos, pos + 4) == 'false' then
+                pos = pos + 5
+                return false
+            end
+        elseif ch:match("[%d%-]") then
+            return parseNumber()
+        end
+        return nil
+    end
+    
+    -- Начинаем парсинг
+    skipWhitespace()
+    local result = parseValue()
+    
+    if result then
+        writeDebugLog("✅ JSON распарсен успешно")
+        return result
+    else
+        writeDebugLog("❌ Не удалось распарсить JSON")
+        return nil
+    end
 end
 
 -- ============================================================
@@ -1916,44 +1991,47 @@ local function safeParseJSON(str)
     return nil
 end
 
+-- ============================================================
+-- ОБРАБОТКА КОМАНД
+-- ============================================================
+
 local function checkWebCommands()
     writeDebugLog("🔍 checkWebCommands() вызвана")
     
     local success, err = pcall(function()
-        writeDebugLog("📡 Делаем запрос к " .. WEB_URL .. "/api/commands")
+        writeDebugLog("📡 Запрос к " .. WEB_URL .. "/api/commands")
         
         local response = internet.request(WEB_URL .. "/api/commands")
         if not response then
-            writeDebugLog("⚠️ Нет ответа от сервера")
+            writeDebugLog("⚠️ Нет ответа")
             return
         end
         
-        writeDebugLog("📡 Ответ получен, читаем...")
         local body = ""
         for chunk in response do 
             body = body .. chunk 
         end
         
-        writeDebugLog("📥 Получен ответ, длина: " .. #body)
+        writeDebugLog("📥 Длина: " .. #body)
         
         if #body < 10 then
-            writeDebugLog("⚠️ Ответ слишком короткий, команд нет")
+            writeDebugLog("⚠️ Слишком короткий ответ")
             return
         end
         
-        -- Парсим JSON безопасно
-        local data = safeParseJSON(body)
+        -- Парсим JSON
+        local data = parseJSON(body)
         if not data then
-            writeErrorLog("❌ Не удалось распарсить JSON: " .. string.sub(body, 1, 200))
+            writeErrorLog("❌ Ошибка парсинга: " .. string.sub(body, 1, 200))
             return
         end
         
         if not data.commands or #data.commands == 0 then
-            writeDebugLog("⚠️ Нет команд в ответе")
+            writeDebugLog("⚠️ Команд нет")
             return
         end
         
-        writeDebugLog("📨 Получено команд: " .. #data.commands)
+        writeDebugLog("📨 Команд: " .. #data.commands)
         
         for _, cmd in ipairs(data.commands) do
             local d = cmd.data or {}
@@ -1961,13 +2039,7 @@ local function checkWebCommands()
             
             writeDebugLog("📨 Команда: " .. (cmd.command or "unknown"))
             
-            -- Для отладки показываем данные команды
-            if cmd.command == "update_player" or cmd.command == "set_balance" then
-                writeDebugLog("📨 Данные: name=" .. tostring(d.name) .. 
-                    ", balance=" .. tostring(d.balance) .. 
-                    ", emaBalance=" .. tostring(d.emaBalance))
-            end
-            
+            -- Функция отправки результата
             local function sendResult(success, msg)
                 writeDebugLog("📤 Результат: " .. (success and "✅" or "❌") .. " " .. (msg or ""))
                 sendToWeb("/api/command_result", toJson({
@@ -1979,11 +2051,10 @@ local function checkWebCommands()
             end
             
             -- ============================================================
-            -- КОМАНДЫ
+            -- ОБРАБОТКА КОМАНД
             -- ============================================================
             
             if cmd.command == "toggle_pause" then
-                writeDebugLog("🔄 toggle_pause")
                 shopPaused = not shopPaused
                 local msg = serialization.serialize({op="shop_paused", paused=shopPaused})
                 for addr in pairs(markets) do
@@ -1992,40 +2063,35 @@ local function checkWebCommands()
                 sendResult(true, shopPaused and "Пауза" or "Активен")
             
             elseif cmd.command == "update_market" then
-                writeDebugLog("🔄 update_market")
                 broadcastUpdate()
                 sendResult(true, "Обновление разослано")
             
             elseif cmd.command == "kill_market" then
-                writeDebugLog("💀 kill_market")
                 broadcastKill()
                 sendResult(true, "Терминалы завершены")
             
             -- ============================================================
-            -- ИГРОКИ (ИНКРЕМЕНТАЛЬНОЕ ОБНОВЛЕНИЕ)
+            -- ИГРОКИ
             -- ============================================================
             
             elseif cmd.command == "update_player" or cmd.command == "set_balance" then
                 local playerName = d.name
                 if not playerName then
-                    writeDebugLog("⚠️ Нет имени игрока!")
                     sendResult(false, "Нет имени игрока")
                     return
                 end
                 
                 writeDebugLog("📥 Обновление игрока: " .. playerName)
                 
-                -- Загружаем текущих игроков
+                -- Загружаем игроков
                 local playersData = {}
                 if fs.exists(DB_PATH) then
                     local ok2, data2 = pcall(dofile, DB_PATH)
                     if ok2 and type(data2) == "table" then
                         playersData = data2
-                        writeDebugLog("📦 Загружено игроков: " .. #playersData)
                     end
                 end
                 
-                -- Создаем если нет
                 if not playersData[playerName] then
                     playersData[playerName] = {
                         balance = 0,
@@ -2035,47 +2101,35 @@ local function checkWebCommands()
                         agreed = false,
                         hasFeedback = false
                     }
-                    writeDebugLog("➕ Создан новый игрок: " .. playerName)
                 end
                 
-                -- Обновляем баланс
                 if d.balance ~= nil then
                     playersData[playerName].balance = tonumber(d.balance) or 0
-                    writeDebugLog("💰 Coin: " .. playersData[playerName].balance)
                 end
                 if d.emaBalance ~= nil then
                     playersData[playerName].emaBalance = tonumber(d.emaBalance) or 0
-                    writeDebugLog("💰 EMA: " .. playersData[playerName].emaBalance)
                 end
                 
-                -- Сохраняем
                 local file = io.open(DB_PATH, "w")
                 if file then
                     file:write("return " .. serialization.serialize(playersData))
                     file:close()
-                    writeDebugLog("✅ Сохранено в players.db")
-                    
-                    -- Обновляем глобальную переменную
                     players = playersData
                     
-                    -- Если это текущий игрок - обновляем локальные переменные
                     if currentPlayer == playerName then
                         coinBalance = playersData[playerName].balance or 0
                         emaBalance = playersData[playerName].emaBalance or 0
-                        writeDebugLog("🔄 Обновлён текущий игрок: " .. playerName)
                     end
                     
                     sendResult(true, "Игрок обновлён")
                 else
-                    writeDebugLog("❌ Ошибка сохранения")
                     sendResult(false, "Ошибка сохранения")
                 end
             
             elseif cmd.command == "toggle_ban" then
-                writeDebugLog("📥 toggle_ban: " .. tostring(d.name))
                 local playerName = d.name
                 if not playerName then
-                    sendResult(false, "Нет имени игрока")
+                    sendResult(false, "Нет имени")
                     return
                 end
                 
@@ -2096,20 +2150,18 @@ local function checkWebCommands()
                         file:write("return " .. serialization.serialize(playersData))
                         file:close()
                         players = playersData
-                        writeDebugLog("🔒 " .. playerName .. " " .. status)
                         sendResult(true, status)
                     else
-                        sendResult(false, "Ошибка сохранения")
+                        sendResult(false, "Ошибка")
                     end
                 else
                     sendResult(false, "Игрок не найден")
                 end
             
             elseif cmd.command == "reset_player" then
-                writeDebugLog("📥 reset_player: " .. tostring(d.name))
                 local playerName = d.name
                 if not playerName then
-                    sendResult(false, "Нет имени игрока")
+                    sendResult(false, "Нет имени")
                     return
                 end
                 
@@ -2131,17 +2183,15 @@ local function checkWebCommands()
                         file:write("return " .. serialization.serialize(playersData))
                         file:close()
                         players = playersData
-                        writeDebugLog("🔄 Сброшен игрок: " .. playerName)
-                        sendResult(true, "Игрок сброшен")
+                        sendResult(true, "Сброшен")
                     else
-                        sendResult(false, "Ошибка сохранения")
+                        sendResult(false, "Ошибка")
                     end
                 else
                     sendResult(false, "Игрок не найден")
                 end
             
             elseif cmd.command == "add_admin" then
-                writeDebugLog("📥 add_admin: " .. tostring(d.name))
                 if addAdmin(d.name) then
                     sendResult(true, "Админ добавлен")
                 else
@@ -2149,7 +2199,6 @@ local function checkWebCommands()
                 end
             
             elseif cmd.command == "remove_admin" then
-                writeDebugLog("📥 remove_admin: " .. tostring(d.name))
                 if removeAdmin(d.name) then
                     sendResult(true, "Админ удалён")
                 else
@@ -2161,10 +2210,8 @@ local function checkWebCommands()
             -- ============================================================
             
             elseif cmd.command == "save_buy_items" then
-                writeDebugLog("📥 save_buy_items")
                 local items = d.items
                 if items and type(items) == "table" then
-                    writeDebugLog("📦 Сохраняем " .. #items .. " товаров")
                     local file = io.open("/home/buy_items.lua", "w")
                     if file then
                         file:write("return " .. serialization.serialize(items))
@@ -2177,19 +2224,17 @@ local function checkWebCommands()
                             buyItemMap[key] = item
                         end
                         broadcastUpdate()
-                        sendResult(true, "Товары обновлены")
+                        sendResult(true, "Обновлено")
                     else
-                        sendResult(false, "Ошибка записи")
+                        sendResult(false, "Ошибка")
                     end
                 else
                     sendResult(false, "Нет данных")
                 end
             
             elseif cmd.command == "save_shop_items" then
-                writeDebugLog("📥 save_shop_items")
                 local items = d.items
                 if items and type(items) == "table" then
-                    writeDebugLog("📦 Сохраняем " .. #items .. " товаров")
                     local out = "local items = {}\nitems.sellItems = " .. serialization.serialize(items) .. "\nitems.vanillaItems = {}\nreturn items"
                     local file = io.open("/home/shop_items.lua", "w")
                     if file then
@@ -2198,19 +2243,17 @@ local function checkWebCommands()
                         sellItems = items
                         shopData.sellItems = items
                         broadcastUpdate()
-                        sendResult(true, "Товары обновлены")
+                        sendResult(true, "Обновлено")
                     else
-                        sendResult(false, "Ошибка записи")
+                        sendResult(false, "Ошибка")
                     end
                 else
                     sendResult(false, "Нет данных")
                 end
             
             elseif cmd.command == "save_buy_items_incremental" then
-                writeDebugLog("📥 save_buy_items_incremental")
                 local changes = d.changes
                 if changes and type(changes) == "table" and #changes > 0 then
-                    writeDebugLog("📦 Изменений: " .. #changes)
                     local applied = applyIncrementalChanges("/home/buy_items.lua", changes, "buy_items")
                     if applied then
                         buyItemsData = {}
@@ -2229,17 +2272,15 @@ local function checkWebCommands()
                         broadcastUpdate()
                         sendResult(true, "Изменения применены")
                     else
-                        sendResult(false, "Ошибка применения")
+                        sendResult(false, "Ошибка")
                     end
                 else
                     sendResult(false, "Нет изменений")
                 end
             
             elseif cmd.command == "save_shop_items_incremental" then
-                writeDebugLog("📥 save_shop_items_incremental")
                 local changes = d.changes
                 if changes and type(changes) == "table" and #changes > 0 then
-                    writeDebugLog("📦 Изменений: " .. #changes)
                     local applied = applyIncrementalChanges("/home/shop_items.lua", changes, "shop_items")
                     if applied then
                         if fs.exists("/home/shop_items.lua") then
@@ -2252,14 +2293,13 @@ local function checkWebCommands()
                         broadcastUpdate()
                         sendResult(true, "Изменения применены")
                     else
-                        sendResult(false, "Ошибка применения")
+                        sendResult(false, "Ошибка")
                     end
                 else
                     sendResult(false, "Нет изменений")
                 end
             
             elseif cmd.command == "get_buy_items" then
-                writeDebugLog("📥 get_buy_items")
                 local items = {}
                 if fs.exists("/home/buy_items.lua") then
                     local ok2, data2 = pcall(dofile, "/home/buy_items.lua")
@@ -2271,7 +2311,6 @@ local function checkWebCommands()
                 sendResult(true, "Данные отправлены")
             
             elseif cmd.command == "get_shop_items" then
-                writeDebugLog("📥 get_shop_items")
                 local items = {}
                 if fs.exists("/home/shop_items.lua") then
                     local ok2, data2 = pcall(dofile, "/home/shop_items.lua")
@@ -2283,19 +2322,17 @@ local function checkWebCommands()
                 sendResult(true, "Данные отправлены")
             
             else
-                writeDebugLog("⚠️ Неизвестная команда: " .. (cmd.command or "nil"))
                 sendResult(false, "Неизвестная команда")
             end
         end
     end)
     
     if not success then
-        writeErrorLog("❌ Ошибка в checkWebCommands: " .. tostring(err))
-        writeDebugLog("❌ Ошибка: " .. tostring(err))
+        writeErrorLog("❌ Ошибка: " .. tostring(err))
     end
 end
 
--- Изменяем интервал опроса команд на 3 секунды (быстрее реакция)
+-- Опрос команд каждые 3 секунды
 event.timer(3, checkWebCommands, math.huge)
 
 -- ============================================================

@@ -828,7 +828,7 @@ local playerHasFeedback = false
 -- ============================================================
 
 -- ============================================================
--- ПАРСЕР JSON ДЛЯ OPENCOMPUTERS (БЕЗ ВНЕШНИХ БИБЛИОТЕК)
+-- ПРОСТОЙ ПАРСЕР JSON ДЛЯ OPENCOMPUTERS
 -- ============================================================
 
 local function parseJSON(json_str)
@@ -836,47 +836,63 @@ local function parseJSON(json_str)
         return nil
     end
     
-    writeDebugLog("📥 Парсим JSON: " .. string.sub(json_str, 1, 100))
+    -- Для отладки показываем начало строки
+    writeDebugLog("📥 Парсим JSON: " .. string.sub(json_str, 1, 150))
     
-    -- Убираем пробелы и переносы
-    json_str = json_str:gsub("%s+", " ")
-    
-    -- Обрабатываем пустой массив
-    if json_str == '{"commands": []}' or json_str == '{"commands":[]}' then
-        return { commands = {} }
-    end
-    
-    local data = {}
+    -- Убираем все лишние пробелы и переносы
+    local str = json_str:gsub("%s+", " ")
     local pos = 1
-    local len = #json_str
+    local len = #str
     
-    -- Пропускаем пробелы
-    local function skipWhitespace()
-        while pos <= len and json_str:sub(pos, pos):match("%s") do
+    -- Функция пропуска пробелов
+    local function skipSpace()
+        while pos <= len and str:sub(pos, pos) == " " do
             pos = pos + 1
         end
     end
     
-    -- Парсим строку
+    -- Парсим строку в кавычках
     local function parseString()
-        if json_str:sub(pos, pos) ~= '"' then
+        if str:sub(pos, pos) ~= '"' then
             return nil
         end
         pos = pos + 1
         local start = pos
+        local result = ""
+        local escaped = false
+        
         while pos <= len do
-            local ch = json_str:sub(pos, pos)
-            if ch == '"' then
-                local str = json_str:sub(start, pos - 1)
-                pos = pos + 1
-                -- Заменяем экранированные кавычки
-                str = str:gsub('\\"', '"')
-                return str
+            local ch = str:sub(pos, pos)
+            if escaped then
+                if ch == '"' then
+                    result = result .. '"'
+                elseif ch == '\\' then
+                    result = result .. '\\'
+                elseif ch == '/' then
+                    result = result .. '/'
+                elseif ch == 'b' then
+                    result = result .. '\b'
+                elseif ch == 'f' then
+                    result = result .. '\f'
+                elseif ch == 'n' then
+                    result = result .. '\n'
+                elseif ch == 'r' then
+                    result = result .. '\r'
+                elseif ch == 't' then
+                    result = result .. '\t'
+                else
+                    result = result .. ch
+                end
+                escaped = false
             elseif ch == '\\' then
-                pos = pos + 2 -- пропускаем экранирование
-            else
+                escaped = true
+            elseif ch == '"' then
                 pos = pos + 1
+                return result
+            else
+                result = result .. ch
             end
+            pos = pos + 1
         end
         return nil
     end
@@ -885,14 +901,14 @@ local function parseJSON(json_str)
     local function parseNumber()
         local start = pos
         while pos <= len do
-            local ch = json_str:sub(pos, pos)
-            if not ch:match("[%d%.%-]") then
+            local ch = str:sub(pos, pos)
+            if not (ch >= '0' and ch <= '9') and ch ~= '.' and ch ~= '-' then
                 break
             end
             pos = pos + 1
         end
         if pos > start then
-            local num = json_str:sub(start, pos - 1)
+            local num = str:sub(start, pos - 1)
             return tonumber(num)
         end
         return nil
@@ -900,24 +916,26 @@ local function parseJSON(json_str)
     
     -- Парсим массив
     local function parseArray()
-        if json_str:sub(pos, pos) ~= '[' then
+        if str:sub(pos, pos) ~= '[' then
             return nil
         end
         pos = pos + 1
         local arr = {}
-        skipWhitespace()
-        if json_str:sub(pos, pos) == ']' then
+        skipSpace()
+        
+        if str:sub(pos, pos) == ']' then
             pos = pos + 1
             return arr
         end
+        
         while true do
-            skipWhitespace()
+            skipSpace()
             local val = parseValue()
             if val ~= nil then
                 table.insert(arr, val)
             end
-            skipWhitespace()
-            local ch = json_str:sub(pos, pos)
+            skipSpace()
+            local ch = str:sub(pos, pos)
             if ch == ']' then
                 pos = pos + 1
                 break
@@ -932,32 +950,37 @@ local function parseJSON(json_str)
     
     -- Парсим объект
     local function parseObject()
-        if json_str:sub(pos, pos) ~= '{' then
+        if str:sub(pos, pos) ~= '{' then
             return nil
         end
         pos = pos + 1
         local obj = {}
-        skipWhitespace()
-        if json_str:sub(pos, pos) == '}' then
+        skipSpace()
+        
+        if str:sub(pos, pos) == '}' then
             pos = pos + 1
             return obj
         end
+        
         while true do
-            skipWhitespace()
+            skipSpace()
             local key = parseString()
-            skipWhitespace()
-            if json_str:sub(pos, pos) == ':' then
+            if not key then
+                break
+            end
+            skipSpace()
+            if str:sub(pos, pos) == ':' then
                 pos = pos + 1
             else
                 break
             end
-            skipWhitespace()
+            skipSpace()
             local val = parseValue()
-            if key and val ~= nil then
+            if val ~= nil then
                 obj[key] = val
             end
-            skipWhitespace()
-            local ch = json_str:sub(pos, pos)
+            skipSpace()
+            local ch = str:sub(pos, pos)
             if ch == '}' then
                 pos = pos + 1
                 break
@@ -970,10 +993,14 @@ local function parseJSON(json_str)
         return obj
     end
     
-    -- Парсим значение
+    -- Парсим значение (главная функция)
     local function parseValue()
-        skipWhitespace()
-        local ch = json_str:sub(pos, pos)
+        skipSpace()
+        if pos > len then
+            return nil
+        end
+        local ch = str:sub(pos, pos)
+        
         if ch == '"' then
             return parseString()
         elseif ch == '{' then
@@ -981,29 +1008,28 @@ local function parseJSON(json_str)
         elseif ch == '[' then
             return parseArray()
         elseif ch == 'n' then
-            -- null
-            if json_str:sub(pos, pos + 3) == 'null' then
+            if str:sub(pos, pos + 3) == 'null' then
                 pos = pos + 4
                 return nil
             end
         elseif ch == 't' then
-            if json_str:sub(pos, pos + 3) == 'true' then
+            if str:sub(pos, pos + 3) == 'true' then
                 pos = pos + 4
                 return true
             end
         elseif ch == 'f' then
-            if json_str:sub(pos, pos + 4) == 'false' then
+            if str:sub(pos, pos + 4) == 'false' then
                 pos = pos + 5
                 return false
             end
-        elseif ch:match("[%d%-]") then
+        elseif ch >= '0' and ch <= '9' or ch == '-' then
             return parseNumber()
         end
         return nil
     end
     
     -- Начинаем парсинг
-    skipWhitespace()
+    skipSpace()
     local result = parseValue()
     
     if result then

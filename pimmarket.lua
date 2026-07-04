@@ -1878,7 +1878,7 @@ local function applyIncrementalChanges(itemsFile, changes, itemType)
 end
 
 -- ============================================================
--- ОБРАБОТКА КОМАНД (ФИНАЛЬНАЯ РАБОЧАЯ ВЕРСИЯ)
+-- ОБРАБОТКА КОМАНД (ПОЛНАЯ ВЕРСИЯ - ADD/UPDATE/DELETE)
 -- ============================================================
 
 local function checkWebCommands()
@@ -1901,19 +1901,17 @@ local function checkWebCommands()
         
         writeDebugLog("📥 Получен ответ, длина: " .. #body)
         
-        -- Проверяем, есть ли команды (игнорируем пробелы)
+        -- Проверяем, есть ли команды
         if #body < 20 then
             writeDebugLog("⚠️ Ответ слишком короткий, команд нет")
             return
         end
         
-        -- Проверяем наличие "commands"
         if not body:find('"commands"') then
             writeDebugLog("⚠️ Нет поля commands")
             return
         end
         
-        -- Проверяем пустые команды
         if body:find('"commands"%s*:%s*%[%s*%]') then
             writeDebugLog("⚠️ Нет команд в ответе")
             return
@@ -1921,129 +1919,226 @@ local function checkWebCommands()
         
         writeDebugLog("📥 Парсим команду...")
         
-        -- ПРОСТОЙ ПОИСК - ищем internalName
-        local internalName = nil
-        local name_start = body:find('"internalName"')
-        if not name_start then
-            writeDebugLog("⚠️ Не найдена internalName")
+        -- Определяем тип команды
+        local is_buy = body:find('"save_buy_items_incremental"') ~= nil
+        local is_sell = body:find('"save_shop_items_incremental"') ~= nil
+        
+        if not is_buy and not is_sell then
+            writeDebugLog("⚠️ Неизвестная команда")
             return
         end
         
-        -- Находим значение internalName
-        local colon_pos = body:find(':', name_start)
-        if not colon_pos then return end
-        local quote1 = body:find('"', colon_pos + 1)
-        if not quote1 then return end
-        local quote2 = body:find('"', quote1 + 1)
-        if not quote2 then return end
+        writeDebugLog("📥 Команда: " .. (is_buy and "buy" or "sell"))
         
-        internalName = body:sub(quote1 + 1, quote2 - 1)
-        writeDebugLog("📦 internalName: " .. internalName)
-        
-        -- Ищем price_ema
-        local price_ema = nil
-        local ema_start = body:find('"price_ema"')
-        if ema_start then
-            local colon_pos2 = body:find(':', ema_start)
-            if colon_pos2 then
-                local num_start = colon_pos2 + 1
-                local num_str = ""
-                for i = num_start, #body do
-                    local ch = body:sub(i, i)
-                    if ch:match("[%d.]") then
-                        num_str = num_str .. ch
-                    elseif ch == ',' or ch == '}' or ch == ' ' then
-                        if num_str ~= "" then break end
-                    end
-                    if ch == '}' or ch == ',' then break end
-                end
-                if num_str ~= "" then
-                    price_ema = tonumber(num_str)
-                    writeDebugLog("📦 price_ema: " .. price_ema)
-                end
-            end
+        -- Определяем action (add/update/delete)
+        local action = "update"
+        if body:find('"action":"add"') then
+            action = "add"
+            writeDebugLog("📥 Action: ADD (добавление)")
+        elseif body:find('"action":"delete"') then
+            action = "delete"
+            writeDebugLog("📥 Action: DELETE (удаление)")
+        else
+            writeDebugLog("📥 Action: UPDATE (обновление)")
         end
         
-        -- Ищем price_coin
-        local price_coin = nil
-        local coin_start = body:find('"price_coin"')
-        if coin_start then
-            local colon_pos2 = body:find(':', coin_start)
-            if colon_pos2 then
-                local num_start = colon_pos2 + 1
-                local num_str = ""
-                for i = num_start, #body do
-                    local ch = body:sub(i, i)
-                    if ch:match("[%d.]") then
-                        num_str = num_str .. ch
-                    elseif ch == ',' or ch == '}' or ch == ' ' then
-                        if num_str ~= "" then break end
-                    end
-                    if ch == '}' or ch == ',' then break end
-                end
-                if num_str ~= "" then
-                    price_coin = tonumber(num_str)
-                    writeDebugLog("📦 price_coin: " .. price_coin)
-                end
-            end
-        end
-        
-        -- Применяем изменения
-        if (price_ema or price_coin) and internalName then
-            writeDebugLog("📥 Найдены изменения, применяем...")
+        -- Функция для поиска значения поля
+        local function findFieldValue(body, fieldName)
+            local start = body:find('"' .. fieldName .. '"')
+            if not start then return nil end
             
-            if fs.exists("/home/buy_items.lua") then
-                local ok, items = pcall(dofile, "/home/buy_items.lua")
-                if ok and type(items) == "table" then
-                    local found = false
-                    for i, item in ipairs(items) do
-                        if item.internalName == internalName then
-                            found = true
-                            if price_ema then
-                                writeDebugLog("🔄 Обновляем ЭМА: " .. (item.price_ema or 0) .. " -> " .. price_ema)
-                                item.price_ema = price_ema
+            local colon = body:find(':', start)
+            if not colon then return nil end
+            
+            -- Пропускаем пробелы
+            local pos = colon + 1
+            while pos <= #body and body:sub(pos, pos):match("%s") do
+                pos = pos + 1
+            end
+            
+            if pos > #body then return nil end
+            
+            -- Если значение в кавычках (строка)
+            if body:sub(pos, pos) == '"' then
+                local quote_end = body:find('"', pos + 1)
+                if not quote_end then return nil end
+                return body:sub(pos + 1, quote_end - 1)
+            else
+                -- Числовое значение
+                local num_str = ""
+                local i = pos
+                while i <= #body do
+                    local ch = body:sub(i, i)
+                    if ch:match("[%d.]") then
+                        num_str = num_str .. ch
+                        i = i + 1
+                    elseif ch == ',' or ch == '}' or ch == ' ' then
+                        break
+                    else
+                        break
+                    end
+                end
+                if num_str ~= "" then
+                    return tonumber(num_str)
+                end
+                return nil
+            end
+        end
+        
+        -- Ищем все поля
+        local internalName = findFieldValue(body, "internalName")
+        local displayName = findFieldValue(body, "displayName")
+        local damage = findFieldValue(body, "damage")
+        local price_coin = findFieldValue(body, "price_coin")
+        local price_ema = findFieldValue(body, "price_ema")
+        local price = findFieldValue(body, "price")
+        local qty = findFieldValue(body, "qty")
+        
+        -- Логируем найденные поля
+        if internalName then writeDebugLog("📦 internalName: " .. internalName) end
+        if displayName then writeDebugLog("📦 displayName: " .. displayName) end
+        if damage then writeDebugLog("📦 damage: " .. damage) end
+        if price_coin then writeDebugLog("📦 price_coin: " .. price_coin) end
+        if price_ema then writeDebugLog("📦 price_ema: " .. price_ema) end
+        if price then writeDebugLog("📦 price: " .. price) end
+        if qty then writeDebugLog("📦 qty: " .. qty) end
+        
+        -- Проверяем, есть ли изменения
+        if not internalName then
+            writeDebugLog("⚠️ Нет internalName, пропускаем")
+            return
+        end
+        
+        -- Формируем объект товара
+        local item = {
+            internalName = internalName,
+            displayName = displayName or internalName,
+            damage = damage or 0
+        }
+        
+        -- Добавляем поля в зависимости от типа команды
+        if is_buy then
+            if price_coin then item.price_coin = price_coin end
+            if price_ema then item.price_ema = price_ema end
+        elseif is_sell then
+            if price then item.price = price end
+            if qty then item.qty = qty end
+        end
+        
+        -- Применяем изменение в зависимости от action
+        local filePath = is_buy and "/home/buy_items.lua" or "/home/shop_items.lua"
+        
+        if fs.exists(filePath) then
+            local ok, items = pcall(dofile, filePath)
+            if not ok or type(items) ~= "table" then
+                writeDebugLog("⚠️ Ошибка загрузки файла")
+                return
+            end
+            
+            local changed = false
+            
+            if action == "delete" then
+                -- Удаление товара
+                for i = #items, 1, -1 do
+                    if items[i].internalName == internalName and (items[i].damage or 0) == (damage or 0) then
+                        table.remove(items, i)
+                        changed = true
+                        writeDebugLog("❌ Удален товар: " .. internalName)
+                        break
+                    end
+                end
+            elseif action == "add" then
+                -- Добавление товара
+                local exists = false
+                for _, existing in ipairs(items) do
+                    if existing.internalName == internalName and (existing.damage or 0) == (damage or 0) then
+                        exists = true
+                        break
+                    end
+                end
+                if exists then
+                    writeDebugLog("⚠️ Товар уже существует, обновляем...")
+                    -- Обновляем существующий
+                    for i, existing in ipairs(items) do
+                        if existing.internalName == internalName and (existing.damage or 0) == (damage or 0) then
+                            for k, v in pairs(item) do
+                                if k ~= "internalName" and k ~= "damage" then
+                                    items[i][k] = v
+                                end
                             end
-                            if price_coin then
-                                writeDebugLog("🔄 Обновляем Coina: " .. (item.price_coin or 0) .. " -> " .. price_coin)
-                                item.price_coin = price_coin
-                            end
+                            changed = true
                             break
                         end
                     end
-                    
-                    if found then
-                        local file = io.open("/home/buy_items.lua", "w")
-                        if file then
-                            file:write("return " .. serialization.serialize(items))
-                            file:close()
-                            writeDebugLog("✅ Изменение сохранено!")
-                            
-                            buyItemsData = items
-                            buyItemMap = {}
-                            for _, it in ipairs(buyItemsData) do
-                                local dmg = it.damage or 0
-                                local key = it.internalName .. ":" .. dmg
-                                buyItemMap[key] = it
+                else
+                    table.insert(items, item)
+                    changed = true
+                    writeDebugLog("➕ Добавлен товар: " .. internalName)
+                end
+            else -- update
+                -- Обновление товара
+                for i, existing in ipairs(items) do
+                    if existing.internalName == internalName and (existing.damage or 0) == (damage or 0) then
+                        for k, v in pairs(item) do
+                            if k ~= "internalName" and k ~= "damage" then
+                                items[i][k] = v
                             end
-                            
-                            broadcastUpdate()
-                            writeDebugLog("✅ Магазин обновлен!")
-                            
-                            sendToWeb("/api/command_result", toJson({
-                                success = true,
-                                message = "Цена обновлена",
-                                command = "save_buy_items_incremental"
-                            }))
-                            return
                         end
-                    else
-                        writeDebugLog("⚠️ Товар не найден: " .. internalName)
+                        changed = true
+                        writeDebugLog("🔄 Обновлен товар: " .. internalName)
+                        break
                     end
                 end
+                
+                -- Если товар не найден и это update, добавляем как новый
+                if not changed then
+                    table.insert(items, item)
+                    changed = true
+                    writeDebugLog("➕ Товар не найден, добавлен как новый: " .. internalName)
+                end
+            end
+            
+            if changed then
+                local file = io.open(filePath, "w")
+                if file then
+                    if is_buy then
+                        file:write("return " .. serialization.serialize(items))
+                    else
+                        file:write("local items = {}\nitems.sellItems = " .. serialization.serialize(items) .. "\nitems.vanillaItems = {}\nreturn items")
+                    end
+                    file:close()
+                    writeDebugLog("✅ Изменения сохранены!")
+                    
+                    -- Обновляем кэш
+                    if is_buy then
+                        buyItemsData = items
+                        buyItemMap = {}
+                        for _, it in ipairs(buyItemsData) do
+                            local dmg = it.damage or 0
+                            local key = it.internalName .. ":" .. dmg
+                            buyItemMap[key] = it
+                        end
+                    elseif is_sell then
+                        sellItems = items
+                        shopData.sellItems = items
+                    end
+                    
+                    broadcastUpdate()
+                    writeDebugLog("✅ Магазин обновлен!")
+                    
+                    sendToWeb("/api/command_result", toJson({
+                        success = true,
+                        message = "Изменения применены (" .. action .. ")",
+                        command = is_buy and "save_buy_items_incremental" or "save_shop_items_incremental"
+                    }))
+                    return
+                end
+            else
+                writeDebugLog("⚠️ Изменений не найдено")
             end
         end
         
-        writeDebugLog("⚠️ Нет изменений для применения")
+        writeDebugLog("⚠️ Не удалось применить изменения")
         
     end)
     

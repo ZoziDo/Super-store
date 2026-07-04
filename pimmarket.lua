@@ -1878,11 +1878,7 @@ local function applyIncrementalChanges(itemsFile, changes, itemType)
 end
 
 -- ============================================================
--- ОБРАБОТКА КОМАНД (ИСПРАВЛЕННАЯ - БЕЗ ЗАВИСАНИЙ)
--- ============================================================
-
--- ============================================================
--- ОБРАБОТКА КОМАНД (ИСПРАВЛЕННАЯ - БЕЗ ЗАВИСАНИЙ)
+-- ОБРАБОТКА КОМАНД (УПРОЩЕННАЯ - БЕЗ ЗАВИСАНИЙ)
 -- ============================================================
 
 local function checkWebCommands()
@@ -1914,14 +1910,28 @@ local function checkWebCommands()
         
         writeDebugLog("📥 Пробуем распарсить JSON...")
         
-        -- Парсим основной JSON
-        local data = parseJSON(body)
-        if not data then
-            writeDebugLog("⚠️ Не удалось распарсить команды (data = nil)")
+        -- Убираем экранирование и парсим
+        local data = nil
+        local ok, result = pcall(function()
+            -- Заменяем экранированные кавычки
+            local s = body:gsub('\\"', '"')
+            -- Парсим через loadstring
+            local fn = loadstring("return " .. s)
+            if fn then
+                return fn()
+            end
+            return nil
+        end)
+        
+        if ok and result then
+            data = result
+            writeDebugLog("✅ JSON распарсен успешно")
+        else
+            writeDebugLog("⚠️ Не удалось распарсить JSON")
             return
         end
         
-        if not data.commands then
+        if not data or not data.commands then
             writeDebugLog("⚠️ Нет поля commands в данных")
             return
         end
@@ -1930,8 +1940,7 @@ local function checkWebCommands()
         
         for _, cmd in ipairs(data.commands) do
             local d = cmd.data or {}
-            local requestId = cmd.requestId
-            local cmdId = cmd.id or requestId or os.time()
+            local requestId = cmd.requestId or os.time()
             
             writeDebugLog("📨 Обработка команды: " .. cmd.command)
             
@@ -1941,7 +1950,6 @@ local function checkWebCommands()
                     requestId = requestId,
                     success = success,
                     message = msg or "",
-                    id = cmdId,
                     command = cmd.command
                 }))
             end
@@ -1950,85 +1958,16 @@ local function checkWebCommands()
             -- КОМАНДЫ
             -- ============================================================
             
-            if cmd.command == "toggle_pause" then
-                shopPaused = not shopPaused
-                local msg = serialization.serialize({op="shop_paused", paused=shopPaused})
-                for addr in pairs(markets) do
-                    pcall(modem.send, addr, 0xffef, msg)
-                end
-                sendResult(true, shopPaused and "Магазин на паузе" or "Магазин активен")
-            
-            elseif cmd.command == "update_market" then
-                broadcastUpdate()
-                sendResult(true, "Обновление разослано")
-            
-            elseif cmd.command == "kill_market" then
-                broadcastKill()
-                sendResult(true, "Терминалы завершены")
-            
-            elseif cmd.command == "set_balance" then
-                local player = players[d.name]
-                if player then
-                    if d.coin then player.balance = d.coin end
-                    if d.ema then player.emaBalance = d.ema end
-                    saveDB()
-                    sendResult(true, "Баланс обновлён")
-                else
-                    sendResult(false, "Игрок не найден")
-                end
-            
-            elseif cmd.command == "toggle_ban" then
-                local player = players[d.name]
-                if player then
-                    player.banned = not player.banned
-                    saveDB()
-                    sendResult(true, player.banned and "Забанен" or "Разбанен")
-                else
-                    sendResult(false, "Игрок не найден")
-                end
-            
-            elseif cmd.command == "reset_player" then
-                local player = players[d.name]
-                if player then
-                    player.balance = 0
-                    player.emaBalance = 0
-                    player.transactions = 0
-                    saveDB()
-                    sendResult(true, "Игрок сброшен")
-                else
-                    sendResult(false, "Игрок не найден")
-                end
-            
-            elseif cmd.command == "add_admin" then
-                if addAdmin(d.name) then
-                    sendResult(true, "Админ добавлен")
-                else
-                    sendResult(false, "Уже админ или ошибка")
-                end
-            
-            elseif cmd.command == "remove_admin" then
-                if removeAdmin(d.name) then
-                    sendResult(true, "Админ удалён")
-                else
-                    sendResult(false, "Нельзя удалить")
-                end
-            
-            -- ============================================================
-            -- КОМАНДЫ ДЛЯ ТОВАРОВ (С ИНКРЕМЕНТАЛЬНЫМ ОБНОВЛЕНИЕМ)
-            -- ============================================================
-            
-            -- НОВАЯ КОМАНДА ДЛЯ ИНКРЕМЕНТАЛЬНОГО ОБНОВЛЕНИЯ BUY_ITEMS
-            elseif cmd.command == "save_buy_items_incremental" then
+            -- ИНКРЕМЕНТАЛЬНОЕ ОБНОВЛЕНИЕ BUY_ITEMS
+            if cmd.command == "save_buy_items_incremental" then
                 writeDebugLog("📥 save_buy_items_incremental получен")
                 
                 local changes = nil
                 
-                -- Парсим изменения
                 if type(d.changes) == "table" then
                     changes = d.changes
                     writeDebugLog("✅ Изменения уже таблица: " .. #changes .. " изменений")
                 elseif type(d.changes) == "string" then
-                    -- Пробуем распарсить JSON строку
                     local ok2, result2 = pcall(function()
                         local s = d.changes:gsub('\\"', '"')
                         local fn = loadstring("return " .. s)
@@ -2037,7 +1976,6 @@ local function checkWebCommands()
                         end
                         return nil
                     end)
-                    
                     if ok2 and type(result2) == "table" then
                         changes = result2
                         writeDebugLog("✅ Распарсены изменения: " .. #changes .. " изменений")
@@ -2045,11 +1983,8 @@ local function checkWebCommands()
                 end
                 
                 if changes and type(changes) == "table" and #changes > 0 then
-                    -- Применяем изменения к buy_items
                     local applied = applyIncrementalChanges("/home/buy_items.lua", changes, "buy_items")
-                    
                     if applied then
-                        -- Перезагружаем товары
                         buyItemsData = {}
                         if fs.exists("/home/buy_items.lua") then
                             local ok2, data2 = pcall(dofile, "/home/buy_items.lua")
@@ -2057,15 +1992,12 @@ local function checkWebCommands()
                                 buyItemsData = data2
                             end
                         end
-                        
-                        -- Обновляем карту
                         buyItemMap = {}
                         for _, item in ipairs(buyItemsData) do
                             local dmg = item.damage or 0
                             local key = item.internalName .. ":" .. dmg
                             buyItemMap[key] = item
                         end
-                        
                         broadcastUpdate()
                         sendResult(true, "Изменения применены (" .. #changes .. " изменений)")
                     else
@@ -2076,7 +2008,7 @@ local function checkWebCommands()
                     sendResult(false, "Неверный формат данных")
                 end
             
-            -- НОВАЯ КОМАНДА ДЛЯ ИНКРЕМЕНТАЛЬНОГО ОБНОВЛЕНИЯ SHOP_ITEMS
+            -- ИНКРЕМЕНТАЛЬНОЕ ОБНОВЛЕНИЕ SHOP_ITEMS
             elseif cmd.command == "save_shop_items_incremental" then
                 writeDebugLog("📥 save_shop_items_incremental получен")
                 
@@ -2094,7 +2026,6 @@ local function checkWebCommands()
                         end
                         return nil
                     end)
-                    
                     if ok2 and type(result2) == "table" then
                         changes = result2
                         writeDebugLog("✅ Распарсены изменения: " .. #changes .. " изменений")
@@ -2103,7 +2034,6 @@ local function checkWebCommands()
                 
                 if changes and type(changes) == "table" and #changes > 0 then
                     local applied = applyIncrementalChanges("/home/shop_items.lua", changes, "shop_items")
-                    
                     if applied then
                         if fs.exists("/home/shop_items.lua") then
                             local ok2, data2 = pcall(dofile, "/home/shop_items.lua")
@@ -2112,7 +2042,6 @@ local function checkWebCommands()
                                 shopData.sellItems = sellItems
                             end
                         end
-                        
                         broadcastUpdate()
                         sendResult(true, "Изменения применены (" .. #changes .. " изменений)")
                     else
@@ -2123,124 +2052,25 @@ local function checkWebCommands()
                     sendResult(false, "Неверный формат данных")
                 end
             
-            -- СТАРЫЕ КОМАНДЫ (ОСТАВЛЯЕМ ДЛЯ СОВМЕСТИМОСТИ)
-            elseif cmd.command == "save_buy_items" then
-                writeDebugLog("📥 save_buy_items получен (старый формат)")
-                writeDebugLog("📥 d.items тип: " .. type(d.items))
-                
-                local items = nil
-                
-                if type(d.items) == "string" then
-                    writeDebugLog("📥 Получена строка с товарами, длина: " .. #d.items)
-                    items = parseItemsFromJSON(d.items)
-                    if items then
-                        writeDebugLog("✅ items распарсены: " .. #items .. " товаров")
-                    end
-                elseif type(d.items) == "table" then
-                    items = d.items
-                    writeDebugLog("✅ items уже таблица: " .. #items .. " товаров")
-                end
-                
-                if items and type(items) == "table" and #items > 0 then
-                    local valid = true
-                    for _, item in ipairs(items) do
-                        if not item.internalName then
-                            valid = false
-                            writeDebugLog("⚠️ item без internalName")
-                            break
-                        end
-                    end
-                    
-                    if not valid then
-                        writeDebugLog("❌ Неверная структура items")
-                        sendResult(false, "Неверная структура данных")
-                        return
-                    end
-                    
-                    local file = io.open("/home/buy_items.lua", "w")
-                    if file then
-                        local serialized = serialization.serialize(items)
-                        file:write("return " .. serialized)
-                        file:close()
-                        writeDebugLog("💾 Сохранены buy_items: " .. #items .. " товаров")
-                        
-                        buyItemsData = items
-                        buyItemMap = {}
-                        for _, item in ipairs(buyItemsData) do
-                            local dmg = item.damage or 0
-                            local key = item.internalName .. ":" .. dmg
-                            buyItemMap[key] = item
-                        end
-                        
-                        broadcastUpdate()
-                        sendResult(true, "buy_items.lua обновлён (" .. #items .. " товаров)")
-                    else
-                        sendResult(false, "Ошибка записи файла")
-                    end
-                else
-                    writeDebugLog("❌ Не удалось распарсить items")
-                    sendResult(false, "Неверный формат данных")
-                end
+            -- ОСТАЛЬНЫЕ КОМАНДЫ
+            elseif cmd.command == "toggle_pause" then
+                shopPaused = not shopPaused
+                sendResult(true, shopPaused and "Пауза" or "Активен")
             
-            elseif cmd.command == "save_shop_items" then
-                writeDebugLog("📥 save_shop_items получен (старый формат)")
-                writeDebugLog("📥 d.items тип: " .. type(d.items))
-                
-                local items = nil
-                
-                if type(d.items) == "string" then
-                    writeDebugLog("📥 Получена строка с товарами, длина: " .. #d.items)
-                    items = parseItemsFromJSON(d.items)
-                    if items then
-                        writeDebugLog("✅ items распарсены: " .. #items .. " товаров")
-                    end
-                elseif type(d.items) == "table" then
-                    items = d.items
-                    writeDebugLog("✅ items уже таблица: " .. #items .. " товаров")
-                end
-                
-                if items and type(items) == "table" and #items > 0 then
-                    local valid = true
-                    for _, item in ipairs(items) do
-                        if not item.internalName then
-                            valid = false
-                            writeDebugLog("⚠️ item без internalName")
-                            break
-                        end
-                    end
-                    
-                    if not valid then
-                        writeDebugLog("❌ Неверная структура items")
-                        sendResult(false, "Неверная структура данных")
-                        return
-                    end
-                    
-                    local out = "local items = {}\nitems.sellItems = " .. serialization.serialize(items) .. "\nitems.vanillaItems = {}\nreturn items"
-                    local file = io.open("/home/shop_items.lua", "w")
-                    if file then
-                        file:write(out)
-                        file:close()
-                        writeDebugLog("💾 Сохранены sell_items: " .. #items .. " товаров")
-                        
-                        sellItems = items
-                        shopData.sellItems = items
-                        
-                        broadcastUpdate()
-                        sendResult(true, "shop_items.lua обновлён (" .. #items .. " товаров)")
-                    else
-                        sendResult(false, "Ошибка записи файла")
-                    end
-                else
-                    writeDebugLog("❌ Не удалось распарсить items")
-                    sendResult(false, "Неверный формат данных")
-                end
+            elseif cmd.command == "update_market" then
+                broadcastUpdate()
+                sendResult(true, "Обновление разослано")
+            
+            elseif cmd.command == "kill_market" then
+                broadcastKill()
+                sendResult(true, "Терминалы завершены")
             
             elseif cmd.command == "get_buy_items" then
                 local items = {}
                 if fs.exists("/home/buy_items.lua") then
-                    local ok, data = pcall(dofile, "/home/buy_items.lua")
-                    if ok and type(data) == "table" then 
-                        items = data 
+                    local ok2, data2 = pcall(dofile, "/home/buy_items.lua")
+                    if ok2 and type(data2) == "table" then 
+                        items = data2 
                     end
                 end
                 sendToWeb("/api/buy_items_data", toJson({ items = items }))
@@ -2249,43 +2079,17 @@ local function checkWebCommands()
             elseif cmd.command == "get_shop_items" then
                 local items = {}
                 if fs.exists("/home/shop_items.lua") then
-                    local ok, data = pcall(dofile, "/home/shop_items.lua")
-                    if ok and type(data) == "table" and data.sellItems then
-                        items = data.sellItems
+                    local ok2, data2 = pcall(dofile, "/home/shop_items.lua")
+                    if ok2 and type(data2) == "table" and data2.sellItems then
+                        items = data2.sellItems
                     end
                 end
                 sendToWeb("/api/shop_items_data", toJson({ items = items }))
                 sendResult(true, "Данные отправлены (" .. #items .. " товаров)")
             
-            elseif cmd.command == "delete_feedback" then
-                local feedbacks = {}
-                if fs.exists(FEEDBACKS_PATH) then
-                    local file = io.open(FEEDBACKS_PATH, "r")
-                    if file then
-                        local data = file:read("*a")
-                        file:close()
-                        if data and #data > 0 then
-                            local ok, result = pcall(serialization.unserialize, data)
-                            if ok and type(result) == "table" then feedbacks = result end
-                        end
-                    end
-                end
-                if d.index and d.index >= 1 and d.index <= #feedbacks then
-                    table.remove(feedbacks, d.index)
-                    local file = io.open(FEEDBACKS_PATH, "w")
-                    if file then
-                        file:write(serialization.serialize(feedbacks))
-                        file:close()
-                        sendResult(true, "Отзыв удалён")
-                    else
-                        sendResult(false, "Ошибка записи")
-                    end
-                else
-                    sendResult(false, "Неверный индекс")
-                end
-            
             else
-                sendResult(false, "Неизвестная команда: " .. tostring(cmd.command))
+                writeDebugLog("⚠️ Неизвестная команда: " .. cmd.command)
+                sendResult(false, "Неизвестная команда")
             end
         end
     end)
@@ -2296,7 +2100,7 @@ local function checkWebCommands()
     end
 end
 
--- Изменяем интервал опроса команд на 5 секунд вместо 3 (меньше нагрузки)
+-- Изменяем интервал опроса команд на 5 секунд
 event.timer(5, checkWebCommands, math.huge)
 
 -- ============================================================

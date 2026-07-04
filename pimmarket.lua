@@ -65,28 +65,6 @@ local function checkVar(name, value)
     return true
 end
 
-    if not text then
-        writeErrorLog("❌ gpu.set() вызван с nil! x=" .. tostring(x) .. ", y=" .. tostring(y))
-        return
-    end
-    if type(text) ~= "string" then
-        writeErrorLog("❌ gpu.set() вызван с типом " .. type(text) .. " вместо string!")
-        return
-    end
-    return original_gpu_set(x, y, text)
-end
-
-    if not text then
-        writeErrorLog("❌ unicode.len() вызван с nil!")
-        return 0
-    end
-    if type(text) ~= "string" then
-        writeErrorLog("❌ unicode.len() вызван с типом " .. type(text) .. " вместо string!")
-        return 0
-    end
-    return original_unicode_len(text)
-end
-
 -- Записываем старт
 writeErrorLog("=" .. string.rep("=", 50))
 writeErrorLog("🚀 ЗАПУСК PIM MARKET")

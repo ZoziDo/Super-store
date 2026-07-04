@@ -1788,6 +1788,96 @@ local function drawReportScreen()
 end
 
 -- ============================================================
+-- ИНКРЕМЕНТАЛЬНОЕ ПРИМЕНЕНИЕ ИЗМЕНЕНИЙ
+-- ============================================================
+
+-- Функция для применения изменений к товарам
+local function applyIncrementalChanges(itemsFile, changes, itemType)
+    writeDebugLog("📦 Применение инкрементальных изменений к " .. itemType)
+    
+    if not changes or #changes == 0 then
+        writeDebugLog("ℹ️ Нет изменений для применения")
+        return true
+    end
+    
+    writeDebugLog("📨 Применяем " .. #changes .. " изменений")
+    
+    -- Загружаем текущие товары
+    local items = {}
+    if fs.exists(itemsFile) then
+        local ok, data = pcall(dofile, itemsFile)
+        if ok and type(data) == "table" then
+            items = data
+        end
+    end
+    
+    -- Создаем карту для быстрого поиска
+    local itemMap = {}
+    for i, item in ipairs(items) do
+        local key = item.internalName .. ":" .. (item.damage or 0)
+        itemMap[key] = i
+    end
+    
+    -- Применяем изменения
+    for _, change in ipairs(changes) do
+        local item = change.item
+        local key = item.internalName .. ":" .. (item.damage or 0)
+        
+        if change.action == "add" then
+            -- Добавляем новый товар
+            table.insert(items, item)
+            writeDebugLog("➕ Добавлен: " .. (item.displayName or item.internalName))
+            
+        elseif change.action == "update" then
+            -- Обновляем существующий
+            local idx = itemMap[key]
+            if idx then
+                -- Обновляем только указанные поля
+                for k, v in pairs(item) do
+                    if k ~= "internalName" and k ~= "damage" then
+                        items[idx][k] = v
+                    end
+                end
+                writeDebugLog("🔄 Обновлен: " .. (item.displayName or item.internalName))
+            else
+                writeDebugLog("⚠️ Товар не найден для обновления: " .. key)
+                -- Если не найден, добавляем как новый
+                table.insert(items, item)
+                writeDebugLog("➕ Добавлен как новый: " .. (item.displayName or item.internalName))
+            end
+            
+        elseif change.action == "delete" then
+            -- Удаляем товар
+            local idx = itemMap[key]
+            if idx then
+                table.remove(items, idx)
+                writeDebugLog("❌ Удален: " .. key)
+                -- Обновляем карту
+                itemMap = {}
+                for i, it in ipairs(items) do
+                    local k = it.internalName .. ":" .. (it.damage or 0)
+                    itemMap[k] = i
+                end
+            else
+                writeDebugLog("⚠️ Товар не найден для удаления: " .. key)
+            end
+        end
+    end
+    
+    -- Сохраняем обновленный файл
+    local file = io.open(itemsFile, "w")
+    if file then
+        file:write("return " .. serialization.serialize(items))
+        file:close()
+        writeDebugLog("✅ Изменения применены к " .. itemsFile)
+        return true
+    else
+        writeErrorLog("❌ Ошибка сохранения " .. itemsFile)
+        return false
+    end
+end
+
+-- ============================================================
 -- ОБРАБОТКА КОМАНД (ИСПРАВЛЕННАЯ - БЕЗ ЗАВИСАНИЙ)
 -- ============================================================
 
@@ -1910,44 +2000,125 @@ local function checkWebCommands()
                 end
             
             -- ============================================================
-            -- КОМАНДЫ ДЛЯ ТОВАРОВ (БЕЗ ЗАВИСАНИЙ)
+            -- КОМАНДЫ ДЛЯ ТОВАРОВ (С ИНКРЕМЕНТАЛЬНЫМ ОБНОВЛЕНИЕМ)
             -- ============================================================
             
-            elseif cmd.command == "get_buy_items" then
-                local items = {}
-                if fs.exists("/home/buy_items.lua") then
-                    local ok, data = pcall(dofile, "/home/buy_items.lua")
-                    if ok and type(data) == "table" then 
-                        items = data 
+            -- НОВАЯ КОМАНДА ДЛЯ ИНКРЕМЕНТАЛЬНОГО ОБНОВЛЕНИЯ BUY_ITEMS
+            elseif cmd.command == "save_buy_items_incremental" then
+                writeDebugLog("📥 save_buy_items_incremental получен")
+                
+                local changes = nil
+                
+                -- Парсим изменения
+                if type(d.changes) == "table" then
+                    changes = d.changes
+                    writeDebugLog("✅ Изменения уже таблица: " .. #changes .. " изменений")
+                elseif type(d.changes) == "string" then
+                    -- Пробуем распарсить JSON строку
+                    local ok2, result2 = pcall(function()
+                        local s = d.changes:gsub('\\"', '"')
+                        local fn = loadstring("return " .. s)
+                        if fn then
+                            return fn()
+                        end
+                        return nil
+                    end)
+                    
+                    if ok2 and type(result2) == "table" then
+                        changes = result2
+                        writeDebugLog("✅ Распарсены изменения: " .. #changes .. " изменений")
                     end
                 end
-                sendToWeb("/api/buy_items_data", toJson({ items = items }))
-                sendResult(true, "Данные отправлены (" .. #items .. " товаров)")
+                
+                if changes and type(changes) == "table" and #changes > 0 then
+                    -- Применяем изменения к buy_items
+                    local applied = applyIncrementalChanges("/home/buy_items.lua", changes, "buy_items")
+                    
+                    if applied then
+                        -- Перезагружаем товары
+                        buyItemsData = {}
+                        if fs.exists("/home/buy_items.lua") then
+                            local ok2, data2 = pcall(dofile, "/home/buy_items.lua")
+                            if ok2 and type(data2) == "table" then
+                                buyItemsData = data2
+                            end
+                        end
+                        
+                        -- Обновляем карту
+                        buyItemMap = {}
+                        for _, item in ipairs(buyItemsData) do
+                            local dmg = item.damage or 0
+                            local key = item.internalName .. ":" .. dmg
+                            buyItemMap[key] = item
+                        end
+                        
+                        broadcastUpdate()
+                        sendResult(true, "Изменения применены (" .. #changes .. " изменений)")
+                    else
+                        sendResult(false, "Ошибка применения изменений")
+                    end
+                else
+                    writeDebugLog("❌ Не удалось распарсить изменения")
+                    sendResult(false, "Неверный формат данных")
+                end
             
-            elseif cmd.command == "get_shop_items" then
-                local items = {}
-                if fs.exists("/home/shop_items.lua") then
-                    local ok, data = pcall(dofile, "/home/shop_items.lua")
-                    if ok and type(data) == "table" and data.sellItems then
-                        items = data.sellItems
+            -- НОВАЯ КОМАНДА ДЛЯ ИНКРЕМЕНТАЛЬНОГО ОБНОВЛЕНИЯ SHOP_ITEMS
+            elseif cmd.command == "save_shop_items_incremental" then
+                writeDebugLog("📥 save_shop_items_incremental получен")
+                
+                local changes = nil
+                
+                if type(d.changes) == "table" then
+                    changes = d.changes
+                    writeDebugLog("✅ Изменения уже таблица: " .. #changes .. " изменений")
+                elseif type(d.changes) == "string" then
+                    local ok2, result2 = pcall(function()
+                        local s = d.changes:gsub('\\"', '"')
+                        local fn = loadstring("return " .. s)
+                        if fn then
+                            return fn()
+                        end
+                        return nil
+                    end)
+                    
+                    if ok2 and type(result2) == "table" then
+                        changes = result2
+                        writeDebugLog("✅ Распарсены изменения: " .. #changes .. " изменений")
                     end
                 end
-                sendToWeb("/api/shop_items_data", toJson({ items = items }))
-                sendResult(true, "Данные отправлены (" .. #items .. " товаров)")
+                
+                if changes and type(changes) == "table" and #changes > 0 then
+                    local applied = applyIncrementalChanges("/home/shop_items.lua", changes, "shop_items")
+                    
+                    if applied then
+                        if fs.exists("/home/shop_items.lua") then
+                            local ok2, data2 = pcall(dofile, "/home/shop_items.lua")
+                            if ok2 and type(data2) == "table" and data2.sellItems then
+                                sellItems = data2.sellItems
+                                shopData.sellItems = sellItems
+                            end
+                        end
+                        
+                        broadcastUpdate()
+                        sendResult(true, "Изменения применены (" .. #changes .. " изменений)")
+                    else
+                        sendResult(false, "Ошибка применения изменений")
+                    end
+                else
+                    writeDebugLog("❌ Не удалось распарсить изменения")
+                    sendResult(false, "Неверный формат данных")
+                end
             
+            -- СТАРЫЕ КОМАНДЫ (ОСТАВЛЯЕМ ДЛЯ СОВМЕСТИМОСТИ)
             elseif cmd.command == "save_buy_items" then
-                writeDebugLog("📥 save_buy_items получен")
+                writeDebugLog("📥 save_buy_items получен (старый формат)")
                 writeDebugLog("📥 d.items тип: " .. type(d.items))
                 
                 local items = nil
                 
-                -- Если d.items это строка - это JSON от Python
                 if type(d.items) == "string" then
                     writeDebugLog("📥 Получена строка с товарами, длина: " .. #d.items)
-                    
-                    -- Парсим JSON
                     items = parseItemsFromJSON(d.items)
-                    
                     if items then
                         writeDebugLog("✅ items распарсены: " .. #items .. " товаров")
                     end
@@ -1957,7 +2128,6 @@ local function checkWebCommands()
                 end
                 
                 if items and type(items) == "table" and #items > 0 then
-                    -- Проверяем структуру
                     local valid = true
                     for _, item in ipairs(items) do
                         if not item.internalName then
@@ -1973,16 +2143,13 @@ local function checkWebCommands()
                         return
                     end
                     
-                    -- Сохраняем в файл
                     local file = io.open("/home/buy_items.lua", "w")
                     if file then
-                        -- Сериализуем в Lua формат
                         local serialized = serialization.serialize(items)
                         file:write("return " .. serialized)
                         file:close()
                         writeDebugLog("💾 Сохранены buy_items: " .. #items .. " товаров")
                         
-                        -- Обновляем кэш
                         buyItemsData = items
                         buyItemMap = {}
                         for _, item in ipairs(buyItemsData) do
@@ -2002,7 +2169,7 @@ local function checkWebCommands()
                 end
             
             elseif cmd.command == "save_shop_items" then
-                writeDebugLog("📥 save_shop_items получен")
+                writeDebugLog("📥 save_shop_items получен (старый формат)")
                 writeDebugLog("📥 d.items тип: " .. type(d.items))
                 
                 local items = nil
@@ -2019,7 +2186,6 @@ local function checkWebCommands()
                 end
                 
                 if items and type(items) == "table" and #items > 0 then
-                    -- Проверяем структуру
                     local valid = true
                     for _, item in ipairs(items) do
                         if not item.internalName then
@@ -2054,6 +2220,28 @@ local function checkWebCommands()
                     writeDebugLog("❌ Не удалось распарсить items")
                     sendResult(false, "Неверный формат данных")
                 end
+            
+            elseif cmd.command == "get_buy_items" then
+                local items = {}
+                if fs.exists("/home/buy_items.lua") then
+                    local ok, data = pcall(dofile, "/home/buy_items.lua")
+                    if ok and type(data) == "table" then 
+                        items = data 
+                    end
+                end
+                sendToWeb("/api/buy_items_data", toJson({ items = items }))
+                sendResult(true, "Данные отправлены (" .. #items .. " товаров)")
+            
+            elseif cmd.command == "get_shop_items" then
+                local items = {}
+                if fs.exists("/home/shop_items.lua") then
+                    local ok, data = pcall(dofile, "/home/shop_items.lua")
+                    if ok and type(data) == "table" and data.sellItems then
+                        items = data.sellItems
+                    end
+                end
+                sendToWeb("/api/shop_items_data", toJson({ items = items }))
+                sendResult(true, "Данные отправлены (" .. #items .. " товаров)")
             
             elseif cmd.command == "delete_feedback" then
                 local feedbacks = {}

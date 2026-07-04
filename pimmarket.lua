@@ -108,33 +108,6 @@ end
 
 local WEB_URL = "https://upfront-dinginess-impulsive.ngrok-free.dev"
 
--- ============================================================
--- ПРИНУДИТЕЛЬНАЯ ПРОВЕРКА КОМАНД (ДЛЯ ОТЛАДКИ)
--- ============================================================
-
-local function forceCheckCommands()
-    writeDebugLog("🔍 ПРИНУДИТЕЛЬНАЯ проверка команд...")
-    pcall(function()
-        local response = internet.request(WEB_URL .. "/api/commands")
-        if response then
-            local body = ""
-            for chunk in response do body = body .. chunk end
-            writeDebugLog("📥 Получен ответ: " .. body:sub(1, 300))
-            local ok, data = pcall(serialization.unserialize, body)
-            if ok and data and data.commands then
-                writeDebugLog("📨 Команд в очереди: " .. #data.commands)
-                for _, cmd in ipairs(data.commands) do
-                    writeDebugLog("📨 Команда: " .. cmd.command)
-                    -- Здесь можно обработать команду напрямую
-                end
-            else
-                writeDebugLog("⚠️ Нет команд или ошибка парсинга")
-            end
-        else
-            writeDebugLog("⚠️ Нет ответа от сервера")
-        end
-    end)
-end
 
 local function toJson(val)
     if type(val) == "string" then return '"' .. val:gsub('"', '\\"') .. '"'
@@ -1925,6 +1898,9 @@ local function checkWebCommands()
 end
 
 event.timer(5, checkWebCommands, math.huge)
+
+-- Принудительный вызов при старте
+checkWebCommands()
 
 -- ============================================================
 -- ОБРАБОТКА ОБНОВЛЕНИЙ ОТ СЕРВЕРА (ДЛЯ ТЕРМИНАЛА)

@@ -83,6 +83,12 @@ os.exit = function(code)
 end
 
 -- ============================================================
+-- ПЕРЕМЕННАЯ ДЛЯ ТЕРМИНАЛОВ
+-- ============================================================
+
+local markets = {}  -- Словарь для хранения адресов терминалов
+
+-- ============================================================
 -- ВРЕМЯ
 -- ============================================================
 
@@ -107,7 +113,6 @@ end
 -- ============================================================
 
 local WEB_URL = "https://upfront-dinginess-impulsive.ngrok-free.dev"
-
 
 local function toJson(val)
     if type(val) == "string" then return '"' .. val:gsub('"', '\\"') .. '"'
@@ -471,11 +476,9 @@ local function addTransaction(type, playerName, item, qty, value_coin, value_ema
     writeDebugLog("addTransaction: " .. type .. " " .. (playerName or "?"))
     
     if type == "sell" then
-        -- ТОЛЬКО ПРОДАЖИ считаются выручкой!
         globalStats.totalSells = (globalStats.totalSells or 0) + 1
         globalStats.totalRevenue = (globalStats.totalRevenue or 0) + (value_coin or 0) + (value_ema or 0)
     elseif type == "buy" then
-        -- ПОКУПКИ НЕ СЧИТАЮТСЯ ВЫРУЧКОЙ
         globalStats.totalBuys = (globalStats.totalBuys or 0) + 1
     end
     saveGlobalStats()
@@ -512,17 +515,20 @@ end
 
 local function broadcastUpdate()
     writeDebugLog("📢 Рассылка обновления терминалам")
+    local msg = serialization.serialize({
+        op = "update_market",
+        type = "reload_items"
+    })
     for addr in pairs(markets) do
-        modem.send(addr, 0xffef, serialization.serialize({
-            op = "update_market",
-            type = "reload_items"
-        }))
+        pcall(modem.send, addr, 0xffef, msg)
     end
 end
 
 local function broadcastKill()
+    writeDebugLog("💀 Рассылка команды завершения терминалам")
+    local msg = serialization.serialize({op="kill_market"})
     for addr in pairs(markets) do
-        modem.send(addr, 0xffef, serialization.serialize({op="kill_market"}))
+        pcall(modem.send, addr, 0xffef, msg)
     end
 end
 
@@ -578,7 +584,6 @@ local function sendStats()
         end
     end
     
-    -- ЗАГРУЗКА ТОВАРОВ ИЗ ФАЙЛОВ
     local buyItems = {}
     if fs.exists("/home/buy_items.lua") then
         local ok, data = pcall(dofile, "/home/buy_items.lua")
@@ -605,7 +610,6 @@ local function sendStats()
         writeErrorLog("⚠️ Файл /home/shop_items.lua не найден")
     end
     
-    -- ОТПРАВКА ВСЕХ ДАННЫХ НА СЕРВЕР
     sendToWeb("/api/update", toJson({
         players = playerList,
         admins = admins,
@@ -659,7 +663,6 @@ for _, item in ipairs(buyItemsData) do
     buyItemMap[key] = item
 end
 
--- Загрузка соглашения
 local drawAgreementScreen
 if fs.exists("/home/agreement.lua") then
     local ok, func = pcall(dofile, "/home/agreement.lua")
@@ -712,6 +715,17 @@ end
 local modem = component.modem
 modem.open(0xffef)
 modem.open(0xfffe)
+
+-- Регистрация новых терминалов
+event.listen("modem_message", function(_, _, from, port, _, _, data)
+    if port == 0xffef then
+        local ok, msg = pcall(serialization.unserialize, data)
+        if ok and msg and msg.op == "register" then
+            markets[from] = true
+            writeDebugLog("📡 Терминал зарегистрирован: " .. from)
+        end
+    end
+end)
 
 local function getPimAddr()
     for addr in component.list("pim") do
@@ -770,6 +784,7 @@ local shopSearch = ""
 local searchActive = false
 local searchInput = ""
 local currentShopMode = "buy"
+local shopPaused = false
 
 local blacklist = {
     ["customnpcs:npcMoney"] = true,
@@ -1667,21 +1682,16 @@ local function drawReportScreen()
 end
 
 -- ============================================================
--- УПРОЩЁННАЯ ОБРАБОТКА КОМАНД (ДЛЯ ОТЛАДКИ)
+-- ОБРАБОТКА КОМАНД (ИСПРАВЛЕННАЯ)
 -- ============================================================
 
 local function checkWebCommands()
     writeDebugLog("🔍 checkWebCommands() вызвана")
-    print("🔍 checkWebCommands() вызвана")
     
     pcall(function()
-        writeDebugLog("📡 Запрос к: " .. WEB_URL .. "/api/commands")
-        print("📡 Запрос к: " .. WEB_URL .. "/api/commands")
-        
         local response = internet.request(WEB_URL .. "/api/commands")
         if not response then
             writeDebugLog("⚠️ Нет ответа от /api/commands")
-            print("⚠️ Нет ответа от /api/commands")
             return
         end
         
@@ -1690,10 +1700,8 @@ local function checkWebCommands()
             body = body .. chunk 
         end
         
-        writeDebugLog("📥 Получен ответ: " .. body:sub(1, 200))
-        print("📥 Получен ответ: " .. body:sub(1, 200))
+        writeDebugLog("📥 Получен ответ: " .. body:sub(1, 500))
         
-        -- Проверяем, есть ли команды
         if body:find('"commands":[]') then
             writeDebugLog("⚠️ Нет команд в ответе")
             return
@@ -1711,7 +1719,6 @@ local function checkWebCommands()
         end
         
         writeDebugLog("📨 Получено команд: " .. #data.commands)
-        print("📨 Получено команд: " .. #data.commands)
         
         for _, cmd in ipairs(data.commands) do
             local d = cmd.data or {}
@@ -1719,12 +1726,9 @@ local function checkWebCommands()
             local cmdId = cmd.id or requestId or os.time()
             
             writeDebugLog("📨 Обработка команды: " .. cmd.command)
-            print("📨 Обработка команды: " .. cmd.command)
             
-            -- Функция отправки результата
             local function sendResult(success, msg)
                 writeDebugLog("📤 Результат: " .. (success and "✅" or "❌") .. " " .. (msg or ""))
-                print("📤 Результат: " .. (success and "✅" or "❌") .. " " .. (msg or ""))
                 sendToWeb("/api/command_result", toJson({
                     requestId = requestId,
                     success = success,
@@ -1735,21 +1739,121 @@ local function checkWebCommands()
             end
             
             -- ============================================================
-            -- ОБРАБОТКА КОМАНД (ТОЛЬКО ВАЖНЫЕ)
+            -- КОМАНДЫ
             -- ============================================================
             
-            if cmd.command == "save_buy_items" then
-                writeDebugLog("📥 save_buy_items: " .. tostring(d.items))
-                local ok, items = pcall(serialization.unserialize, d.items)
-                if ok and type(items) == "table" then
+            if cmd.command == "toggle_pause" then
+                shopPaused = not shopPaused
+                local msg = serialization.serialize({op="shop_paused", paused=shopPaused})
+                for addr in pairs(markets) do
+                    pcall(modem.send, addr, 0xffef, msg)
+                end
+                sendResult(true, shopPaused and "Магазин на паузе" or "Магазин активен")
+            
+            elseif cmd.command == "update_market" then
+                broadcastUpdate()
+                sendResult(true, "Обновление разослано")
+            
+            elseif cmd.command == "kill_market" then
+                broadcastKill()
+                sendResult(true, "Терминалы завершены")
+            
+            elseif cmd.command == "set_balance" then
+                local player = players[d.name]
+                if player then
+                    if d.coin then player.balance = d.coin end
+                    if d.ema then player.emaBalance = d.ema end
+                    saveDB()
+                    sendResult(true, "Баланс обновлён")
+                else
+                    sendResult(false, "Игрок не найден")
+                end
+            
+            elseif cmd.command == "toggle_ban" then
+                local player = players[d.name]
+                if player then
+                    player.banned = not player.banned
+                    saveDB()
+                    sendResult(true, player.banned and "Забанен" or "Разбанен")
+                else
+                    sendResult(false, "Игрок не найден")
+                end
+            
+            elseif cmd.command == "reset_player" then
+                local player = players[d.name]
+                if player then
+                    player.balance = 0
+                    player.emaBalance = 0
+                    player.transactions = 0
+                    saveDB()
+                    sendResult(true, "Игрок сброшен")
+                else
+                    sendResult(false, "Игрок не найден")
+                end
+            
+            elseif cmd.command == "add_admin" then
+                if addAdmin(d.name) then
+                    sendResult(true, "Админ добавлен")
+                else
+                    sendResult(false, "Уже админ или ошибка")
+                end
+            
+            elseif cmd.command == "remove_admin" then
+                if removeAdmin(d.name) then
+                    sendResult(true, "Админ удалён")
+                else
+                    sendResult(false, "Нельзя удалить")
+                end
+            
+            -- ============================================================
+            -- КОМАНДЫ ДЛЯ ТОВАРОВ
+            -- ============================================================
+            
+            elseif cmd.command == "get_buy_items" then
+                local items = {}
+                if fs.exists("/home/buy_items.lua") then
+                    local ok, data = pcall(dofile, "/home/buy_items.lua")
+                    if ok and type(data) == "table" then 
+                        items = data 
+                    end
+                end
+                sendToWeb("/api/buy_items_data", toJson({ items = items }))
+                sendResult(true, "Данные отправлены (" .. #items .. " товаров)")
+            
+            elseif cmd.command == "get_shop_items" then
+                local items = {}
+                if fs.exists("/home/shop_items.lua") then
+                    local ok, data = pcall(dofile, "/home/shop_items.lua")
+                    if ok and type(data) == "table" and data.sellItems then
+                        items = data.sellItems
+                    end
+                end
+                sendToWeb("/api/shop_items_data", toJson({ items = items }))
+                sendResult(true, "Данные отправлены (" .. #items .. " товаров)")
+            
+            elseif cmd.command == "save_buy_items" then
+                writeDebugLog("📥 save_buy_items получен")
+                writeDebugLog("📥 d.items тип: " .. type(d.items))
+                
+                local items = nil
+                if type(d.items) == "string" then
+                    local ok, result = pcall(serialization.unserialize, d.items)
+                    if ok and type(result) == "table" then
+                        items = result
+                        writeDebugLog("✅ items распарсены из строки: " .. #items .. " товаров")
+                    end
+                elseif type(d.items) == "table" then
+                    items = d.items
+                    writeDebugLog("✅ items уже таблица: " .. #items .. " товаров")
+                end
+                
+                if items and type(items) == "table" and #items > 0 then
                     local file = io.open("/home/buy_items.lua", "w")
                     if file then
                         file:write("return " .. serialization.serialize(items))
                         file:close()
                         writeDebugLog("💾 Сохранены buy_items: " .. #items .. " товаров")
-                        print("💾 Сохранены buy_items: " .. #items .. " товаров")
                         
-                        -- ОБНОВЛЯЕМ КЭШ
                         buyItemsData = items
                         buyItemMap = {}
                         for _, item in ipairs(buyItemsData) do
@@ -1764,22 +1868,34 @@ local function checkWebCommands()
                         sendResult(false, "Ошибка записи файла")
                     end
                 else
+                    writeDebugLog("❌ Не удалось распарсить items")
                     sendResult(false, "Неверный формат данных")
                 end
             
             elseif cmd.command == "save_shop_items" then
-                writeDebugLog("📥 save_shop_items: " .. tostring(d.items))
-                local ok, items = pcall(serialization.unserialize, d.items)
-                if ok and type(items) == "table" then
+                writeDebugLog("📥 save_shop_items получен")
+                writeDebugLog("📥 d.items тип: " .. type(d.items))
+                
+                local items = nil
+                if type(d.items) == "string" then
+                    local ok, result = pcall(serialization.unserialize, d.items)
+                    if ok and type(result) == "table" then
+                        items = result
+                        writeDebugLog("✅ items распарсены из строки: " .. #items .. " товаров")
+                    end
+                elseif type(d.items) == "table" then
+                    items = d.items
+                    writeDebugLog("✅ items уже таблица: " .. #items .. " товаров")
+                end
+                
+                if items and type(items) == "table" and #items > 0 then
                     local out = "local items = {}\nitems.sellItems = " .. serialization.serialize(items) .. "\nitems.vanillaItems = {}\nreturn items"
                     local file = io.open("/home/shop_items.lua", "w")
                     if file then
                         file:write(out)
                         file:close()
                         writeDebugLog("💾 Сохранены sell_items: " .. #items .. " товаров")
-                        print("💾 Сохранены sell_items: " .. #items .. " товаров")
                         
-                        -- ОБНОВЛЯЕМ КЭШ
                         sellItems = items
                         shopData.sellItems = items
                         
@@ -1789,28 +1905,45 @@ local function checkWebCommands()
                         sendResult(false, "Ошибка записи файла")
                     end
                 else
+                    writeDebugLog("❌ Не удалось распарсить items")
                     sendResult(false, "Неверный формат данных")
                 end
             
+            elseif cmd.command == "delete_feedback" then
+                local feedbacks = {}
+                if fs.exists(FEEDBACKS_PATH) then
+                    local file = io.open(FEEDBACKS_PATH, "r")
+                    if file then
+                        local data = file:read("*a")
+                        file:close()
+                        if data and #data > 0 then
+                            local ok, result = pcall(serialization.unserialize, data)
+                            if ok and type(result) == "table" then feedbacks = result end
+                        end
+                    end
+                end
+                if d.index and d.index >= 1 and d.index <= #feedbacks then
+                    table.remove(feedbacks, d.index)
+                    local file = io.open(FEEDBACKS_PATH, "w")
+                    if file then
+                        file:write(serialization.serialize(feedbacks))
+                        file:close()
+                        sendResult(true, "Отзыв удалён")
+                    else
+                        sendResult(false, "Ошибка записи")
+                    end
+                else
+                    sendResult(false, "Неверный индекс")
+                end
+            
             else
-                sendResult(false, "Неизвестная команда: " .. cmd.command)
+                sendResult(false, "Неизвестная команда: " .. tostring(cmd.command))
             end
         end
     end)
 end
 
--- Убираем старый таймер и добавляем новый
 event.timer(3, checkWebCommands, math.huge)
-
--- Принудительный вызов при старте
-checkWebCommands()
-
--- ============================================================
--- ОБРАБОТКА ОБНОВЛЕНИЙ ОТ СЕРВЕРА (ДЛЯ ТЕРМИНАЛА)
--- ============================================================
-
--- Добавляем переменную для отслеживания последнего обновления
-local lastUpdateCheck = 0
 
 -- ============================================================
 -- ОСТАЛЬНЫЕ UI ФУНКЦИИ (ПРОДОЛЖЕНИЕ)
@@ -2748,7 +2881,6 @@ local function main()
                 goto continue
             end
 
-            -- === ОБРАБОТКА МЕНЮ ===
             if currentScreen == "menu" then
                 for name, btn in pairs(menuButtons) do
                     if x >= btn.x and x < btn.x + btn.xs and y >= btn.y and y < btn.y + btn.ys then
@@ -2784,7 +2916,6 @@ local function main()
                 goto continue
             end
 
-            -- === МАГАЗИН ===
             if currentScreen == "shop" then
                 for name, btn in pairs(shopMenuButtons) do
                     if x >= btn.x and x < btn.x + btn.xs and y >= btn.y and y < btn.y + btn.ys then
@@ -2810,7 +2941,6 @@ local function main()
                 end
             end
 
-            -- === МАГАЗИН ПОКУПКА/ПРОДАЖА ===
             if currentScreen == "shop_buy" or currentScreen == "shop_sell" then
                 if y >= 7 and y <= 21 and x >= 2 and x <= 77 then
                     local relativeRow = y - 6
@@ -2932,7 +3062,6 @@ local function main()
                     goto continue
                 end
 
-            -- === ПОПАП ПРОДАЖИ ===
             elseif showSellPopup and currentScreen == "sell_scan" then
                 local popupWidth = 40
                 local popupHeight = 10
@@ -2951,7 +3080,6 @@ local function main()
                 end
                 goto continue
 
-            -- === ПОКУПКА ===
             elseif currentScreen == "purchase" then
                 if (y >= 24 and y <= 24) and (x >= 19 and x <= 28) then
                     if currentShopMode == "buy" then
@@ -2993,7 +3121,6 @@ local function main()
                     end
                 end
 
-            -- === ПРОДАЖА (СКАН) ===
             elseif currentScreen == "sell_scan" then
                 local backButton = {
                     text = "[ НАЗАД ]",
@@ -3029,7 +3156,6 @@ local function main()
                     goto continue
                 end
 
-            -- === ОТЧЁТ ===
             elseif currentScreen == "report" then
                 local backButton = {
                     text = "[ НАЗАД ]",
@@ -3067,7 +3193,6 @@ local function main()
                     end
                 end
 
-            -- === ОТЗЫВЫ ===
             elseif currentScreen == "feedbacks" then
                 local backBtn = {x=5, y=24, xs=11, ys=1}
                 if isButtonClicked(backBtn, x, y) then
@@ -3097,7 +3222,6 @@ local function main()
                     goto continue
                 end
 
-            -- === ВВОД ОТЗЫВА ===
             elseif currentScreen == "feedback_input" then
                 if isButtonClicked({x=20, y=24, xs=12, ys=1}, x, y) then
                     feedbackEditMode = false
@@ -3138,7 +3262,6 @@ local function main()
                     goto continue
                 end
 
-            -- === СОГЛАШЕНИЕ ===
             elseif currentScreen == "agreement" then
                 local backButton = {
                     text = "[ НАЗАД ]",
@@ -3167,7 +3290,6 @@ local function main()
                     goto continue
                 end
 
-            -- === АККАУНТ ===
             elseif currentScreen == "account" or currentScreen == "account_loading" then
                 local backButton = {
                     text = "[ НАЗАД ]",
@@ -3183,7 +3305,6 @@ local function main()
                 end
             end
             
-            -- === НЕДОСТАТОЧНО СРЕДСТВ ===
             if showInsufficientPopup then
                 local popupWidth = 52
                 local popupHeight = 11
@@ -3207,7 +3328,6 @@ local function main()
                 goto continue
             end
             
-            -- === НЕ ПОЛНАЯ ВЫДАЧА ===
             if showPartialPopup then
                 local popupWidth = 52
                 local popupHeight = 9
@@ -3231,7 +3351,6 @@ local function main()
                 goto continue
             end
             
-            -- === ИНВЕНТАРЬ ПОЛОН ===
             if showInventoryFullPopup then
                 local popupWidth = 52
                 local popupHeight = 9

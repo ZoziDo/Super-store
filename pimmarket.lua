@@ -101,7 +101,7 @@ end
 -- ВЕБ-ИНТЕГРАЦИЯ
 -- ============================================================
 
-local WEB_URL = "https://upfront-dinginess-impulsive.ngrok-free.dev"
+local WEB_URL = "http://localhost:8888"
 
 local function toJson(val)
     if type(val) == "string" then return '"' .. val:gsub('"', '\\"') .. '"'
@@ -573,31 +573,30 @@ local function sendStats()
         end
     end
     
-    -- Используем глобальные переменные, уже загруженные forceLoadItems()
-    local buyItems = buyItemsData or {}
-    local sellItems = sellItems or {}
-
-    if #buyItems == 0 then
-        writeDebugLog("⚠️ buyItems пуст, пробуем загрузить снова...")
-        if fs.exists("/home/buy_items.lua") then
-            local ok, data = pcall(dofile, "/home/buy_items.lua")
-            if ok and type(data) == "table" then 
-                buyItems = data 
-                buyItemsData = data
-                writeDebugLog("📦 Повторно загружены buy_items: " .. #buyItems .. " товаров")
-            end
+    local buyItems = {}
+    if fs.exists("/home/buy_items.lua") then
+        local ok, data = pcall(dofile, "/home/buy_items.lua")
+        if ok and type(data) == "table" then 
+            buyItems = data 
+            writeDebugLog("📦 Загружены buy_items: " .. #buyItems .. " товаров")
+        else
+            writeErrorLog("❌ Ошибка загрузки buy_items.lua")
         end
+    else
+        writeErrorLog("⚠️ Файл /home/buy_items.lua не найден")
     end
-
-    if #sellItems == 0 then
-        writeDebugLog("⚠️ sellItems пуст, пробуем загрузить снова...")
-        if fs.exists("/home/shop_items.lua") then
-            local ok, data = pcall(dofile, "/home/shop_items.lua")
-            if ok and type(data) == "table" and data.sellItems then
-                sellItems = data.sellItems
-                writeDebugLog("📦 Повторно загружены sell_items: " .. #sellItems .. " товаров")
-            end
+    
+    local sellItems = {}
+    if fs.exists("/home/shop_items.lua") then
+        local ok, data = pcall(dofile, "/home/shop_items.lua")
+        if ok and type(data) == "table" and data.sellItems then
+            sellItems = data.sellItems
+            writeDebugLog("📦 Загружены sell_items: " .. #sellItems .. " товаров")
+        else
+            writeErrorLog("❌ Ошибка загрузки shop_items.lua")
         end
+    else
+        writeErrorLog("⚠️ Файл /home/shop_items.lua не найден")
     end
     
     sendToWeb("/api/update", toJson({
@@ -652,68 +651,6 @@ for _, item in ipairs(buyItemsData) do
     local key = item.internalName .. ":" .. dmg
     buyItemMap[key] = item
 end
-
--- ============================================================
--- ПРИНУДИТЕЛЬНАЯ ЗАГРУЗКА ТОВАРОВ ПРИ СТАРТЕ
--- ============================================================
-
--- Функция для принудительной загрузки товаров
-local function forceLoadItems()
-    writeDebugLog("🔄 Принудительная загрузка товаров...")
-    
-    -- Загружаем buy_items
-    buyItemsData = {}
-    if fs.exists("/home/buy_items.lua") then
-        local ok, data = pcall(dofile, "/home/buy_items.lua")
-        if ok and type(data) == "table" then
-            buyItemsData = data
-            writeDebugLog("✅ Загружены buy_items: " .. #buyItemsData .. " товаров")
-        else
-            writeErrorLog("❌ Ошибка загрузки buy_items.lua")
-        end
-    else
-        writeErrorLog("⚠️ Файл /home/buy_items.lua не найден")
-    end
-    
-    -- Обновляем карту
-    buyItemMap = {}
-    for _, item in ipairs(buyItemsData) do
-        local dmg = item.damage or 0
-        local key = item.internalName .. ":" .. dmg
-        buyItemMap[key] = item
-    end
-    
-    -- Загружаем sell_items
-    if fs.exists("/home/shop_items.lua") then
-        local ok, data = pcall(dofile, "/home/shop_items.lua")
-        if ok and type(data) == "table" and data.sellItems then
-            sellItems = data.sellItems
-            shopData.sellItems = sellItems
-            writeDebugLog("✅ Загружены sell_items: " .. #sellItems .. " товаров")
-        else
-            writeErrorLog("❌ Ошибка загрузки shop_items.lua")
-        end
-    else
-        writeErrorLog("⚠️ Файл /home/shop_items.lua не найден")
-    end
-    
-    writeDebugLog("✅ Принудительная загрузка завершена")
-end
-
--- Вызываем принудительную загрузку при старте
-forceLoadItems()
-
--- Также вызываем через 2 секунды (на случай, если файлы еще не готовы)
-event.timer(2, function()
-    writeDebugLog("🔄 Повторная загрузка товаров через 2 секунды...")
-    forceLoadItems()
-end)
-
--- И через 5 секунд (для надежности)
-event.timer(5, function()
-    writeDebugLog("🔄 Повторная загрузка товаров через 5 секунд...")
-    forceLoadItems()
-end)
 
 local drawAgreementScreen
 if fs.exists("/home/agreement.lua") then
@@ -2061,82 +1998,6 @@ local function checkWebCommands()
                 else
                     sendResult(false, "Нельзя удалить")
                 end
-
-            -- ============================================================
-            -- ИНКРЕМЕНТАЛЬНОЕ ПРИМЕНЕНИЕ ИЗМЕНЕНИЙ
-            -- ============================================================
-            
-            local function applyIncrementalChanges(itemsFile, changes, itemType)
-                writeDebugLog("📦 Применение инкрементальных изменений к " .. itemType)
-                
-                if not changes or #changes == 0 then
-                    writeDebugLog("ℹ️ Нет изменений для применения")
-                    return true
-                end
-                
-                writeDebugLog("📨 Применяем " .. #changes .. " изменений")
-                
-                local items = {}
-                if fs.exists(itemsFile) then
-                    local ok, data = pcall(dofile, itemsFile)
-                    if ok and type(data) == "table" then
-                        items = data
-                    end
-                end
-                
-                local itemMap = {}
-                for i, item in ipairs(items) do
-                    local key = item.internalName .. ":" .. (item.damage or 0)
-                    itemMap[key] = i
-                end
-                
-                for _, change in ipairs(changes) do
-                    local item = change.item
-                    local key = item.internalName .. ":" .. (item.damage or 0)
-                    
-                    if change.action == "add" then
-                        table.insert(items, item)
-                        writeDebugLog("➕ Добавлен: " .. (item.displayName or item.internalName))
-                    elseif change.action == "update" then
-                        local idx = itemMap[key]
-                        if idx then
-                            for k, v in pairs(item) do
-                                if k ~= "internalName" and k ~= "damage" then
-                                    items[idx][k] = v
-                                end
-                            end
-                            writeDebugLog("🔄 Обновлен: " .. (item.displayName or item.internalName))
-                        else
-                            table.insert(items, item)
-                            writeDebugLog("➕ Добавлен как новый: " .. (item.displayName or item.internalName))
-                        end
-                    elseif change.action == "delete" then
-                        local idx = itemMap[key]
-                        if idx then
-                            table.remove(items, idx)
-                            writeDebugLog("❌ Удален: " .. key)
-                            itemMap = {}
-                            for i, it in ipairs(items) do
-                                local k = it.internalName .. ":" .. (it.damage or 0)
-                                itemMap[k] = i
-                            end
-                        else
-                            writeDebugLog("⚠️ Товар не найден для удаления: " .. key)
-                        end
-                    end
-                end
-                
-                local file = io.open(itemsFile, "w")
-                if file then
-                    file:write("return " .. serialization.serialize(items))
-                    file:close()
-                    writeDebugLog("✅ Изменения применены к " .. itemsFile)
-                    return true
-                else
-                    writeDebugLog("❌ Ошибка сохранения " .. itemsFile)
-                    return false
-                end
-            end        
             
             -- ============================================================
             -- КОМАНДЫ ДЛЯ ТОВАРОВ (С ИНКРЕМЕНТАЛЬНЫМ ОБНОВЛЕНИЕМ)

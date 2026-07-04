@@ -1884,6 +1884,38 @@ end
 -- ОБРАБОТКА КОМАНД (ПОЛНАЯ РАБОЧАЯ ВЕРСИЯ)
 -- ============================================================
 
+-- БЕЗОПАСНЫЙ ПАРСЕР JSON (БЕЗ loadstring)
+local function safeParseJSON(str)
+    if not str or str == "" then return nil end
+    
+    writeDebugLog("📥 Парсим JSON, длина: " .. #str)
+    
+    -- Способ 1: через serialization (самый надёжный для OC)
+    local ok, result = pcall(serialization.unserialize, str)
+    if ok and type(result) == "table" then
+        writeDebugLog("✅ Распарсено через serialization")
+        return result
+    end
+    
+    -- Способ 2: пробуем через loadstring если доступен
+    local loadstr = loadstring or _G.loadstring
+    if loadstr then
+        local ok2, result2 = pcall(function()
+            -- Экранируем кавычки и парсим
+            local fn = loadstr("return " .. str)
+            if fn then return fn() end
+            return nil
+        end)
+        if ok2 and result2 then
+            writeDebugLog("✅ Распарсено через loadstring")
+            return result2
+        end
+    end
+    
+    writeDebugLog("❌ Не удалось распарсить JSON")
+    return nil
+end
+
 local function checkWebCommands()
     writeDebugLog("🔍 checkWebCommands() вызвана")
     
@@ -1904,54 +1936,20 @@ local function checkWebCommands()
         
         writeDebugLog("📥 Получен ответ, длина: " .. #body)
         
-        if #body < 20 then
+        if #body < 10 then
             writeDebugLog("⚠️ Ответ слишком короткий, команд нет")
             return
         end
         
-        if not body:find('"commands"') then
-            writeDebugLog("⚠️ Нет поля commands")
+        -- Парсим JSON безопасно
+        local data = safeParseJSON(body)
+        if not data then
+            writeErrorLog("❌ Не удалось распарсить JSON: " .. string.sub(body, 1, 200))
             return
         end
         
-        if body:find('"commands"%s*:%s*%[%s*%]') then
+        if not data.commands or #data.commands == 0 then
             writeDebugLog("⚠️ Нет команд в ответе")
-            return
-        end
-        
-        writeDebugLog("📥 Парсим JSON через loadstring...")
-        
-        -- Парсим JSON через loadstring (с обработкой экранирования)
-        local data = nil
-        local ok, result = pcall(function()
-            -- Убираем экранирование кавычек
-            local str = body:gsub('\\"', '"')
-            -- Создаем функцию для парсинга
-            local fn = loadstring("return " .. str)
-            if fn then
-                return fn()
-            end
-            return nil
-        end)
-        
-        if ok and result then
-            data = result
-            writeDebugLog("✅ JSON распарсен через loadstring")
-        else
-            writeDebugLog("⚠️ Не удалось распарсить через loadstring: " .. tostring(result))
-            -- Пробуем через serialization как запасной вариант
-            local ok2, result2 = pcall(serialization.unserialize, body)
-            if ok2 and result2 then
-                data = result2
-                writeDebugLog("✅ JSON распарсен через serialization")
-            else
-                writeDebugLog("⚠️ Не удалось распарсить JSON")
-                return
-            end
-        end
-        
-        if not data or not data.commands then
-            writeDebugLog("⚠️ Нет команд в данных")
             return
         end
         
@@ -1965,7 +1963,9 @@ local function checkWebCommands()
             
             -- Для отладки показываем данные команды
             if cmd.command == "update_player" or cmd.command == "set_balance" then
-                writeDebugLog("📨 Данные: name=" .. tostring(d.name) .. ", balance=" .. tostring(d.balance) .. ", emaBalance=" .. tostring(d.emaBalance))
+                writeDebugLog("📨 Данные: name=" .. tostring(d.name) .. 
+                    ", balance=" .. tostring(d.balance) .. 
+                    ", emaBalance=" .. tostring(d.emaBalance))
             end
             
             local function sendResult(success, msg)
@@ -2005,18 +2005,15 @@ local function checkWebCommands()
             -- ИГРОКИ (ИНКРЕМЕНТАЛЬНОЕ ОБНОВЛЕНИЕ)
             -- ============================================================
             
-            elseif cmd.command == "update_player" then
-                writeDebugLog("📥 update_player получен")
-                writeDebugLog("📥 Имя: " .. tostring(d.name))
-                writeDebugLog("📥 Баланс: " .. tostring(d.balance))
-                writeDebugLog("📥 EMA: " .. tostring(d.emaBalance))
-                
+            elseif cmd.command == "update_player" or cmd.command == "set_balance" then
                 local playerName = d.name
                 if not playerName then
                     writeDebugLog("⚠️ Нет имени игрока!")
                     sendResult(false, "Нет имени игрока")
                     return
                 end
+                
+                writeDebugLog("📥 Обновление игрока: " .. playerName)
                 
                 -- Загружаем текущих игроков
                 local playersData = {}
@@ -2028,7 +2025,7 @@ local function checkWebCommands()
                     end
                 end
                 
-                -- Создаем или обновляем игрока
+                -- Создаем если нет
                 if not playersData[playerName] then
                     playersData[playerName] = {
                         balance = 0,
@@ -2041,7 +2038,7 @@ local function checkWebCommands()
                     writeDebugLog("➕ Создан новый игрок: " .. playerName)
                 end
                 
-                -- Обновляем данные
+                -- Обновляем баланс
                 if d.balance ~= nil then
                     playersData[playerName].balance = tonumber(d.balance) or 0
                     writeDebugLog("💰 Coin: " .. playersData[playerName].balance)
@@ -2060,6 +2057,14 @@ local function checkWebCommands()
                     
                     -- Обновляем глобальную переменную
                     players = playersData
+                    
+                    -- Если это текущий игрок - обновляем локальные переменные
+                    if currentPlayer == playerName then
+                        coinBalance = playersData[playerName].balance or 0
+                        emaBalance = playersData[playerName].emaBalance or 0
+                        writeDebugLog("🔄 Обновлён текущий игрок: " .. playerName)
+                    end
+                    
                     sendResult(true, "Игрок обновлён")
                 else
                     writeDebugLog("❌ Ошибка сохранения")
@@ -2290,8 +2295,8 @@ local function checkWebCommands()
     end
 end
 
--- Изменяем интервал опроса команд на 5 секунд
-event.timer(5, checkWebCommands, math.huge)
+-- Изменяем интервал опроса команд на 3 секунды (быстрее реакция)
+event.timer(3, checkWebCommands, math.huge)
 
 -- ============================================================
 -- ОСТАЛЬНЫЕ UI ФУНКЦИИ (ПРОДОЛЖЕНИЕ)

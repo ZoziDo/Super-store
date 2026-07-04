@@ -1881,6 +1881,10 @@ end
 -- ОБРАБОТКА КОМАНД (ИСПРАВЛЕННАЯ - БЕЗ ЗАВИСАНИЙ)
 -- ============================================================
 
+-- ============================================================
+-- ОБРАБОТКА КОМАНД (ИСПРАВЛЕННАЯ - БЕЗ ЗАВИСАНИЙ)
+-- ============================================================
+
 local function checkWebCommands()
     writeDebugLog("🔍 checkWebCommands() вызвана")
     
@@ -1925,15 +1929,22 @@ local function checkWebCommands()
         writeDebugLog("📨 Получено команд: " .. #data.commands)
         
         for _, cmd in ipairs(data.commands) do
-            -- ... остальная обработка
-        end
-    end)
-    
-    if not success then
-        writeErrorLog("❌ Ошибка в checkWebCommands: " .. tostring(err))
-        writeDebugLog("❌ Ошибка: " .. tostring(err))
-    end
-end
+            local d = cmd.data or {}
+            local requestId = cmd.requestId
+            local cmdId = cmd.id or requestId or os.time()
+            
+            writeDebugLog("📨 Обработка команды: " .. cmd.command)
+            
+            local function sendResult(success, msg)
+                writeDebugLog("📤 Результат: " .. (success and "✅" or "❌") .. " " .. (msg or ""))
+                sendToWeb("/api/command_result", toJson({
+                    requestId = requestId,
+                    success = success,
+                    message = msg or "",
+                    id = cmdId,
+                    command = cmd.command
+                }))
+            end
             
             -- ============================================================
             -- КОМАНДЫ
@@ -2280,7 +2291,8 @@ end
     end)
     
     if not success then
-        writeErrorLog("❌ Ошибка в checkWebCommands: " .. tostring(success))
+        writeErrorLog("❌ Ошибка в checkWebCommands: " .. tostring(err))
+        writeDebugLog("❌ Ошибка: " .. tostring(err))
     end
 end
 

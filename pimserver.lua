@@ -35,9 +35,13 @@ end
 local ADMINS_PATH = "/home/admins.db"
 local DB_PATH = "/home/players.db"
 local STATS_PATH = "/home/global_stats.db"
+local REPORTS_PATH = "/home/reports.log"
+local FEEDBACKS_PATH = "/home/feedbacks.db"
 local admins = {}
 local players = {}
 local globalStats = { totalReports = 0, totalBuys = 0, totalSells = 0 }
+local lastReportCount = 0
+local lastReportCheckTime = 0
 
 -- Загрузка админов
 if filesystem.exists(ADMINS_PATH) then
@@ -83,6 +87,23 @@ if filesystem.exists(STATS_PATH) then
         end
     end
 end
+
+-- Подсчёт репортов для индикатора
+local function countReports()
+    local count = 0
+    if filesystem.exists(REPORTS_PATH) then
+        local file = io.open(REPORTS_PATH, "r")
+        if file then
+            for _ in file:lines() do
+                count = count + 1
+            end
+            file:close()
+        end
+    end
+    return count
+end
+lastReportCount = countReports()
+lastReportCheckTime = os.time()
 
 local function saveDB()
     local file = io.open(DB_PATH, "w")
@@ -142,7 +163,6 @@ local shopPaused = false
 local SESSION_TIMEOUT = 31536000
 local ACCESS_PASSWORD = "secret"
 
--- Функция валидации сессии
 local function validateSession(playerName, token)
     if not playerName or not token then return false end
     local session = sessions[playerName]
@@ -202,7 +222,6 @@ local function flushLogs()
     logQueue = {}
 end
 
--- Таймер отправки логов каждые 2 секунды
 event.timer(2, flushLogs, math.huge)
 
 -- Транзакции (последние 100)
@@ -210,7 +229,7 @@ local transactions = {}
 local function addTransaction(type, playerName, item, qty, value_coin, value_ema)
     table.insert(transactions, {
         time = getRealDateTimeString(),
-        type = type,   -- "buy" или "sell"
+        type = type,
         player = playerName,
         item = item,
         qty = qty,
@@ -220,10 +239,34 @@ local function addTransaction(type, playerName, item, qty, value_coin, value_ema
     while #transactions > 100 do table.remove(transactions, 1) end
 end
 
--- Отправка полной статистики (игроки, админы, отзывы, репорты, транзакции)
+-- Чтение файла с товарами с PimMarket через модем
+local function getItemsFromMarket(filePath)
+    local items = {}
+    -- Пытаемся прочитать файл на PimServer (если он есть)
+    if filesystem.exists(filePath) then
+        local ok, data = pcall(dofile, filePath)
+        if ok and type(data) == "table" then
+            return data
+        end
+    end
+    -- Если файла нет, пробуем запросить у терминалов
+    for addr in pairs(markets) do
+        modem.send(addr, 0xffef, serialization.serialize({
+            op = "get_file",
+            path = filePath,
+            requestId = "items_" .. os.time()
+        }))
+    end
+    return items
+end
+
+-- Отправка статистики
 local function sendStats()
     local playerList = {}
+    local totalBalance = 0
     for name, data in pairs(players) do
+        local bal = (data.balance or 0) + (data.emaBalance or 0)
+        totalBalance = totalBalance + bal
         table.insert(playerList, {
             name = name,
             balance = data.balance or 0,
@@ -232,13 +275,15 @@ local function sendStats()
             banned = data.banned or false
         })
     end
+    
     local online = 0
     for _, s in pairs(sessions) do
         if type(s) == "table" and s.token then online = online + 1 end
     end
+    
     local feedbacksList = {}
-    if filesystem.exists("/home/feedbacks.db") then
-        local file = io.open("/home/feedbacks.db", "r")
+    if filesystem.exists(FEEDBACKS_PATH) then
+        local file = io.open(FEEDBACKS_PATH, "r")
         if file then
             local data = file:read("*a")
             file:close()
@@ -248,9 +293,10 @@ local function sendStats()
             end
         end
     end
+    
     local reportsList = {}
-    if filesystem.exists("/home/reports.log") then
-        local file = io.open("/home/reports.log", "r")
+    if filesystem.exists(REPORTS_PATH) then
+        local file = io.open(REPORTS_PATH, "r")
         if file then
             for line in file:lines() do
                 local time = line:match("%[([^%]]+)%]")
@@ -263,18 +309,45 @@ local function sendStats()
             file:close()
         end
     end
+    
+    -- Проверяем новые репорты
+    local currentReportCount = #reportsList
+    local hasNewReports = currentReportCount > lastReportCount
+    if hasNewReports then
+        lastReportCount = currentReportCount
+    end
+    
+    -- Загружаем товары
+    local buyItems = {}
+    if filesystem.exists("/home/buy_items.lua") then
+        local ok, data = pcall(dofile, "/home/buy_items.lua")
+        if ok and type(data) == "table" then buyItems = data end
+    end
+    
+    local sellItems = {}
+    if filesystem.exists("/home/shop_items.lua") then
+        local ok, data = pcall(dofile, "/home/shop_items.lua")
+        if ok and type(data) == "table" and data.sellItems then
+            sellItems = data.sellItems
+        end
+    end
+    
     sendToWeb("/api/update", toJson({
-        players = playerList, 
+        players = playerList,
         admins = admins,
         total = #playerList,
+        total_balance = totalBalance,
         total_transactions = (globalStats.totalBuys or 0) + (globalStats.totalSells or 0),
         total_reports = globalStats.totalReports or 0,
         total_feedbacks = #feedbacksList,
-        online = online, 
+        online = online,
         paused = shopPaused,
-        feedbacks = feedbacksList, 
+        feedbacks = feedbacksList,
         reports = reportsList,
-        transactions = transactions
+        transactions = transactions,
+        has_new_reports = hasNewReports,
+        buy_items = buyItems,
+        sell_items = sellItems
     }))
 end
 
@@ -285,18 +358,16 @@ local function broadcastUpdate()
     end
 end
 
--- Отправка завершения терминалам
 local function broadcastKill()
     for addr in pairs(markets) do
         modem.send(addr, 0xffef, serialization.serialize({op="kill_market"}))
     end
 end
 
--- Удаление отзыва
 local function deleteFeedback(index)
     local feedbacks = {}
-    if filesystem.exists("/home/feedbacks.db") then
-        local file = io.open("/home/feedbacks.db", "r")
+    if filesystem.exists(FEEDBACKS_PATH) then
+        local file = io.open(FEEDBACKS_PATH, "r")
         local data = file:read("*a")
         file:close()
         if data and #data > 0 then
@@ -306,7 +377,7 @@ local function deleteFeedback(index)
     end
     if index < 1 or index > #feedbacks then return false end
     table.remove(feedbacks, index)
-    local file = io.open("/home/feedbacks.db", "w")
+    local file = io.open(FEEDBACKS_PATH, "w")
     file:write(serialization.serialize(feedbacks))
     file:close()
     return true
@@ -332,7 +403,6 @@ local function checkWebCommands()
                         }))
                     end
 
-                    -- === КОМАНДЫ УПРАВЛЕНИЯ ===
                     if cmd.command == "toggle_pause" then
                         shopPaused = not shopPaused
                         for addr in pairs(markets) do
@@ -348,7 +418,6 @@ local function checkWebCommands()
                         broadcastKill()
                         reply(true, "Терминалы завершены")
                     
-                    -- === УПРАВЛЕНИЕ ИГРОКАМИ ===
                     elseif cmd.command == "set_balance" then
                         local player = players[d.name]
                         if player then
@@ -382,7 +451,6 @@ local function checkWebCommands()
                             reply(false, "Игрок не найден")
                         end
                     
-                    -- === УПРАВЛЕНИЕ АДМИНАМИ ===
                     elseif cmd.command == "add_admin" then
                         if addAdmin(d.name) then
                             reply(true, "Админ добавлен")
@@ -397,7 +465,6 @@ local function checkWebCommands()
                             reply(false, "Нельзя удалить")
                         end
                     
-                    -- === УПРАВЛЕНИЕ ОТЗЫВАМИ ===
                     elseif cmd.command == "delete_feedback" then
                         if deleteFeedback(d.index) then
                             reply(true, "Отзыв удалён")
@@ -405,23 +472,16 @@ local function checkWebCommands()
                             reply(false, "Неверный индекс")
                         end
                     
-                    -- === ========================================== ===
-                    -- === РАБОТА С ТОВАРАМИ (НОВЫЕ КОМАНДЫ) =========
-                    -- === ========================================== ===
-                    
-                    -- ПОЛУЧЕНИЕ ТОВАРОВ ДЛЯ ПОКУПКИ
+                    -- РАБОТА С ТОВАРАМИ
                     elseif cmd.command == "get_buy_items" then
                         local items = {}
                         if filesystem.exists("/home/buy_items.lua") then
                             local ok, data = pcall(dofile, "/home/buy_items.lua")
-                            if ok and type(data) == "table" then 
-                                items = data 
-                            end
+                            if ok and type(data) == "table" then items = data end
                         end
                         sendToWeb("/api/buy_items_data", toJson({ items = items }))
                         reply(true, "Данные отправлены")
                     
-                    -- ПОЛУЧЕНИЕ ТОВАРОВ ДЛЯ ПРОДАЖИ
                     elseif cmd.command == "get_shop_items" then
                         local items = {}
                         if filesystem.exists("/home/shop_items.lua") then
@@ -433,11 +493,9 @@ local function checkWebCommands()
                         sendToWeb("/api/shop_items_data", toJson({ items = items }))
                         reply(true, "Данные отправлены")
                     
-                    -- СОХРАНЕНИЕ ТОВАРОВ ДЛЯ ПОКУПКИ
                     elseif cmd.command == "save_buy_items" then
                         local ok, items = pcall(serialization.unserialize, d.items)
                         if ok and type(items) == "table" then
-                            -- Сохраняем в файл
                             local file = io.open("/home/buy_items.lua", "w")
                             if file then
                                 file:write("return " .. serialization.serialize(items))
@@ -451,7 +509,6 @@ local function checkWebCommands()
                             reply(false, "Неверный формат данных")
                         end
                     
-                    -- СОХРАНЕНИЕ ТОВАРОВ ДЛЯ ПРОДАЖИ
                     elseif cmd.command == "save_shop_items" then
                         local ok, items = pcall(serialization.unserialize, d.items)
                         if ok and type(items) == "table" then
@@ -469,32 +526,8 @@ local function checkWebCommands()
                             reply(false, "Неверный формат данных")
                         end
                     
-                    -- ДОБАВЛЕНИЕ ОДНОГО ТОВАРА (старая команда)
-                    elseif cmd.command == "add_item" then
-                        local buyItems = {}
-                        if filesystem.exists("/home/buy_items.lua") then
-                            local ok, items = pcall(dofile, "/home/buy_items.lua")
-                            if ok and items then buyItems = items end
-                        end
-                        table.insert(buyItems, {
-                            internalName = d.internal,
-                            displayName = d.display,
-                            price_coin = d.price_coin or 0,
-                            price_ema = d.price_ema or 0,
-                            damage = d.damage or 0
-                        })
-                        local file = io.open("/home/buy_items.lua", "w")
-                        if file then
-                            file:write("return " .. serialization.serialize(buyItems))
-                            file:close()
-                            broadcastUpdate()
-                            reply(true, "Предмет добавлен")
-                        else
-                            reply(false, "Ошибка записи")
-                        end
-                    
                     else
-                        reply(false, "Неизвестная команда: " .. tostring(cmd.command))
+                        reply(false, "Неизвестная команда")
                     end
                 end
             end
@@ -506,11 +539,14 @@ end
 event.timer(10, sendStats, math.huge)
 event.timer(3, checkWebCommands, math.huge)
 
--- Главный цикл (обработка терминалов)
+-- Главный цикл
 local function main()
-    print("Headless server started, managing via " .. WEB_URL)
+    print("=" .. string.rep("=", 58))
+    print("🚀 PIM Server запущен")
+    print("📡 Web URL: " .. WEB_URL)
     print("👑 Админы: " .. table.concat(admins, ", "))
-    print("📦 Товары загружены из /home/buy_items.lua и /home/shop_items.lua")
+    print("📦 Товары: /home/buy_items.lua и /home/shop_items.lua")
+    print("=" .. string.rep("=", 58))
     
     while true do
         local ev = {event.pull(0.5)}
@@ -521,6 +557,7 @@ local function main()
             if not success or not msg or type(msg) ~= "table" then
                 goto continue
             end
+            
             local last = sessions["__modem_"..from] or 0
             if os.time() - last < 0.5 then
                 addLog("WARN: Спам от " .. from)
@@ -536,6 +573,7 @@ local function main()
                     if not owner then owner = from end
                     markets[from] = true
                     modem.send(from, 0xffef, serialization.serialize({op="welcome", owner=(from==owner), shopPaused=shopPaused}))
+                    addLog("✅ Терминал зарегистрирован: " .. from)
                 end
             
             elseif msg.op == "enter" then
@@ -548,14 +586,7 @@ local function main()
                     else
                         local player = players[playerName]
                         if not player then
-                            player = { 
-                                balance = 0, 
-                                emaBalance = 0, 
-                                transactions = 0, 
-                                banned = false, 
-                                agreed = false, 
-                                hasFeedback = false 
-                            }
+                            player = { balance = 0, emaBalance = 0, transactions = 0, banned = false, agreed = false, hasFeedback = false }
                             players[playerName] = player
                             saveDB()
                             addLog("✅ Новый игрок: " .. playerName)
@@ -571,7 +602,7 @@ local function main()
                                 transactions=player.transactions, regDate=os.date(),
                                 agreed = player.agreed, shopPaused = shopPaused
                             }))
-                            addLog("👤 Вход: " .. playerName .. " (баланс: " .. player.balance .. "₵)")
+                            addLog("👤 Вход: " .. playerName)
                         end
                     end
                 end
@@ -591,7 +622,7 @@ local function main()
                     saveGlobalStats()
                     saveDB()
                     addTransaction("sell", msg.name, msg.item or "?", msg.qty or 0, 0, value)
-                    addLog("💰 Продажа: " .. msg.name .. " " .. (msg.item or "?") .. " x" .. (msg.qty or 0) .. " за " .. value)
+                    addLog("💰 Продажа: " .. msg.name .. " " .. (msg.item or "?") .. " x" .. (msg.qty or 0))
                 end
             
             elseif msg.op == "buy" then
@@ -608,7 +639,7 @@ local function main()
                         saveGlobalStats()
                         saveDB()
                         addTransaction("buy", msg.name, msg.item or "?", msg.qty or 0, coin, ema)
-                        addLog("🛒 Покупка: " .. msg.name .. " " .. (msg.item or "?") .. " x" .. (msg.qty or 0) .. " за " .. coin .. "₵")
+                        addLog("🛒 Покупка: " .. msg.name .. " " .. (msg.item or "?") .. " x" .. (msg.qty or 0))
                     else
                         modem.send(from, 0xffef, serialization.serialize({op="error", message="Недостаточно средств"}))
                     end
@@ -618,11 +649,17 @@ local function main()
                 if validateSession(msg.name, msg.token) then
                     globalStats.totalReports = (globalStats.totalReports or 0) + 1
                     saveGlobalStats()
-                    local file = io.open("/home/reports.log", "a")
+                    local file = io.open(REPORTS_PATH, "a")
                     if file then
                         file:write("[" .. msg.time .. "] " .. msg.name .. ": " .. msg.text .. "\n")
                         file:close()
-                        addLog("📩 Репорт от " .. msg.name .. ": " .. msg.text)
+                        addLog("📩 Новый репорт от " .. msg.name)
+                        -- Отправляем сигнал о новом репорте
+                        sendToWeb("/api/new_report", toJson({
+                            time = msg.time,
+                            name = msg.name,
+                            text = msg.text
+                        }))
                     end
                 end
             
@@ -643,8 +680,8 @@ local function main()
                     local player = players[msg.name]
                     if player and not player.hasFeedback then
                         local feedbacks = {}
-                        if filesystem.exists("/home/feedbacks.db") then
-                            local file = io.open("/home/feedbacks.db", "r")
+                        if filesystem.exists(FEEDBACKS_PATH) then
+                            local file = io.open(FEEDBACKS_PATH, "r")
                             local data = file:read("*a")
                             file:close()
                             if data and #data > 0 then
@@ -653,14 +690,14 @@ local function main()
                             end
                         end
                         table.insert(feedbacks, 1, {name = msg.name, text = msg.text, time = msg.time})
-                        local file = io.open("/home/feedbacks.db", "w")
+                        local file = io.open(FEEDBACKS_PATH, "w")
                         if file then
                             file:write(serialization.serialize(feedbacks))
                             file:close()
                             player.hasFeedback = true
                             saveDB()
                             modem.send(from, 0xffef, serialization.serialize({op="add_feedback_response", success=true}))
-                            addLog("📝 Отзыв от " .. msg.name .. ": " .. msg.text)
+                            addLog("📝 Новый отзыв от " .. msg.name)
                         end
                     end
                 end
@@ -668,8 +705,8 @@ local function main()
             elseif msg.op == "get_feedbacks" then
                 if validateSession(msg.name, msg.token) then
                     local feedbacks = {}
-                    if filesystem.exists("/home/feedbacks.db") then
-                        local file = io.open("/home/feedbacks.db", "r")
+                    if filesystem.exists(FEEDBACKS_PATH) then
+                        local file = io.open(FEEDBACKS_PATH, "r")
                         local data = file:read("*a")
                         file:close()
                         if data and #data > 0 then
@@ -682,13 +719,25 @@ local function main()
                         hasFeedback = players[msg.name] and players[msg.name].hasFeedback
                     }))
                 end
+            
+            -- Ответ от терминала с файлом
+            elseif msg.op == "file_response" then
+                if msg.path and msg.data then
+                    -- Сохраняем полученный файл на PimServer
+                    local file = io.open(msg.path, "w")
+                    if file then
+                        file:write(msg.data)
+                        file:close()
+                        addLog("📁 Файл получен: " .. msg.path)
+                    end
+                end
             end
         end
         ::continue::
     end
 end
 
--- Запуск с защитой от падений
+-- Запуск с защитой
 while true do
     local ok, err = pcall(main)
     if not ok then

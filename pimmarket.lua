@@ -510,8 +510,12 @@ end
 -- ============================================================
 
 local function broadcastUpdate()
+    writeDebugLog("📢 Рассылка обновления терминалам")
     for addr in pairs(markets) do
-        modem.send(addr, 0xffef, serialization.serialize({op="update_market"}))
+        modem.send(addr, 0xffef, serialization.serialize({
+            op = "update_market",
+            type = "reload_items"
+        }))
     end
 end
 
@@ -1784,6 +1788,17 @@ local function checkWebCommands()
                                 file:write("return " .. serialization.serialize(items))
                                 file:close()
                                 writeDebugLog("💾 Сохранены buy_items: " .. #items .. " товаров")
+                                
+                                -- ОБНОВЛЯЕМ КЭШ В ПАМЯТИ
+                                buyItemsData = items
+                                buyItemMap = {}
+                                for _, item in ipairs(buyItemsData) do
+                                    local dmg = item.damage or 0
+                                    local key = item.internalName .. ":" .. dmg
+                                    buyItemMap[key] = item
+                                end
+                                
+                                -- ОТПРАВЛЯЕМ ОБНОВЛЕНИЕ ТЕРМИНАЛАМ
                                 broadcastUpdate()
                                 reply(true, "buy_items.lua обновлён (" .. #items .. " товаров)")
                             else
@@ -1802,6 +1817,12 @@ local function checkWebCommands()
                                 file:write(out)
                                 file:close()
                                 writeDebugLog("💾 Сохранены sell_items: " .. #items .. " товаров")
+                                
+                                -- ОБНОВЛЯЕМ КЭШ В ПАМЯТИ
+                                sellItems = items
+                                shopData.sellItems = items
+                                
+                                -- ОТПРАВЛЯЕМ ОБНОВЛЕНИЕ ТЕРМИНАЛАМ
                                 broadcastUpdate()
                                 reply(true, "shop_items.lua обновлён (" .. #items .. " товаров)")
                             else
@@ -1848,6 +1869,13 @@ local function checkWebCommands()
 end
 
 event.timer(10, checkWebCommands, math.huge)
+
+-- ============================================================
+-- ОБРАБОТКА ОБНОВЛЕНИЙ ОТ СЕРВЕРА (ДЛЯ ТЕРМИНАЛА)
+-- ============================================================
+
+-- Добавляем переменную для отслеживания последнего обновления
+local lastUpdateCheck = 0
 
 -- ============================================================
 -- ОСТАЛЬНЫЕ UI ФУНКЦИИ (ПРОДОЛЖЕНИЕ)
@@ -3387,8 +3415,7 @@ local function main()
                                 file:close()
                                 if data and #data > 0 then
                                     local ok, result = pcall(serialization.unserialize, data)
-                                    if ok and type(result) == "table" then feedbacks = result end
-                                end
+                                    if ok and type(result) == "table" then feedbacks = result end                                end
                             end
                         end
                         table.insert(feedbacks, 1, {

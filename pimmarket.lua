@@ -2061,6 +2061,82 @@ local function checkWebCommands()
                 else
                     sendResult(false, "Нельзя удалить")
                 end
+
+            -- ============================================================
+            -- ИНКРЕМЕНТАЛЬНОЕ ПРИМЕНЕНИЕ ИЗМЕНЕНИЙ
+            -- ============================================================
+            
+            local function applyIncrementalChanges(itemsFile, changes, itemType)
+                writeDebugLog("📦 Применение инкрементальных изменений к " .. itemType)
+                
+                if not changes or #changes == 0 then
+                    writeDebugLog("ℹ️ Нет изменений для применения")
+                    return true
+                end
+                
+                writeDebugLog("📨 Применяем " .. #changes .. " изменений")
+                
+                local items = {}
+                if fs.exists(itemsFile) then
+                    local ok, data = pcall(dofile, itemsFile)
+                    if ok and type(data) == "table" then
+                        items = data
+                    end
+                end
+                
+                local itemMap = {}
+                for i, item in ipairs(items) do
+                    local key = item.internalName .. ":" .. (item.damage or 0)
+                    itemMap[key] = i
+                end
+                
+                for _, change in ipairs(changes) do
+                    local item = change.item
+                    local key = item.internalName .. ":" .. (item.damage or 0)
+                    
+                    if change.action == "add" then
+                        table.insert(items, item)
+                        writeDebugLog("➕ Добавлен: " .. (item.displayName or item.internalName))
+                    elseif change.action == "update" then
+                        local idx = itemMap[key]
+                        if idx then
+                            for k, v in pairs(item) do
+                                if k ~= "internalName" and k ~= "damage" then
+                                    items[idx][k] = v
+                                end
+                            end
+                            writeDebugLog("🔄 Обновлен: " .. (item.displayName or item.internalName))
+                        else
+                            table.insert(items, item)
+                            writeDebugLog("➕ Добавлен как новый: " .. (item.displayName or item.internalName))
+                        end
+                    elseif change.action == "delete" then
+                        local idx = itemMap[key]
+                        if idx then
+                            table.remove(items, idx)
+                            writeDebugLog("❌ Удален: " .. key)
+                            itemMap = {}
+                            for i, it in ipairs(items) do
+                                local k = it.internalName .. ":" .. (it.damage or 0)
+                                itemMap[k] = i
+                            end
+                        else
+                            writeDebugLog("⚠️ Товар не найден для удаления: " .. key)
+                        end
+                    end
+                end
+                
+                local file = io.open(itemsFile, "w")
+                if file then
+                    file:write("return " .. serialization.serialize(items))
+                    file:close()
+                    writeDebugLog("✅ Изменения применены к " .. itemsFile)
+                    return true
+                else
+                    writeDebugLog("❌ Ошибка сохранения " .. itemsFile)
+                    return false
+                end
+            end        
             
             -- ============================================================
             -- КОМАНДЫ ДЛЯ ТОВАРОВ (С ИНКРЕМЕНТАЛЬНЫМ ОБНОВЛЕНИЕМ)

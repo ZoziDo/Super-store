@@ -1685,6 +1685,10 @@ end
 -- ОБРАБОТКА КОМАНД (ИСПРАВЛЕННАЯ)
 -- ============================================================
 
+-- ============================================================
+-- ОБРАБОТКА КОМАНД (ИСПРАВЛЕННАЯ С JSON)
+-- ============================================================
+
 local function checkWebCommands()
     writeDebugLog("🔍 checkWebCommands() вызвана")
     
@@ -1700,21 +1704,33 @@ local function checkWebCommands()
             body = body .. chunk 
         end
         
-        writeDebugLog("📥 Получен ответ: " .. body:sub(1, 500))
+        writeDebugLog("📥 Получен ответ: " .. body:sub(1, 200))
         
+        -- Проверяем, есть ли команды
         if body:find('"commands":[]') then
             writeDebugLog("⚠️ Нет команд в ответе")
             return
         end
         
-        local ok, data = pcall(serialization.unserialize, body)
-        if not ok then
-            writeDebugLog("❌ Ошибка парсинга: " .. tostring(data))
-            return
+        -- Парсим JSON вручную
+        local function parseJSON(str)
+            local ok, result = pcall(function()
+                -- Используем loadstring для парсинга JSON в Lua
+                local json_str = str:gsub('"', '"'):gsub('"', '"')
+                local fn = loadstring("return " .. json_str)
+                if fn then
+                    return fn()
+                end
+            end)
+            if ok then
+                return result
+            end
+            return nil
         end
         
+        local data = parseJSON(body)
         if not data or not data.commands then
-            writeDebugLog("⚠️ Нет команд в данных")
+            writeDebugLog("⚠️ Не удалось распарсить команды")
             return
         end
         
@@ -1806,7 +1822,7 @@ local function checkWebCommands()
                 end
             
             -- ============================================================
-            -- КОМАНДЫ ДЛЯ ТОВАРОВ
+            -- КОМАНДЫ ДЛЯ ТОВАРОВ (С ПОДДЕРЖКОЙ JSON)
             -- ============================================================
             
             elseif cmd.command == "get_buy_items" then
@@ -1836,11 +1852,41 @@ local function checkWebCommands()
                 writeDebugLog("📥 d.items тип: " .. type(d.items))
                 
                 local items = nil
+                
+                -- Пробуем распарсить items (это JSON строка от Python)
                 if type(d.items) == "string" then
-                    local ok, result = pcall(serialization.unserialize, d.items)
-                    if ok and type(result) == "table" then
-                        items = result
-                        writeDebugLog("✅ items распарсены из строки: " .. #items .. " товаров")
+                    writeDebugLog("📥 Парсим JSON строку: " .. d.items:sub(1, 100))
+                    
+                    -- Парсим JSON
+                    local function parseJSON(str)
+                        local ok, result = pcall(function()
+                            -- Заменяем JSON на Lua таблицу
+                            local json_str = str
+                            -- Убираем экранирование кавычек
+                            json_str = json_str:gsub('\\"', '"')
+                            -- Парсим через loadstring
+                            local fn = loadstring("return " .. json_str)
+                            if fn then
+                                return fn()
+                            end
+                        end)
+                        if ok then
+                            return result
+                        end
+                        return nil
+                    end
+                    
+                    local parsed = parseJSON(d.items)
+                    if parsed and type(parsed) == "table" then
+                        items = parsed
+                        writeDebugLog("✅ items распарсены из JSON: " .. #items .. " товаров")
+                    else
+                        -- Пробуем через стандартный unserialize (на случай если это Lua)
+                        local ok, result = pcall(serialization.unserialize, d.items)
+                        if ok and type(result) == "table" then
+                            items = result
+                            writeDebugLog("✅ items распарсены через unserialize: " .. #items .. " товаров")
+                        end
                     end
                 elseif type(d.items) == "table" then
                     items = d.items
@@ -1848,12 +1894,29 @@ local function checkWebCommands()
                 end
                 
                 if items and type(items) == "table" and #items > 0 then
+                    -- Проверяем структуру items
+                    local valid = true
+                    for _, item in ipairs(items) do
+                        if not item.internalName then
+                            valid = false
+                            writeDebugLog("⚠️ item без internalName: " .. tostring(item))
+                            break
+                        end
+                    end
+                    
+                    if not valid then
+                        writeDebugLog("❌ Неверная структура items")
+                        sendResult(false, "Неверная структура данных")
+                        return
+                    end
+                    
                     local file = io.open("/home/buy_items.lua", "w")
                     if file then
                         file:write("return " .. serialization.serialize(items))
                         file:close()
                         writeDebugLog("💾 Сохранены buy_items: " .. #items .. " товаров")
                         
+                        -- ОБНОВЛЯЕМ КЭШ
                         buyItemsData = items
                         buyItemMap = {}
                         for _, item in ipairs(buyItemsData) do
@@ -1868,7 +1931,7 @@ local function checkWebCommands()
                         sendResult(false, "Ошибка записи файла")
                     end
                 else
-                    writeDebugLog("❌ Не удалось распарсить items")
+                    writeDebugLog("❌ Не удалось распарсить items, тип: " .. type(items))
                     sendResult(false, "Неверный формат данных")
                 end
             
@@ -1877,11 +1940,37 @@ local function checkWebCommands()
                 writeDebugLog("📥 d.items тип: " .. type(d.items))
                 
                 local items = nil
+                
+                -- Пробуем распарсить items (это JSON строка от Python)
                 if type(d.items) == "string" then
-                    local ok, result = pcall(serialization.unserialize, d.items)
-                    if ok and type(result) == "table" then
-                        items = result
-                        writeDebugLog("✅ items распарсены из строки: " .. #items .. " товаров")
+                    writeDebugLog("📥 Парсим JSON строку: " .. d.items:sub(1, 100))
+                    
+                    -- Парсим JSON
+                    local function parseJSON(str)
+                        local ok, result = pcall(function()
+                            local json_str = str:gsub('\\"', '"')
+                            local fn = loadstring("return " .. json_str)
+                            if fn then
+                                return fn()
+                            end
+                        end)
+                        if ok then
+                            return result
+                        end
+                        return nil
+                    end
+                    
+                    local parsed = parseJSON(d.items)
+                    if parsed and type(parsed) == "table" then
+                        items = parsed
+                        writeDebugLog("✅ items распарсены из JSON: " .. #items .. " товаров")
+                    else
+                        -- Пробуем через стандартный unserialize
+                        local ok, result = pcall(serialization.unserialize, d.items)
+                        if ok and type(result) == "table" then
+                            items = result
+                            writeDebugLog("✅ items распарсены через unserialize: " .. #items .. " товаров")
+                        end
                     end
                 elseif type(d.items) == "table" then
                     items = d.items
@@ -1889,6 +1978,22 @@ local function checkWebCommands()
                 end
                 
                 if items and type(items) == "table" and #items > 0 then
+                    -- Проверяем структуру
+                    local valid = true
+                    for _, item in ipairs(items) do
+                        if not item.internalName then
+                            valid = false
+                            writeDebugLog("⚠️ item без internalName: " .. tostring(item))
+                            break
+                        end
+                    end
+                    
+                    if not valid then
+                        writeDebugLog("❌ Неверная структура items")
+                        sendResult(false, "Неверная структура данных")
+                        return
+                    end
+                    
                     local out = "local items = {}\nitems.sellItems = " .. serialization.serialize(items) .. "\nitems.vanillaItems = {}\nreturn items"
                     local file = io.open("/home/shop_items.lua", "w")
                     if file then
@@ -1905,7 +2010,7 @@ local function checkWebCommands()
                         sendResult(false, "Ошибка записи файла")
                     end
                 else
-                    writeDebugLog("❌ Не удалось распарсить items")
+                    writeDebugLog("❌ Не удалось распарсить items, тип: " .. type(items))
                     sendResult(false, "Неверный формат данных")
                 end
             

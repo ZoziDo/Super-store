@@ -1884,18 +1884,23 @@ end
 local function checkWebCommands()
     writeDebugLog("🔍 checkWebCommands() вызвана")
     
-    -- Используем pcall для защиты от зависаний
-    local success = pcall(function()
+    local success, err = pcall(function()
+        writeDebugLog("📡 Делаем запрос к " .. WEB_URL .. "/api/commands")
+        
         local response = internet.request(WEB_URL .. "/api/commands")
         if not response then
-            writeDebugLog("⚠️ Нет ответа от /api/commands")
+            writeDebugLog("⚠️ Нет ответа от сервера")
             return
         end
         
+        writeDebugLog("📡 Ответ получен, читаем...")
         local body = ""
         for chunk in response do 
             body = body .. chunk 
         end
+        
+        writeDebugLog("📥 Получен ответ, длина: " .. #body)
+        writeDebugLog("📥 Первые 200 символов: " .. body:sub(1, 200))
         
         -- Проверяем, есть ли команды
         if body:find('"commands":[]') then
@@ -1903,34 +1908,32 @@ local function checkWebCommands()
             return
         end
         
-        writeDebugLog("📥 Получен ответ, длина: " .. #body)
+        writeDebugLog("📥 Пробуем распарсить JSON...")
         
         -- Парсим основной JSON
         local data = parseJSON(body)
-        if not data or not data.commands then
-            writeDebugLog("⚠️ Не удалось распарсить команды")
+        if not data then
+            writeDebugLog("⚠️ Не удалось распарсить команды (data = nil)")
+            return
+        end
+        
+        if not data.commands then
+            writeDebugLog("⚠️ Нет поля commands в данных")
             return
         end
         
         writeDebugLog("📨 Получено команд: " .. #data.commands)
         
         for _, cmd in ipairs(data.commands) do
-            local d = cmd.data or {}
-            local requestId = cmd.requestId
-            local cmdId = cmd.id or requestId or os.time()
-            
-            writeDebugLog("📨 Обработка команды: " .. cmd.command)
-            
-            local function sendResult(success, msg)
-                writeDebugLog("📤 Результат: " .. (success and "✅" or "❌") .. " " .. (msg or ""))
-                sendToWeb("/api/command_result", toJson({
-                    requestId = requestId,
-                    success = success,
-                    message = msg or "",
-                    id = cmdId,
-                    command = cmd.command
-                }))
-            end
+            -- ... остальная обработка
+        end
+    end)
+    
+    if not success then
+        writeErrorLog("❌ Ошибка в checkWebCommands: " .. tostring(err))
+        writeDebugLog("❌ Ошибка: " .. tostring(err))
+    end
+end
             
             -- ============================================================
             -- КОМАНДЫ

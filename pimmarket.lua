@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ123
+-- ВРЕМЯ12345
 -- ============================================================
 
 local tmpfs = component.proxy(computer.tmpAddress())
@@ -3271,7 +3271,7 @@ local function performBuy()
     os.sleep(0.4)
 
     -- ============================================================
-    -- ⭐ ЭКСПОРТ ПРЕДМЕТА (ИСПРАВЛЕННАЯ ВЕРСИЯ)
+    -- ⭐ ЭКСПОРТ ПРЕДМЕТА (С FINGERPRINT)
     -- ============================================================
     
     -- Получаем название и damage
@@ -3284,6 +3284,12 @@ local function performBuy()
     end
 
     writeDebugLog("🔍 Пытаемся выдать: " .. itemName .. " (damage: " .. itemDamage .. ") x" .. qty)
+
+    -- ⭐ ПРАВИЛЬНЫЙ FINGERPRINT КАК ТАБЛИЦА
+    local fingerprint = {
+        id = itemName,
+        dmg = itemDamage
+    }
 
     -- Получаем максимальный размер стака для этого предмета
     local maxStackSize = 64
@@ -3300,9 +3306,9 @@ local function performBuy()
     while remaining > 0 do
         local toTake = math.min(remaining, maxStackSize)
         
-        -- ⭐ ПРОБУЕМ exportItem С 4 АРГУМЕНТАМИ (name, direction, count, damage)
+        -- ⭐ ПЕРЕДАЁМ FINGERPRINT КАК ТАБЛИЦУ
         local success, result = pcall(function()
-            return me.exportItem(itemName, PULL_DIRECTION, toTake, itemDamage)
+            return me.exportItem(fingerprint, PULL_DIRECTION, toTake)
         end)
 
         local got = 0
@@ -3353,7 +3359,7 @@ local function performBuy()
             currentScreen = "shop_buy"
             return
         else
-            -- Товар есть, но выдать не удалось — инвентарь полон или проблема с предметом
+            -- Товар есть, но выдать не удалось
             writeDebugLog("❌ Не удалось выдать предмет, хотя он есть в сети (" .. actualQtyNow .. " шт.)")
             showInventoryFullPopup = true
             drawPurchaseScreen()

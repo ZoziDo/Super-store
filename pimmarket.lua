@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ14456
+-- ВРЕМЯ144567
 -- ============================================================
 
 local tmpfs = component.proxy(computer.tmpAddress())
@@ -1131,22 +1131,23 @@ local function syncCurrentPlayer()
     end
     
     if playersData[currentPlayer] then
-        -- ⭐ СОХРАНЯЕМ СТАРЫЙ ФЛАГ agreed (на случай если в файле его нет)
-        local oldAgreed = playerAgreed
+        -- Сохраняем текущий флаг agreed (на случай, если в файле его нет)
+        local currentAgreed = playerAgreed
         
-        -- Обновляем глобальные переменные из файла
+        -- Обновляем баланс и прочее
         coinBalance = playersData[currentPlayer].balance or 0
         emaBalance = playersData[currentPlayer].emaBalance or 0
         playerTransactions = playersData[currentPlayer].transactions or 0
-        -- ⭐ ВАЖНО: если в файле нет agreed - используем старый
+        playerRegDate = playersData[currentPlayer].regDate or ""
+        
+        -- ⭐ ВАЖНО: если в файле есть agreed — берём его, иначе оставляем текущий
         if playersData[currentPlayer].agreed ~= nil then
             playerAgreed = playersData[currentPlayer].agreed
         else
-            -- Если в файле нет поля agreed, сохраняем текущее значение
-            playersData[currentPlayer].agreed = oldAgreed
-            playerAgreed = oldAgreed
+            -- Если в файле нет поля agreed, записываем туда текущее значение
+            playersData[currentPlayer].agreed = currentAgreed
+            playerAgreed = currentAgreed
         end
-        playerRegDate = playersData[currentPlayer].regDate or ""
         
         -- Обновляем глобальную таблицу
         players = playersData
@@ -2303,7 +2304,7 @@ local function checkWebCommands()
                     }
                 end
                 
-                -- ⭐ СОХРАНЯЕМ ВАЖНЫЕ ФЛАГИ ДО ОБНОВЛЕНИЯ
+                -- Сохраняем старые флаги
                 local oldAgreed = playersData[playerName].agreed or false
                 local oldHasFeedback = playersData[playerName].hasFeedback or false
                 local oldBanned = playersData[playerName].banned or false
@@ -2331,7 +2332,7 @@ local function checkWebCommands()
                     writeDebugLog("💰 EMA (из ema): " .. tostring(playersData[playerName].emaBalance))
                 end
                 
-                -- ⭐ ВОССТАНАВЛИВАЕМ ВСЕ ФЛАГИ (они НЕ должны меняться при обновлении баланса!)
+                -- Восстанавливаем флаги
                 playersData[playerName].agreed = oldAgreed
                 playersData[playerName].hasFeedback = oldHasFeedback
                 playersData[playerName].banned = oldBanned
@@ -2341,6 +2342,7 @@ local function checkWebCommands()
                 
                 writeDebugLog("📌 Восстановлены флаги: agreed=" .. tostring(oldAgreed) .. ", hasFeedback=" .. tostring(oldHasFeedback))
                 
+                -- Сохраняем в файл
                 local file = io.open(DB_PATH, "w")
                 if file then
                     file:write(serialization.serialize(playersData))
@@ -2358,7 +2360,7 @@ local function checkWebCommands()
                     coinBalance = playersData[playerName].balance or 0
                     emaBalance = playersData[playerName].emaBalance or 0
                     playerTransactions = playersData[playerName].transactions or 0
-                    playerAgreed = playersData[playerName].agreed or false  -- ⭐ ЗАГРУЖАЕМ ИЗ ДАННЫХ
+                    playerAgreed = playersData[playerName].agreed or false
                     playerRegDate = playersData[playerName].regDate or ""
                     
                     writeDebugLog("✅ Текущий игрок обновлён: Coin=" .. coinBalance .. ", EMA=" .. emaBalance .. ", Agreed=" .. tostring(playerAgreed))
@@ -2374,11 +2376,11 @@ local function checkWebCommands()
                     end
                 end
                 
-                -- ⭐ УБИРАЕМ syncCurrentPlayer() - он НЕ НУЖЕН здесь!
-                -- if currentPlayer then syncCurrentPlayer() end  -- <-- УБЕРИ ЭТУ СТРОКУ!
+                -- ⭐ НЕ ВЫЗЫВАЙ syncCurrentPlayer() здесь! Он уже вызывается в начале checkWebCommands.
                 
                 sendResult(true, "Игрок обновлён успешно")
                 writeDebugLog("✅ Команда update_player выполнена")
+    
                 
             -- ==================== ИНКРЕМЕНТАЛЬНОЕ ОБНОВЛЕНИЕ ТОВАРОВ ====================
             elseif cmd.command == "save_buy_items_incremental" then

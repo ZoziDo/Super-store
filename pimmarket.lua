@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ1
+-- ВРЕМЯ12
 -- ============================================================
 
 local tmpfs = component.proxy(computer.tmpAddress())
@@ -3226,6 +3226,7 @@ local function performBuy()
     local me = component.me_interface
     local item = purchaseItem
 
+    -- Проверяем наличие в ME-сети
     local actualQty = getActualItemQuantity(item.internalName, item.damage or 0)
     if actualQty <= 0 then
         drawCenteredText(20, "Товар закончился! Обновление списка...", colors.error)
@@ -3269,14 +3270,20 @@ local function performBuy()
     drawCenteredText(20, "Выполняется покупка...", colors.accent_main)
     os.sleep(0.4)
 
+    -- ⭐ ФОРМИРУЕМ ПРАВИЛЬНЫЙ fingerprint
     local id = item.internalName
+    -- Если в имени нет двоеточия - добавляем minecraft:
     if not id:find(":") then
         id = "minecraft:" .. id
     end
-    local fingerprint = { id = id, dmg = item.damage or 0 }
+    local damage = item.damage or 0
+    local fingerprint = { id = id, dmg = damage }
 
+    writeDebugLog("🔍 Пытаемся выдать: " .. id .. " (damage: " .. damage .. ") x" .. qty)
+
+    -- Получаем максимальный размер стака для этого предмета
     local maxStackSize = 64
-    local ok, detail = pcall(me.getItemDetail, me, item.internalName, item.damage)
+    local ok, detail = pcall(me.getItemDetail, me, item.internalName, damage)
     if ok and detail and detail.maxSize then
         maxStackSize = detail.maxSize
     end
@@ -3287,6 +3294,8 @@ local function performBuy()
 
     while remaining > 0 do
         local toTake = math.min(remaining, maxStackSize)
+        
+        -- ⭐ ПРОБУЕМ exportItem С ПРАВИЛЬНЫМ FINGERPRINT
         local success, result = pcall(function()
             return me.exportItem(fingerprint, PULL_DIRECTION, toTake)
         end)
@@ -3298,15 +3307,7 @@ local function performBuy()
             elseif type(result) == "boolean" and result == true then
                 got = toTake
             elseif type(result) == "table" then
-                if result.count then
-                    got = result.count
-                elseif result.amount then
-                    got = result.amount
-                elseif result.size then
-                    got = result.size
-                else
-                    got = toTake
-                end
+                got = result.count or result.amount or result.size or toTake
             else
                 lastError = "неизвестный ответ: " .. tostring(result)
             end
@@ -3317,21 +3318,43 @@ local function performBuy()
         if got > 0 then
             extracted = extracted + got
             remaining = remaining - got
+            writeDebugLog("✅ Выдано " .. got .. ", осталось " .. remaining)
         else
             if lastError == nil then
                 lastError = "не удалось выдать (вернулось 0 или false)"
             end
+            writeDebugLog("⚠️ Ошибка выдачи: " .. lastError)
             break
         end
     end
 
+    -- ⭐ ПРОВЕРКА: если ничего не выдано
     if extracted == 0 then
-        showInventoryFullPopup = true
-        drawPurchaseScreen()
-        drawInventoryFullPopup()
-        return
+        -- Проверим реальное наличие в ME-сети ещё раз
+        local actualQtyNow = getActualItemQuantity(item.internalName, damage)
+        writeDebugLog("🔍 Повторная проверка наличия: " .. actualQtyNow .. " шт.")
+        
+        if actualQtyNow <= 0 then
+            -- Товара нет в сети
+            drawCenteredText(20, "Товар закончился! Обновление списка...", colors.error)
+            os.sleep(0.8)
+            loadBuyItems()
+            drawBuyStatic()
+            drawBuyItemsList()
+            drawBuyButtons()
+            currentScreen = "shop_buy"
+            return
+        else
+            -- Товар есть, но выдать не удалось — инвентарь полон или проблема с предметом
+            writeDebugLog("❌ Не удалось выдать предмет, хотя он есть в сети (" .. actualQtyNow .. " шт.)")
+            showInventoryFullPopup = true
+            drawPurchaseScreen()
+            drawInventoryFullPopup()
+            return
+        end
     end
 
+    -- ⭐ ЧАСТИЧНАЯ ВЫДАЧА
     if extracted < qty then
         local actuallySpentCoin = extracted * (item.priceCoin or 0)
         local actuallySpentEma = extracted * (item.priceEma or 0)
@@ -3345,7 +3368,7 @@ local function performBuy()
         end
         
         addTransaction("buy", currentPlayer or "?", item.displayName or "?", extracted, actuallySpentCoin, actuallySpentEma)
-        addLog("🛒 Покупка: " .. (currentPlayer or "?") .. " " .. (item.displayName or "?") .. " x" .. extracted)
+        addLog("🛒 Покупка (частичная): " .. (currentPlayer or "?") .. " " .. (item.displayName or "?") .. " x" .. extracted)
 
         partialExtracted = extracted
         partialRequested = qty
@@ -3358,6 +3381,7 @@ local function performBuy()
         return
     end
 
+    -- ⭐ ПОЛНАЯ ВЫДАЧА
     coinBalance = coinBalance - totalCoin
     emaBalance = emaBalance - totalEma
     
@@ -3386,7 +3410,6 @@ local function performBuy()
     end
     drawCenteredText(20, "Куплено " .. extracted .. " шт. за " .. priceStr, colors.success)
 
-    -- НОВЫЙ ЛОГ: Покупка
     addLog("🛒 Покупка: " .. currentPlayer .. " " .. item.displayName .. " x" .. extracted .. " за " .. priceStr)
     sendToWeb("/api/new_log", toJson({
         time = getRealTimeHM(),

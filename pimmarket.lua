@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ12
+-- ВРЕМЯ122
 -- ============================================================
 
 local tmpfs = component.proxy(computer.tmpAddress())
@@ -1112,6 +1112,43 @@ local function isPimOwner(playerName)
     return playerName == pimOwner
 end
 
+-- ============================================================
+-- СИНХРОНИЗАЦИЯ ТЕКУЩЕГО ИГРОКА С ФАЙЛОМ
+-- ============================================================
+
+local function syncCurrentPlayer()
+    if not currentPlayer then return end
+    
+    writeDebugLog("🔄 Синхронизация игрока: " .. currentPlayer)
+    
+    -- Загружаем свежие данные
+    local playersData = {}
+    if fs.exists(DB_PATH) then
+        local ok, data = pcall(dofile, DB_PATH)
+        if ok and type(data) == "table" then
+            playersData = data
+        end
+    end
+    
+    if playersData[currentPlayer] then
+        -- Обновляем глобальные переменные из файла
+        coinBalance = playersData[currentPlayer].balance or 0
+        emaBalance = playersData[currentPlayer].emaBalance or 0
+        playerTransactions = playersData[currentPlayer].transactions or 0
+        playerAgreed = playersData[currentPlayer].agreed or false
+        playerRegDate = playersData[currentPlayer].regDate or ""
+        
+        -- Обновляем глобальную таблицу
+        players = playersData
+        
+        writeDebugLog("✅ Синхронизирован: Agreed=" .. tostring(playerAgreed))
+        return true
+    end
+    
+    writeDebugLog("⚠️ Игрок не найден при синхронизации: " .. currentPlayer)
+    return false
+end
+
 local function updateSelectorDisplay(item)
     if not selector then return end
     if not item then
@@ -1803,6 +1840,7 @@ local function drawMainMenu()
         gpu.setForeground(colors.tomato)
         gpu.set(balanceX + unicode.len("Баланс: ") + unicode.len(string.format("%.2f", coin) .. " Coina ₵") + unicode.len(" | "), 5, "ЭМЫ: " .. string.format("%.2f", ema) .. " ۞")
 
+        -- ⭐ ИСПОЛЬЗУЕМ playerAgreed
         if not playerAgreed then
             gpu.setForeground(colors.accent_secondary)
             if showShopDenied then
@@ -1869,6 +1907,7 @@ local function drawAccount(data)
     
     local coin = (data and data.balance) or coinBalance or 0.0
     local ema = (data and data.emaBalance) or emaBalance or 0.0
+    local agreed = (data and data.agreed) or playerAgreed or false
     
     gpu.setForeground(colors.white)
     local balanceText = "Баланс: " .. string.format("%.2f", coin) .. " Coina ₵"
@@ -1900,8 +1939,8 @@ local function drawAccount(data)
     gpu.set(regX + unicode.len(regLabel), 14, regDate)
 
     local agreeLabel = "Соглашение: "
-    local agreeStatus = ((data and data.agreed) or playerAgreed) and "ознакомлен" or "не ознакомлен"
-    local agreeColor = ((data and data.agreed) or playerAgreed) and colors.text_bright or colors.error
+    local agreeStatus = agreed and "ознакомлен" or "не ознакомлен"
+    local agreeColor = agreed and colors.text_bright or colors.error
     local fullAgree = agreeLabel .. agreeStatus
     local agreeX = math.floor((80 - unicode.len(fullAgree)) / 2) + 1
     gpu.setForeground(colors.success)
@@ -2154,6 +2193,7 @@ end
 -- ============================================================
 
 local function checkWebCommands()
+    if currentPlayer then syncCurrentPlayer() end
     writeDebugLog("🔍 checkWebCommands() запущена в " .. getRealTimeHM())
 
     local success, err = pcall(function()
@@ -2224,31 +2264,22 @@ local function checkWebCommands()
                 local playerName = d.name or d.player
                 if not playerName then
                     writeDebugLog("❌ Нет имени игрока в команде!")
-                    writeDebugLog("📨 Полные данные: " .. serialization.serialize(d))
                     sendResult(false, "Нет имени игрока")
                     goto continue
                 end
-
+            
                 writeDebugLog("📥 ОБНОВЛЕНИЕ ИГРОКА: " .. playerName)
-                writeDebugLog("📥 Данные команды: " .. serialization.serialize(d))
-                writeDebugLog("📥 balance = " .. tostring(d.balance))
-                writeDebugLog("📥 coin = " .. tostring(d.coin))
-                writeDebugLog("📥 emaBalance = " .. tostring(d.emaBalance))
-                writeDebugLog("📥 ema = " .. tostring(d.ema))
-
+                
+                -- Загружаем актуальные данные из файла
                 local playersData = {}
                 if fs.exists(DB_PATH) then
                     local ok, data = pcall(dofile, DB_PATH)
                     if ok and type(data) == "table" then
                         playersData = data
-                        writeDebugLog("📦 Загружено игроков: " .. #playersData)
-                    else
-                        writeDebugLog("⚠️ Не удалось загрузить players.db: " .. tostring(data))
                     end
-                else
-                    writeDebugLog("⚠️ Файл players.db не существует!")
                 end
-
+                
+                -- Если игрока нет - создаём
                 if not playersData[playerName] then
                     writeDebugLog("➕ Создаём нового игрока: " .. playerName)
                     playersData[playerName] = {
@@ -2257,67 +2288,93 @@ local function checkWebCommands()
                         transactions = 0,
                         banned = false,
                         agreed = false,
-                        hasFeedback = false
+                        hasFeedback = false,
+                        regDate = os.date("%d.%m.%Y %H:%M:%S", getRealTimestamp()),
+                        transactionsList = {}
                     }
-                else
-                    writeDebugLog("👤 Игрок найден, текущий баланс: " .. tostring(playersData[playerName].balance))
                 end
-
+                
+                -- ⭐ СОХРАНЯЕМ ВАЖНЫЕ ФЛАГИ ДО ОБНОВЛЕНИЯ
+                local oldAgreed = playersData[playerName].agreed or false
+                local oldHasFeedback = playersData[playerName].hasFeedback or false
+                local oldBanned = playersData[playerName].banned or false
+                local oldTransactions = playersData[playerName].transactions or 0
+                local oldTransactionsList = playersData[playerName].transactionsList or {}
+                local oldRegDate = playersData[playerName].regDate or os.date("%d.%m.%Y %H:%M:%S", getRealTimestamp())
+                
+                writeDebugLog("📌 Старые флаги: agreed=" .. tostring(oldAgreed) .. ", hasFeedback=" .. tostring(oldHasFeedback))
+                
+                -- Обновляем баланс (сохраняем старые значения если не переданы новые)
                 if d.balance ~= nil then
-                    local oldBalance = playersData[playerName].balance
                     playersData[playerName].balance = tonumber(d.balance) or 0
-                    writeDebugLog("💰 Coin: " .. oldBalance .. " -> " .. playersData[playerName].balance)
-                elseif d.coin ~= nil then
-                    local oldBalance = playersData[playerName].balance
+                    writeDebugLog("💰 Coin обновлён: " .. tostring(playersData[playerName].balance))
+                end
+                if d.coin ~= nil then
                     playersData[playerName].balance = tonumber(d.coin) or 0
-                    writeDebugLog("💰 Coin (из coin): " .. oldBalance .. " -> " .. playersData[playerName].balance)
-                else
-                    writeDebugLog("⚠️ Нет данных для Coin!")
+                    writeDebugLog("💰 Coin (из coin): " .. tostring(playersData[playerName].balance))
                 end
-
                 if d.emaBalance ~= nil then
-                    local oldEma = playersData[playerName].emaBalance
                     playersData[playerName].emaBalance = tonumber(d.emaBalance) or 0
-                    writeDebugLog("💰 EMA: " .. oldEma .. " -> " .. playersData[playerName].emaBalance)
-                elseif d.ema ~= nil then
-                    local oldEma = playersData[playerName].emaBalance
-                    playersData[playerName].emaBalance = tonumber(d.ema) or 0
-                    writeDebugLog("💰 EMA (из ema): " .. oldEma .. " -> " .. playersData[playerName].emaBalance)
-                else
-                    writeDebugLog("⚠️ Нет данных для EMA!")
+                    writeDebugLog("💰 EMA обновлён: " .. tostring(playersData[playerName].emaBalance))
                 end
-
-                writeDebugLog("💾 Сохраняем игрока в players.db...")
+                if d.ema ~= nil then
+                    playersData[playerName].emaBalance = tonumber(d.ema) or 0
+                    writeDebugLog("💰 EMA (из ema): " .. tostring(playersData[playerName].emaBalance))
+                end
+                
+                -- ⭐ ВОССТАНАВЛИВАЕМ ВСЕ ФЛАГИ (они НЕ должны меняться при обновлении баланса!)
+                playersData[playerName].agreed = oldAgreed
+                playersData[playerName].hasFeedback = oldHasFeedback
+                playersData[playerName].banned = oldBanned
+                playersData[playerName].transactions = oldTransactions
+                playersData[playerName].transactionsList = oldTransactionsList
+                playersData[playerName].regDate = oldRegDate
+                
+                writeDebugLog("📌 Восстановлены флаги: agreed=" .. tostring(oldAgreed) .. ", hasFeedback=" .. tostring(oldHasFeedback))
+                
+                -- Сохраняем в файл
                 local file = io.open(DB_PATH, "w")
                 if file then
-                    local serialized = serialization.serialize(playersData)
-                    file:write("return " .. serialized)
+                    file:write(serialization.serialize(playersData))
                     file:close()
-                    writeDebugLog("✅ Файл players.db сохранён, размер: " .. #serialized .. " байт")
-                    
-                    players = playersData
-                    writeDebugLog("🔄 Глобальная таблица players обновлена")
-
-                    if currentPlayer == playerName then
-                        coinBalance = playersData[playerName].balance or 0
-                        emaBalance = playersData[playerName].emaBalance or 0
-                        writeDebugLog("✅ Баланс текущего игрока обновлён: Coin=" .. coinBalance .. ", EMA=" .. emaBalance)
-
-                        if currentScreen == "menu" then
-                            drawMainMenu()
-                            writeDebugLog("🔄 Меню перерисовано")
-                        elseif currentScreen == "account" then
-                            drawAccount({balance = coinBalance, emaBalance = emaBalance})
-                            writeDebugLog("🔄 Аккаунт перерисован")
-                        end
-                    end
-
-                    sendResult(true, "Игрок обновлён успешно")
-                    writeDebugLog("✅ Отправлен результат: success")
+                    writeDebugLog("✅ Файл players.db сохранён")
                 else
-                    writeDebugLog("❌ НЕ УДАЛОСЬ ОТКРЫТЬ ФАЙЛ ДЛЯ ЗАПИСИ: " .. DB_PATH)
+                    writeErrorLog("❌ Не удалось сохранить players.db")
                     sendResult(false, "Ошибка записи в файл")
+                    goto continue
                 end
+                
+                -- Обновляем глобальную таблицу
+                players = playersData
+                
+                -- Если обновляем текущего игрока - синхронизируем переменные
+                if currentPlayer == playerName then
+                    coinBalance = playersData[playerName].balance or 0
+                    emaBalance = playersData[playerName].emaBalance or 0
+                    playerTransactions = playersData[playerName].transactions or 0
+                    playerAgreed = playersData[playerName].agreed or false
+                    playerRegDate = playersData[playerName].regDate or ""
+                    
+                    writeDebugLog("✅ Текущий игрок обновлён: Coin=" .. coinBalance .. ", EMA=" .. emaBalance .. ", Agreed=" .. tostring(playerAgreed))
+                    
+                    -- Перерисовываем текущий экран
+                    if currentScreen == "menu" then
+                        drawMainMenu()
+                    elseif currentScreen == "account" then
+                        drawAccount({balance = coinBalance, emaBalance = emaBalance, transactions = playerTransactions, regDate = playerRegDate, agreed = playerAgreed})
+                    elseif currentScreen == "shop_buy" or currentScreen == "shop_sell" then
+                        drawBuyStatic()
+                        drawBuyItemsList()
+                        drawBuyButtons()
+                    end
+                end
+                
+                -- ⭐ ПРИНУДИТЕЛЬНАЯ СИНХРОНИЗАЦИЯ ПЕРЕД ОТВЕТОМ
+                if currentPlayer then syncCurrentPlayer() end
+                
+                sendResult(true, "Игрок обновлён успешно")
+                writeDebugLog("✅ Команда update_player выполнена")
+            end
 
             -- ==================== ИНКРЕМЕНТАЛЬНОЕ ОБНОВЛЕНИЕ ТОВАРОВ ====================
             elseif cmd.command == "save_buy_items_incremental" then
@@ -4015,8 +4072,6 @@ local function main()
             -- ===== ПРОВЕРКА РЕЖИМА ОБСЛУЖИВАНИЯ =====
             if shopPaused then
                 writeDebugLog("⏸️ Режим обслуживания активен, вход запрещён для: " .. playerName)
-                
-                -- Показываем сообщение о режиме обслуживания
                 gpu.setBackground(colors.bg_main)
                 gpu.fill(1, 1, 80, 25, " ")
                 drawBigTitle()
@@ -4028,7 +4083,6 @@ local function main()
                 drawCenteredText(22, "--===============|VIP SHOP|===============--", colors.text_main)
                 drawTempMessage()
                 
-                -- Ждём пока игрок уйдёт с PIM или режим отключат
                 while shopPaused do
                     local ev2 = {event.pull(1)}
                     if ev2[1] == "player_off" or ev2[1] == "pim_player_leave" then
@@ -4066,8 +4120,10 @@ local function main()
                 authStartTime = os.clock()
                 drawAuthScreen()
                 
+                -- Загружаем данные игрока
                 local player = players[currentPlayer]
                 if not player then
+                    -- Создаём нового
                     player = { 
                         balance = 0, 
                         emaBalance = 0, 
@@ -4082,7 +4138,6 @@ local function main()
                     saveDB()
                     addLog("✅ Новый игрок: " .. currentPlayer)
                     writeDebugLog("Создан новый игрок: " .. currentPlayer)
-                    -- НОВЫЙ ЛОГ: Регистрация
                     sendToWeb("/api/new_log", toJson({
                         time = getRealTimeHM(),
                         level = "SUCCESS",
@@ -4101,9 +4156,10 @@ local function main()
                     coinBalance = player.balance or 0
                     emaBalance = player.emaBalance or 0
                     playerTransactions = player.transactions or 0
-                    playerAgreed = player.agreed or false
+                    playerAgreed = player.agreed or false  -- ⭐ ЗАГРУЖАЕМ ФЛАГ
                     playerRegDate = player.regDate or getRealTimeString()
                     alreadyAuthorized = true
+                    
                     writeDebugLog("Вход выполнен: " .. currentPlayer .. ", баланс: " .. coinBalance .. ", agreed: " .. tostring(playerAgreed))
                     
                     if selector then
@@ -4113,7 +4169,6 @@ local function main()
                     currentScreen = "menu"
                     drawMainMenu()
                     addLog("👤 Вход: " .. currentPlayer)
-                    -- НОВЫЙ ЛОГ: Вход
                     sendToWeb("/api/new_log", toJson({
                         time = getRealTimeHM(),
                         level = "INFO",

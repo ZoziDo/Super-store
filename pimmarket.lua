@@ -16,6 +16,44 @@ local TIMEZONE_OFFSET = 3 * 3600
 -- ДЕТАЛЬНОЕ ЛОГИРОВАНИЕ ОШИБОК
 -- ============================================================
 
+-- ============================================================
+-- ОТПРАВКА ЛОГОВ НА ВЕБ (ДОЛЖНА БЫТЬ РАНЬШЕ writeErrorLog)
+-- ============================================================
+
+local logQueue = {}
+
+local function addLogEntry(text, level)
+    if not text then text = "?" end
+    level = level or "INFO"
+    local entry = {
+        text = text,
+        time = getRealTimeHM(),
+        level = level
+    }
+    table.insert(logQueue, entry)
+
+    if #logQueue >= 50 then
+        local batch = {}
+        for _, e in ipairs(logQueue) do
+            table.insert(batch, {
+                time = e.time,
+                text = e.text,
+                level = e.level
+            })
+        end
+        sendToWeb("/api/logs_batch", toJson({logs = batch}))
+        logQueue = {}
+    end
+end
+
+local function addLog(text)
+    addLogEntry(text, "INFO")
+end
+
+-- ============================================================
+-- ДЕТАЛЬНОЕ ЛОГИРОВАНИЕ ОШИБОК (ТЕПЕРЬ ЗДЕСЬ addLogEntry УЖЕ ОБЪЯВЛЕНА)
+-- ============================================================
+
 local ERROR_LOG = "/home/errors.log"
 
 local function writeErrorLog(msg)
@@ -25,17 +63,8 @@ local function writeErrorLog(msg)
         file:write("[" .. time .. "] " .. msg .. "\n")
         file:close()
     end
-    -- Дополнительно отправляем на сервер
+    -- Теперь addLogEntry существует!
     addLogEntry(msg, "ERROR")
-end
-
-local function writeDebugLog(msg)
-    local file = io.open(ERROR_LOG, "a")
-    if file then
-        local time = os.date("%Y-%m-%d %H:%M:%S")
-        file:write("[" .. time .. "] 🔍 " .. msg .. "\n")
-        file:close()
-    end
 end
 
 -- Перехват ошибок
@@ -145,40 +174,6 @@ local function sendToWeb(endpoint, jsonData)
             ["Connection"] = "close"
         })
     end)
-end
-
--- ============================================================
--- ОТПРАВКА ЛОГОВ НА ВЕБ
--- ============================================================
-
-local logQueue = {}
-
-local function addLogEntry(text, level)
-    if not text then text = "?" end
-    level = level or "INFO"
-    local entry = {
-        text = text,
-        time = getRealTimeHM(),
-        level = level
-    }
-    table.insert(logQueue, entry)
-
-    if #logQueue >= 50 then
-        local batch = {}
-        for _, e in ipairs(logQueue) do
-            table.insert(batch, {
-                time = e.time,
-                text = e.text,
-                level = e.level
-            })
-        end
-        sendToWeb("/api/logs_batch", toJson({logs = batch}))
-        logQueue = {}
-    end
-end
-
-local function addLog(text)
-    addLogEntry(text, "INFO")
 end
 
 -- ============================================================

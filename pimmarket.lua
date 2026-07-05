@@ -400,10 +400,10 @@ local STATS_PATH = "/home/global_stats.db"
 local FEEDBACKS_PATH = "/home/feedbacks.db"
 local REPORTS_PATH = "/home/reports.log"
 
-local admins = {}
-local players = {}
-local globalStats = { totalReports = 0, totalBuys = 0, totalSells = 0, totalRevenue = 0, totalBalance = 0 }
-local transactions = {}
+admins = {}
+players = {}
+globalStats = { totalReports = 0, totalBuys = 0, totalSells = 0, totalRevenue = 0, totalBalance = 0 }
+transactions = {}
 
 -- Автоматическое создание файлов
 local function ensureFileExists(path, defaultData)

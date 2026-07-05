@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ12244
+-- ВРЕМЯ1
 -- ============================================================
 
 local tmpfs = component.proxy(computer.tmpAddress())
@@ -1294,6 +1294,7 @@ local function loadBuyItems()
         end
         ::continue::
     end
+end
 
     local newShopItems = {}
     for key, itemData in pairs(tempShopItems) do
@@ -2365,8 +2366,6 @@ local function checkWebCommands()
                 sendResult(true, "Игрок обновлён успешно")
                 writeDebugLog("✅ Команда update_player выполнена")
                 
-            -- ⚠️ ЗДЕСЬ ТОЛЬКО ОДИН end! НЕ ДВА!
-            end
         
             -- ==================== ИНКРЕМЕНТАЛЬНОЕ ОБНОВЛЕНИЕ ТОВАРОВ ====================
             elseif cmd.command == "save_buy_items_incremental" then

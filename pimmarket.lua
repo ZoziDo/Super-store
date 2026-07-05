@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ12
+-- ВРЕМЯ123
 -- ============================================================
 
 local tmpfs = component.proxy(computer.tmpAddress())
@@ -3270,22 +3270,27 @@ local function performBuy()
     drawCenteredText(20, "Выполняется покупка...", colors.accent_main)
     os.sleep(0.4)
 
-    -- ⭐ ФОРМИРУЕМ ПРАВИЛЬНЫЙ fingerprint
-    local id = item.internalName
-    -- Если в имени нет двоеточия - добавляем minecraft:
-    if not id:find(":") then
-        id = "minecraft:" .. id
+    -- ============================================================
+    -- ⭐ ЭКСПОРТ ПРЕДМЕТА (ИСПРАВЛЕННАЯ ВЕРСИЯ)
+    -- ============================================================
+    
+    -- Получаем название и damage
+    local itemName = item.internalName
+    local itemDamage = item.damage or 0
+    
+    -- Если нет двоеточия - добавляем minecraft:
+    if not itemName:find(":") then
+        itemName = "minecraft:" .. itemName
     end
-    local damage = item.damage or 0
-    local fingerprint = { id = id, dmg = damage }
 
-    writeDebugLog("🔍 Пытаемся выдать: " .. id .. " (damage: " .. damage .. ") x" .. qty)
+    writeDebugLog("🔍 Пытаемся выдать: " .. itemName .. " (damage: " .. itemDamage .. ") x" .. qty)
 
     -- Получаем максимальный размер стака для этого предмета
     local maxStackSize = 64
-    local ok, detail = pcall(me.getItemDetail, me, item.internalName, damage)
+    local ok, detail = pcall(me.getItemDetail, me, itemName, itemDamage)
     if ok and detail and detail.maxSize then
         maxStackSize = detail.maxSize
+        writeDebugLog("📦 Максимальный стак: " .. maxStackSize)
     end
 
     local remaining = qty
@@ -3295,9 +3300,9 @@ local function performBuy()
     while remaining > 0 do
         local toTake = math.min(remaining, maxStackSize)
         
-        -- ⭐ ПРОБУЕМ exportItem С ПРАВИЛЬНЫМ FINGERPRINT
+        -- ⭐ ПРОБУЕМ exportItem С 4 АРГУМЕНТАМИ (name, direction, count, damage)
         local success, result = pcall(function()
-            return me.exportItem(fingerprint, PULL_DIRECTION, toTake)
+            return me.exportItem(itemName, PULL_DIRECTION, toTake, itemDamage)
         end)
 
         local got = 0
@@ -3328,10 +3333,13 @@ local function performBuy()
         end
     end
 
-    -- ⭐ ПРОВЕРКА: если ничего не выдано
+    -- ============================================================
+    -- ПРОВЕРКА РЕЗУЛЬТАТА
+    -- ============================================================
+
     if extracted == 0 then
         -- Проверим реальное наличие в ME-сети ещё раз
-        local actualQtyNow = getActualItemQuantity(item.internalName, damage)
+        local actualQtyNow = getActualItemQuantity(item.internalName, itemDamage)
         writeDebugLog("🔍 Повторная проверка наличия: " .. actualQtyNow .. " шт.")
         
         if actualQtyNow <= 0 then
@@ -3354,7 +3362,10 @@ local function performBuy()
         end
     end
 
-    -- ⭐ ЧАСТИЧНАЯ ВЫДАЧА
+    -- ============================================================
+    -- ЧАСТИЧНАЯ ВЫДАЧА
+    -- ============================================================
+
     if extracted < qty then
         local actuallySpentCoin = extracted * (item.priceCoin or 0)
         local actuallySpentEma = extracted * (item.priceEma or 0)
@@ -3381,7 +3392,10 @@ local function performBuy()
         return
     end
 
-    -- ⭐ ПОЛНАЯ ВЫДАЧА
+    -- ============================================================
+    -- ПОЛНАЯ ВЫДАЧА
+    -- ============================================================
+
     coinBalance = coinBalance - totalCoin
     emaBalance = emaBalance - totalEma
     
@@ -3410,6 +3424,7 @@ local function performBuy()
     end
     drawCenteredText(20, "Куплено " .. extracted .. " шт. за " .. priceStr, colors.success)
 
+    -- НОВЫЙ ЛОГ: Покупка
     addLog("🛒 Покупка: " .. currentPlayer .. " " .. item.displayName .. " x" .. extracted .. " за " .. priceStr)
     sendToWeb("/api/new_log", toJson({
         time = getRealTimeHM(),

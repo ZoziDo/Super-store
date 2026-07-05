@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ1235689
+-- ВРЕМЯ1
 -- ============================================================
 
 local tmpfs = component.proxy(computer.tmpAddress())
@@ -534,6 +534,86 @@ local function removeAdmin(playerName)
         end
     end
     return false
+end
+
+-- ============================================================
+-- REBOOT - ПОЛНЫЙ СБРОС ДАННЫХ
+-- ============================================================
+
+local function performReboot()
+    writeDebugLog("🔄 Выполняется полный REBOOT")
+    
+    -- Очищаем глобальные данные
+    players = {}
+    transactions = {}
+    globalStats = { totalReports = 0, totalBuys = 0, totalSells = 0, totalRevenue = 0, totalBalance = 0 }
+    
+    -- Очищаем все файлы
+    local filesToClear = {
+        DB_PATH,
+        STATS_PATH,
+        FEEDBACKS_PATH,
+        REPORTS_PATH
+    }
+    
+    for _, path in ipairs(filesToClear) do
+        if fs.exists(path) then
+            local file = io.open(path, "w")
+            if file then
+                if path == DB_PATH then
+                    file:write(serialization.serialize({}))
+                elseif path == STATS_PATH then
+                    file:write(serialization.serialize({ totalReports = 0, totalBuys = 0, totalSells = 0, totalRevenue = 0, totalBalance = 0 }))
+                elseif path == FEEDBACKS_PATH then
+                    file:write(serialization.serialize({}))
+                elseif path == REPORTS_PATH then
+                    file:write("")
+                end
+                file:close()
+                writeDebugLog("🧹 Очищен файл: " .. path)
+            end
+        end
+    end
+    
+    -- Перезагружаем данные
+    if fs.exists(DB_PATH) then
+        local file = io.open(DB_PATH, "r")
+        if file then
+            local raw = file:read("*a")
+            file:close()
+            if raw and #raw > 0 then
+                local ok, data = pcall(serialization.unserialize, raw)
+                if ok and data then 
+                    players = data 
+                end
+            end
+        end
+    end
+    
+    if fs.exists(STATS_PATH) then
+        local file = io.open(STATS_PATH, "r")
+        if file then
+            local raw = file:read("*a")
+            file:close()
+            if raw and #raw > 0 then
+                local ok, data = pcall(serialization.unserialize, raw)
+                if ok and data then
+                    globalStats.totalReports = data.totalReports or 0
+                    globalStats.totalBuys = data.totalBuys or 0
+                    globalStats.totalSells = data.totalSells or 0
+                    globalStats.totalRevenue = data.totalRevenue or 0
+                    globalStats.totalBalance = data.totalBalance or 0
+                end
+            end
+        end
+    end
+    
+    addLog("🔄 REBOOT: Все данные сброшены")
+    
+    -- Отправляем обновление на сервер
+    sendStats()
+    
+    writeDebugLog("✅ REBOOT завершён")
 end
 
 local function addTransaction(type, playerName, item, qty, value_coin, value_ema)
@@ -2524,13 +2604,7 @@ local function checkWebCommands()
             -- ==================== REBOOT ====================
             elseif cmd.command == "reboot" then
                 writeDebugLog("🔄 Получена команда REBOOT")
-                -- Перезагружаем данные
-                players = {}
-                transactions = {}
-                globalStats = { totalReports = 0, totalBuys = 0, totalSells = 0, totalRevenue = 0, totalBalance = 0 }
-                saveDB()
-                saveGlobalStats()
-                addLog("🔄 REBOOT: Все данные сброшены")
+                performReboot()  -- Вызываем функцию полного сброса
                 sendResult(true, "Reboot выполнен")
                 
                 -- Обновляем экран
@@ -2538,6 +2612,8 @@ local function checkWebCommands()
                     drawMainMenu()
                 elseif currentScreen == "welcome" then
                     drawWelcomeScreen()
+                elseif currentScreen == "shop" then
+                    drawShopMenu()
                 end
 
             -- ==================== НЕИЗВЕСТНАЯ КОМАНДА ====================

@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ145
+-- ВРЕМЯ14566
 -- ============================================================
 
 local tmpfs = component.proxy(computer.tmpAddress())
@@ -37,47 +37,6 @@ end
 -- ============================================================
 
 local WEB_URL = "https://upfront-dinginess-impulsive.ngrok-free.dev"
-
--- ============================================================
--- DISCORD УВЕДОМЛЕНИЯ
--- ============================================================
-
--- ============================================================
--- DISCORD УВЕДОМЛЕНИЯ
--- ============================================================
-
-local discordSettings = {}
-
-local function sendDiscordWebhook(webhook_url, message)
-    if not webhook_url or webhook_url == "" then 
-        print("⚠️ Discord webhook пустой")
-        return 
-    end
-    print("📤 Отправка в Discord: " .. message:sub(1, 50) .. "...")
-    pcall(function()
-        local payload = '{"content": "' .. message:gsub('"', '\\"') .. '"}'
-        internet.request(webhook_url, payload, {
-            ["Content-Type"] = "application/json",
-            ["Connection"] = "close"
-        })
-    end)
-end
-
-local function loadDiscordSettings()
-    pcall(function()
-        local response = internet.request(WEB_URL .. "/api/discord_settings")
-        if response then
-            local body = ""
-            for chunk in response do
-                body = body .. chunk
-            end
-            local ok, data = pcall(parseJSON, body)
-            if ok and data and data.status == "ok" and data.settings then
-                discordSettings = data.settings
-            end
-        end
-    end)
-end
 
 local function toJson(val)
     if type(val) == "string" then
@@ -4091,6 +4050,39 @@ end
 -- ЗАПУСК
 -- ============================================================
 
+local discordSettings = {}
+
+local function sendDiscordWebhook(webhook_url, message)
+    if not webhook_url or webhook_url == "" then 
+        return 
+    end
+    pcall(function()
+        local payload = '{"content": "' .. message:gsub('"', '\\"') .. '"}'
+        internet.request(webhook_url, payload, {
+            ["Content-Type"] = "application/json",
+            ["Connection"] = "close"
+        })
+    end)
+end
+
+local function loadDiscordSettings()
+    pcall(function()
+        local response = internet.request(WEB_URL .. "/api/discord_settings")
+        if response then
+            local body = ""
+            for chunk in response do
+                body = body .. chunk
+            end
+            local ok, data = pcall(parseJSON, body)
+            if ok and data and data.status == "ok" and data.settings then
+                discordSettings = data.settings
+                print("✅ Discord настройки загружены!")
+            end
+        end
+    end)
+end
+
+-- Загружаем настройки
 loadDiscordSettings()
 event.timer(60, loadDiscordSettings, math.huge)
 

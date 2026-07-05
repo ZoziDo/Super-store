@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ12356
+-- ВРЕМЯ1235655
 -- ============================================================
 
 local tmpfs = component.proxy(computer.tmpAddress())
@@ -1735,7 +1735,7 @@ local function drawWelcomeScreen()
     -- Проверяем режим обслуживания
     if shopPaused then
         gpu.setForeground(colors.error)
-        drawCenteredText(18, "⏸️ РЕЖИМ ОБСЛУЖИВАНИЯ", colors.error)
+        drawCenteredText(18, "РЕЖИМ ОБСЛУЖИВАНИЯ", colors.error)
         drawCenteredText(19, "Магазин временно закрыт", colors.error)
         drawCenteredText(20, "Пожалуйста, зайдите позже", colors.text_main)
     else
@@ -1759,7 +1759,7 @@ local function drawAuthScreen()
     -- Проверяем режим обслуживания
     if shopPaused then
         gpu.setForeground(colors.error)
-        drawCenteredText(17, "⏸️ РЕЖИМ ОБСЛУЖИВАНИЯ", colors.error)
+        drawCenteredText(17, "РЕЖИМ ОБСЛУЖИВАНИЯ", colors.error)
         drawCenteredText(18, "Магазин временно закрыт", colors.error)
         drawCenteredText(19, "Пожалуйста, зайдите позже", colors.text_main)
         gpu.setForeground(colors.text_main)

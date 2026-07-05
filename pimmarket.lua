@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ1
+-- ВРЕМЯ11
 -- ============================================================
 
 local tmpfs = component.proxy(computer.tmpAddress())
@@ -946,39 +946,7 @@ local function parseJSON(json_str)
         return nil
     end
 
-    -- Парсим значение (ДОЛЖНА БЫТЬ ПЕРВОЙ)
-    local function parseValue()
-        skipSpace()
-        if pos > len then return nil end
-        local ch = str:sub(pos,pos)
-        if ch == '"' then
-            return parseString()
-        elseif ch == '{' then
-            return parseObject()
-        elseif ch == '[' then
-            return parseArray()
-        elseif ch == 'n' then
-            if str:sub(pos,pos+3) == 'null' then
-                pos = pos + 4
-                return nil
-            end
-        elseif ch == 't' then
-            if str:sub(pos,pos+3) == 'true' then
-                pos = pos + 4
-                return true
-            end
-        elseif ch == 'f' then
-            if str:sub(pos,pos+4) == 'false' then
-                pos = pos + 5
-                return false
-            end
-        elseif (ch >= '0' and ch <= '9') or ch == '-' then
-            return parseNumber()
-        end
-        return nil
-    end
-
-    -- Парсим массив
+    -- СНАЧАЛА ОБЪЯВЛЯЕМ parseArray И parseObject
     local function parseArray()
         if str:sub(pos,pos) ~= '[' then return nil end
         pos = pos + 1
@@ -1007,7 +975,6 @@ local function parseJSON(json_str)
         return arr
     end
 
-    -- Парсим объект
     local function parseObject()
         if str:sub(pos,pos) ~= '{' then return nil end
         pos = pos + 1
@@ -1040,6 +1007,38 @@ local function parseJSON(json_str)
             end
         end
         return obj
+    end
+
+    -- А ПОТОМ parseValue (которая ИСПОЛЬЗУЕТ parseArray И parseObject)
+    local function parseValue()
+        skipSpace()
+        if pos > len then return nil end
+        local ch = str:sub(pos,pos)
+        if ch == '"' then
+            return parseString()
+        elseif ch == '{' then
+            return parseObject()
+        elseif ch == '[' then
+            return parseArray()
+        elseif ch == 'n' then
+            if str:sub(pos,pos+3) == 'null' then
+                pos = pos + 4
+                return nil
+            end
+        elseif ch == 't' then
+            if str:sub(pos,pos+3) == 'true' then
+                pos = pos + 4
+                return true
+            end
+        elseif ch == 'f' then
+            if str:sub(pos,pos+4) == 'false' then
+                pos = pos + 5
+                return false
+            end
+        elseif (ch >= '0' and ch <= '9') or ch == '-' then
+            return parseNumber()
+        end
+        return nil
     end
 
     skipSpace()

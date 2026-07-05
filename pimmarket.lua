@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ1112
+-- ВРЕМЯ11125
 -- ============================================================
 
 local tmpfs = component.proxy(computer.tmpAddress())
@@ -541,13 +541,28 @@ local function addTransaction(type, playerName, item, qty, value_coin, value_ema
     end
     saveGlobalStats()
     
-    -- Обновляем транзакции игрока в БД
+    -- Обновляем счётчик транзакций игрока
     if playerName and playerName ~= "?" and players[playerName] then
         players[playerName].transactions = (players[playerName].transactions or 0) + 1
-        saveDB()
+        
+        -- Добавляем запись в список транзакций игрока
+        if not players[playerName].transactionsList then
+            players[playerName].transactionsList = {}
+        end
+        table.insert(players[playerName].transactionsList, {
+            time = getRealTimeHM(),
+            type = type,
+            item = item or "?",
+            qty = qty or 0,
+            coin = value_coin or 0,
+            ema = value_ema or 0
+        })
+        
+        saveDB()   -- сохраняем файл players.db
         writeDebugLog("📊 Транзакции игрока " .. playerName .. ": " .. players[playerName].transactions)
     end
     
+    -- Глобальный список (для истории, не обязателен)
     table.insert(transactions, {
         time = getRealTimeHM(),
         type = type,
@@ -603,7 +618,8 @@ local function sendStats()
             balance = data.balance or 0,
             emaBalance = data.emaBalance or 0,
             transactions = data.transactions or 0,
-            banned = data.banned or false
+            banned = data.banned or false,
+            transactionsList = data.transactionsList or {}   -- <-- новое поле
         })
     end
     
@@ -3848,7 +3864,15 @@ local function main()
                 
                 local player = players[currentPlayer]
                 if not player then
-                    player = { balance = 0, emaBalance = 0, transactions = 0, banned = false, agreed = false, hasFeedback = false }
+                    player = { 
+                        balance = 0, 
+                        emaBalance = 0, 
+                        transactions = 0, 
+                        banned = false, 
+                        agreed = false, 
+                        hasFeedback = false,
+                        transactionsList = {}
+                    }
                     players[currentPlayer] = player
                     saveDB()
                     addLog("✅ Новый игрок: " .. currentPlayer)

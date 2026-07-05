@@ -36,7 +36,7 @@ end
 -- ВЕБ-ИНТЕГРАЦИЯ
 -- ============================================================
 
-local WEB_URL = "https://upfront-dinginess-impulsive.ngrok-free.dev"
+local WEB_URL = "http://localhost:8888"
 
 
 local function toJson(val)
@@ -2162,51 +2162,54 @@ local function checkWebCommands()
         local url = WEB_URL .. "/api/commands"
         writeDebugLog("📡 Запрос к: " .. url)
 
-        local response = internet.request(url)
+        -- Пробуем сделать запрос с обработкой ошибок
+        local response, errMsg = pcall(function()
+            return internet.request(url, nil, {
+                ["Content-Type"] = "application/json",
+                ["Connection"] = "close"
+            })
+        end)
+
         if not response then
-            writeDebugLog("⚠️ Нет ответа от сервера (response = nil)")
+            writeDebugLog("⚠️ Нет ответа от сервера (pcall failed): " .. tostring(errMsg))
             return
         end
 
-        -- Правильная проверка статуса в OpenComputers
-        local status = 0
-        if type(response) == "table" then
-            if response.getStatus then
-                status = response:getStatus() or 0
-            elseif response.code then
-                status = response.code
-            elseif response.status then
-                status = response.status
-            end
-        end
-
-        if status ~= 200 then
-            writeErrorLog("⚠️ Сервер вернул HTTP " .. tostring(status) .. " на /api/commands")
-            -- Читаем тело ошибки, если есть
-            local body = ""
-            pcall(function()
-                for chunk in response do
-                    body = body .. (chunk or "")
-                end
-            end)
-            if body and #body > 0 then
-                writeDebugLog("📥 Тело ответа: " .. body:sub(1, 300))
-            end
+        if not response or type(response) ~= "table" then
+            writeDebugLog("⚠️ Неверный тип ответа от сервера: " .. type(response))
             return
         end
 
+        -- Пытаемся прочитать тело ответа
         local body = ""
-        for chunk in response do
-            body = body .. (chunk or "")
+        local readSuccess, readErr = pcall(function()
+            for chunk in response do
+                if chunk then
+                    body = body .. chunk
+                end
+            end
+        end)
+
+        if not readSuccess then
+            writeErrorLog("⚠️ Ошибка чтения ответа: " .. tostring(readErr))
+            return
+        end
+
+        -- Проверяем, есть ли тело ответа
+        if #body < 5 then
+            writeDebugLog("⚠️ Пустой или слишком короткий ответ, длина: " .. #body)
+            return
+        end
+
+        -- Проверяем, не является ли ответ HTML ошибкой (например, от ngrok)
+        if body:match("^%s*<") or body:match("^%s*<!DOCTYPE") then
+            writeErrorLog("⚠️ Получен HTML вместо JSON: " .. body:sub(1, 200))
+            return
         end
 
         writeDebugLog("📥 Получено " .. #body .. " байт")
 
-        if #body < 5 then
-            writeDebugLog("⚠️ Пустой или слишком короткий ответ")
-            return
-        end
-
+        -- Парсим JSON
         local data = parseJSON(body)
         if not data then
             writeErrorLog("❌ Ошибка парсинга JSON от /api/commands")
@@ -2363,23 +2366,19 @@ local function checkWebCommands()
                 
                 addLog(shopPaused and "⏸️ Магазин переведён в режим обслуживания" or "🟢 Магазин открыт")
                 
-                -- Отправляем уведомление на веб-сервер
                 sendToWeb("/api/new_log", toJson({
                     time = getRealTimeHM(),
                     level = "INFO",
                     text = shopPaused and "⏸️ Магазин переведён в режим обслуживания" or "🟢 Магазин открыт"
                 }))
                 
-                -- Рассылаем уведомление терминалам
                 local msg = serialization.serialize({op = "shop_paused", paused = shopPaused})
                 for addr in pairs(markets or {}) do
                     pcall(modem.send, addr, 0xffef, msg)
                 end
                 
-                -- Принудительно отправляем статистику для синхронизации с сайтом
                 sendStats()
                 
-                -- Обновляем экран в зависимости от текущего состояния
                 if currentScreen == "welcome" then
                     drawWelcomeScreen()
                 elseif currentScreen == "auth" then
@@ -2416,7 +2415,6 @@ local function checkWebCommands()
                     end
                 end
                 sendResult(true, "buy_items отправлены")
-                -- Отправляем товары на сервер
                 sendToWeb("/api/update", toJson({buy_items = buyItems}))
                 
             elseif cmd.command == "get_shop_items" then
@@ -2523,6 +2521,25 @@ local function checkWebCommands()
                     sendResult(false, "Ошибка удаления админа")
                 end
 
+            -- ==================== REBOOT ====================
+            elseif cmd.command == "reboot" then
+                writeDebugLog("🔄 Получена команда REBOOT")
+                -- Перезагружаем данные
+                players = {}
+                transactions = {}
+                globalStats = { totalReports = 0, totalBuys = 0, totalSells = 0, totalRevenue = 0, totalBalance = 0 }
+                saveDB()
+                saveGlobalStats()
+                addLog("🔄 REBOOT: Все данные сброшены")
+                sendResult(true, "Reboot выполнен")
+                
+                -- Обновляем экран
+                if currentScreen == "menu" then
+                    drawMainMenu()
+                elseif currentScreen == "welcome" then
+                    drawWelcomeScreen()
+                end
+
             -- ==================== НЕИЗВЕСТНАЯ КОМАНДА ====================
             else
                 sendResult(false, "Неизвестная команда: " .. tostring(cmd.command))
@@ -2538,8 +2555,15 @@ local function checkWebCommands()
     end
 end
 
--- Запуск опроса команд каждые 2 секунды
-event.timer(2, checkWebCommands, math.huge)
+local function safeCheckWebCommands()
+    local ok, err = pcall(checkWebCommands)
+    if not ok then
+        writeErrorLog("❌ Ошибка в checkWebCommands: " .. tostring(err))
+    end
+end
+
+-- Запускаем с увеличенным интервалом и обработкой ошибок
+event.timer(3, safeCheckWebCommands, math.huge)
 
 -- ============================================================
 -- ОСТАЛЬНЫЕ UI ФУНКЦИИ

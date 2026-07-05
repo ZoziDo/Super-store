@@ -2164,36 +2164,53 @@ local function checkWebCommands()
 
         local response = internet.request(url)
         if not response then
-            writeDebugLog("⚠️ Нет ответа от сервера")
+            writeDebugLog("⚠️ Нет ответа от сервера (response = nil)")
             return
         end
 
-        -- Проверяем статус ответа (для internet.request в OC)
-        local status = response.getStatus and response:getStatus() or response.code or response.status
-        if status and status ~= 200 then
-            writeErrorLog("⚠️ Сервер вернул HTTP " .. tostring(status) .. " на запрос " .. url)
+        -- Правильная проверка статуса в OpenComputers
+        local status = 0
+        if type(response) == "table" then
+            if response.getStatus then
+                status = response:getStatus() or 0
+            elseif response.code then
+                status = response.code
+            elseif response.status then
+                status = response.status
+            end
+        end
+
+        if status ~= 200 then
+            writeErrorLog("⚠️ Сервер вернул HTTP " .. tostring(status) .. " на /api/commands")
+            -- Читаем тело ошибки, если есть
+            local body = ""
+            pcall(function()
+                for chunk in response do
+                    body = body .. (chunk or "")
+                end
+            end)
+            if body and #body > 0 then
+                writeDebugLog("📥 Тело ответа: " .. body:sub(1, 300))
+            end
             return
         end
 
         local body = ""
         for chunk in response do
-            body = body .. chunk
+            body = body .. (chunk or "")
         end
 
-        writeDebugLog("📥 Сырой ответ от сервера: " .. body)
         writeDebugLog("📥 Получено " .. #body .. " байт")
 
-        if #body < 10 then
-            writeDebugLog("⚠️ Ответ слишком короткий")
+        if #body < 5 then
+            writeDebugLog("⚠️ Пустой или слишком короткий ответ")
             return
         end
 
         local data = parseJSON(body)
-        if data then
-            writeDebugLog("✅ Распарсено: " .. serialization.serialize(data))
-        else
-            writeDebugLog("❌ data = nil после парсинга!")
-            writeErrorLog("❌ Ошибка парсинга JSON: " .. string.sub(body, 1, 300))
+        if not data then
+            writeErrorLog("❌ Ошибка парсинга JSON от /api/commands")
+            writeDebugLog("Сырой ответ: " .. body:sub(1, 400))
             return
         end
 
@@ -2336,7 +2353,6 @@ local function checkWebCommands()
 
             -- ==================== РЕЖИМ ОБСЛУЖИВАНИЯ ====================
             elseif cmd.command == "toggle_pause" then
-                -- Если в данных передано состояние - используем его, иначе переключаем
                 if d.paused ~= nil then
                     shopPaused = d.paused
                     writeDebugLog("📥 Установлен режим обслуживания: " .. tostring(shopPaused) .. " (из данных)")
@@ -2373,21 +2389,141 @@ local function checkWebCommands()
                 elseif currentScreen == "shop" then
                     drawShopMenu()
                 elseif currentScreen == "shop_buy" or currentScreen == "shop_sell" then
-                    -- Если игрок в магазине, возвращаем его в главное меню
                     currentScreen = "menu"
                     drawMainMenu()
                 end
                 
                 sendResult(true, shopPaused and "Магазин на паузе" or "Магазин активен")
 
+            -- ==================== ОБНОВЛЕНИЕ МАРКЕТА ====================
             elseif cmd.command == "update_market" then
                 broadcastUpdate()
                 sendResult(true, "Обновление разослано")
 
+            -- ==================== ЗАВЕРШЕНИЕ ТЕРМИНАЛОВ ====================
             elseif cmd.command == "kill_market" then
                 broadcastKill()
                 sendResult(true, "Терминалы будут завершены")
 
+            -- ==================== ПОЛУЧЕНИЕ ТОВАРОВ ====================
+            elseif cmd.command == "get_buy_items" then
+                writeDebugLog("📥 get_buy_items получен")
+                local buyItems = {}
+                if fs.exists("/home/buy_items.lua") then
+                    local ok, data = pcall(dofile, "/home/buy_items.lua")
+                    if ok and type(data) == "table" then 
+                        buyItems = data 
+                    end
+                end
+                sendResult(true, "buy_items отправлены")
+                -- Отправляем товары на сервер
+                sendToWeb("/api/update", toJson({buy_items = buyItems}))
+                
+            elseif cmd.command == "get_shop_items" then
+                writeDebugLog("📥 get_shop_items получен")
+                local shopItems = {}
+                if fs.exists("/home/shop_items.lua") then
+                    local ok, data = pcall(dofile, "/home/shop_items.lua")
+                    if ok and type(data) == "table" then 
+                        shopItems = data.sellItems or {}
+                    end
+                end
+                sendResult(true, "shop_items отправлены")
+                sendToWeb("/api/update", toJson({sell_items = shopItems}))
+
+            -- ==================== БАН ИГРОКА ====================
+            elseif cmd.command == "toggle_ban" then
+                local playerName = d.name
+                if not playerName then
+                    sendResult(false, "Нет имени игрока")
+                    goto continue
+                end
+                
+                local playersData = {}
+                if fs.exists(DB_PATH) then
+                    local ok, data = pcall(dofile, DB_PATH)
+                    if ok and type(data) == "table" then
+                        playersData = data
+                    end
+                end
+                
+                if playersData[playerName] then
+                    playersData[playerName].banned = not playersData[playerName].banned
+                    local file = io.open(DB_PATH, "w")
+                    if file then
+                        file:write("return " .. serialization.serialize(playersData))
+                        file:close()
+                        players = playersData
+                        sendResult(true, playersData[playerName].banned and "Игрок забанен" or "Игрок разбанен")
+                    else
+                        sendResult(false, "Ошибка записи")
+                    end
+                else
+                    sendResult(false, "Игрок не найден")
+                end
+
+            -- ==================== СБРОС ИГРОКА ====================
+            elseif cmd.command == "reset_player" then
+                local playerName = d.name
+                if not playerName then
+                    sendResult(false, "Нет имени игрока")
+                    goto continue
+                end
+                
+                local playersData = {}
+                if fs.exists(DB_PATH) then
+                    local ok, data = pcall(dofile, DB_PATH)
+                    if ok and type(data) == "table" then
+                        playersData = data
+                    end
+                end
+                
+                if playersData[playerName] then
+                    playersData[playerName].balance = 0
+                    playersData[playerName].emaBalance = 0
+                    playersData[playerName].transactions = 0
+                    playersData[playerName].transactionsList = {}
+                    local file = io.open(DB_PATH, "w")
+                    if file then
+                        file:write("return " .. serialization.serialize(playersData))
+                        file:close()
+                        players = playersData
+                        sendResult(true, "Игрок сброшен")
+                    else
+                        sendResult(false, "Ошибка записи")
+                    end
+                else
+                    sendResult(false, "Игрок не найден")
+                end
+
+            -- ==================== ДОБАВЛЕНИЕ/УДАЛЕНИЕ АДМИНА ====================
+            elseif cmd.command == "add_admin" then
+                local playerName = d.name
+                if not playerName then
+                    sendResult(false, "Нет имени игрока")
+                    goto continue
+                end
+                
+                if addAdmin(playerName) then
+                    sendResult(true, "Админ добавлен")
+                else
+                    sendResult(false, "Ошибка добавления админа")
+                end
+
+            elseif cmd.command == "remove_admin" then
+                local playerName = d.name
+                if not playerName then
+                    sendResult(false, "Нет имени игрока")
+                    goto continue
+                end
+                
+                if removeAdmin(playerName) then
+                    sendResult(true, "Админ удалён")
+                else
+                    sendResult(false, "Ошибка удаления админа")
+                end
+
+            -- ==================== НЕИЗВЕСТНАЯ КОМАНДА ====================
             else
                 sendResult(false, "Неизвестная команда: " .. tostring(cmd.command))
             end
@@ -2398,6 +2534,7 @@ local function checkWebCommands()
 
     if not success then
         writeErrorLog("❌ Критическая ошибка в checkWebCommands: " .. tostring(err))
+        print("❌ checkWebCommands error: " .. tostring(err))
     end
 end
 

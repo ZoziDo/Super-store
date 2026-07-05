@@ -541,6 +541,13 @@ local function addTransaction(type, playerName, item, qty, value_coin, value_ema
     end
     saveGlobalStats()
     
+    -- Обновляем транзакции игрока в БД
+    if playerName and playerName ~= "?" and players[playerName] then
+        players[playerName].transactions = (players[playerName].transactions or 0) + 1
+        saveDB()
+        writeDebugLog("📊 Транзакции игрока " .. playerName .. ": " .. players[playerName].transactions)
+    end
+    
     table.insert(transactions, {
         time = getRealTimeHM(),
         type = type,
@@ -2939,7 +2946,13 @@ local function performSell()
     else
         coinBalance = coinBalance + value
     end
+    
+    -- Обновляем транзакции игрока
     playerTransactions = playerTransactions + 1
+    if currentPlayer and players[currentPlayer] then
+        players[currentPlayer].transactions = (players[currentPlayer].transactions or 0) + 1
+        saveDB()
+    end
     
     addTransaction("sell", currentPlayer or "?", sellConfirmItem.displayName or "?", realExtracted, 0, value)
     addLog("💰 Продажа: " .. (currentPlayer or "?") .. " " .. (sellConfirmItem.displayName or "?") .. " x" .. realExtracted)
@@ -3086,7 +3099,13 @@ local function performBuy()
         local actuallySpentEma = extracted * (item.priceEma or 0)
         coinBalance = coinBalance - actuallySpentCoin
         emaBalance = emaBalance - actuallySpentEma
+        
+        -- Обновляем транзакции игрока
         playerTransactions = playerTransactions + 1
+        if currentPlayer and players[currentPlayer] then
+            players[currentPlayer].transactions = (players[currentPlayer].transactions or 0) + 1
+            saveDB()
+        end
         
         addTransaction("buy", currentPlayer or "?", item.displayName or "?", extracted, actuallySpentCoin, actuallySpentEma)
         addLog("🛒 Покупка: " .. (currentPlayer or "?") .. " " .. (item.displayName or "?") .. " x" .. extracted)
@@ -3104,7 +3123,13 @@ local function performBuy()
 
     coinBalance = coinBalance - totalCoin
     emaBalance = emaBalance - totalEma
+    
+    -- Обновляем транзакции игрока
     playerTransactions = playerTransactions + 1
+    if currentPlayer and players[currentPlayer] then
+        players[currentPlayer].transactions = (players[currentPlayer].transactions or 0) + 1
+        saveDB()
+    end
     
     addTransaction("buy", currentPlayer or "?", item.displayName or "?", extracted, totalCoin, totalEma)
     addLog("🛒 Покупка: " .. (currentPlayer or "?") .. " " .. (item.displayName or "?") .. " x" .. extracted)

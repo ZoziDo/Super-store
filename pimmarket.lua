@@ -577,15 +577,18 @@ local function broadcastKill()
 end
 
 -- ============================================================
--- ОТПРАВКА СТАТИСТИКИ
+-- ОТПРАВКА СТАТИСТИКИ (С РАСШИРЕННЫМ ЛОГИРОВАНИЕМ)
 -- ============================================================
 
 local function sendStats()
-    writeDebugLog("sendStats()")
+    writeDebugLog("📊 sendStats() начат")
+    
     local playerList = {}
     local totalBalance = 0
     
+    writeDebugLog("📊 Всего игроков в памяти: " .. #players)
     for name, data in pairs(players) do
+        writeDebugLog("   👤 " .. name .. ": Coin=" .. tostring(data.balance or 0) .. ", EMA=" .. tostring(data.emaBalance or 0))
         local bal = (data.balance or 0) + (data.emaBalance or 0)
         totalBalance = totalBalance + bal
         table.insert(playerList, {
@@ -943,7 +946,7 @@ local function parseJSON(json_str)
         return nil
     end
 
-    -- Парсим значение (ДОЛЖНА БЫТЬ ПЕРВОЙ, ЧТОБЫ parseArray И parseObject МОГЛИ ЕЁ ВЫЗВАТЬ)
+    -- Парсим значение (ДОЛЖНА БЫТЬ ПЕРВОЙ)
     local function parseValue()
         skipSpace()
         if pos > len then return nil end
@@ -975,7 +978,7 @@ local function parseJSON(json_str)
         return nil
     end
 
-    -- Парсим массив (ИСПОЛЬЗУЕТ parseValue)
+    -- Парсим массив
     local function parseArray()
         if str:sub(pos,pos) ~= '[' then return nil end
         pos = pos + 1
@@ -1004,7 +1007,7 @@ local function parseJSON(json_str)
         return arr
     end
 
-    -- Парсим объект (ИСПОЛЬЗУЕТ parseValue)
+    -- Парсим объект
     local function parseObject()
         if str:sub(pos,pos) ~= '{' then return nil end
         pos = pos + 1
@@ -1899,11 +1902,17 @@ local function drawReportScreen()
 end
 
 -- ============================================================
--- ИНКРЕМЕНТАЛЬНОЕ ПРИМЕНЕНИЕ ИЗМЕНЕНИЙ (улучшенная версия от Grok)
+-- ИНКРЕМЕНТАЛЬНОЕ ПРИМЕНЕНИЕ ИЗМЕНЕНИЙ (С РАСШИРЕННЫМ ЛОГИРОВАНИЕМ)
 -- ============================================================
 
 local function applyIncrementalChanges(itemsFile, changes, itemType)
-    writeDebugLog("📦 Применение инкрементальных изменений к " .. itemType .. " (" .. itemsFile .. ")")
+    writeDebugLog("📦 Применение инкрементальных изменений к " .. itemType)
+    writeDebugLog("📦 Файл: " .. itemsFile)
+    writeDebugLog("📦 Количество изменений: " .. (#changes or 0))
+    
+    for i, change in ipairs(changes or {}) do
+        writeDebugLog("📦 Изменение #" .. i .. ": action=" .. (change.action or "?") .. ", item=" .. serialization.serialize(change.item or {}))
+    end
 
     if not changes or type(changes) ~= "table" or #changes == 0 then
         writeDebugLog("ℹ️ Нет изменений для применения")
@@ -1912,49 +1921,61 @@ local function applyIncrementalChanges(itemsFile, changes, itemType)
 
     writeDebugLog("📨 Применяем " .. #changes .. " изменений")
 
-    -- Загружаем текущие данные
     local items = {}
     if fs.exists(itemsFile) then
+        writeDebugLog("📂 Файл существует: " .. itemsFile)
         local ok, data = pcall(dofile, itemsFile)
         if ok and type(data) == "table" then
             items = data
+            writeDebugLog("📦 Загружено " .. #items .. " товаров из файла")
         else
-            writeErrorLog("Не удалось загрузить " .. itemsFile)
+            writeDebugLog("❌ Не удалось загрузить " .. itemsFile .. ": " .. tostring(data))
             items = {}
         end
+    else
+        writeDebugLog("⚠️ Файл не существует: " .. itemsFile)
+        items = {}
     end
 
-    -- Карта для быстрого поиска
     local itemMap = {}
     for i, item in ipairs(items) do
         local key = (item.internalName or "") .. ":" .. (item.damage or 0)
         itemMap[key] = i
     end
+    writeDebugLog("🗺️ Построена карта товаров: " .. #itemMap .. " записей")
 
     local appliedCount = 0
 
     for _, change in ipairs(changes) do
-        if not change or not change.item then goto next end
+        if not change or not change.item then 
+            writeDebugLog("⚠️ Пропускаем пустое изменение")
+            goto next 
+        end
 
         local item = change.item
         local key = (item.internalName or "") .. ":" .. (item.damage or 0)
+        writeDebugLog("🔍 Обработка: " .. key .. ", action=" .. (change.action or "?"))
 
         if change.action == "add" then
             table.insert(items, item)
             appliedCount = appliedCount + 1
-            writeDebugLog("➕ Добавлен: " .. (item.displayName or key))
+            writeDebugLog("➕ Добавлен: " .. (item.displayName or key) .. " в позицию " .. #items)
 
         elseif change.action == "update" then
             local idx = itemMap[key]
             if idx then
+                writeDebugLog("🔄 Найден товар в позиции " .. idx)
                 for k, v in pairs(item) do
                     if k ~= "internalName" and k ~= "damage" then
+                        local old = items[idx][k]
                         items[idx][k] = v
+                        writeDebugLog("   📝 " .. k .. ": " .. tostring(old) .. " -> " .. tostring(v))
                     end
                 end
                 appliedCount = appliedCount + 1
                 writeDebugLog("🔄 Обновлён: " .. (item.displayName or key))
             else
+                writeDebugLog("⚠️ Товар не найден для обновления: " .. key .. ", добавляем как новый")
                 table.insert(items, item)
                 appliedCount = appliedCount + 1
                 writeDebugLog("➕ Добавлен как новый: " .. (item.displayName or key))
@@ -1979,57 +2000,60 @@ local function applyIncrementalChanges(itemsFile, changes, itemType)
         return true
     end
 
-    -- Сохраняем
+    writeDebugLog("💾 Сохраняем файл: " .. itemsFile)
     local file = io.open(itemsFile, "w")
     if not file then
+        writeDebugLog("❌ НЕ УДАЛОСЬ ОТКРЫТЬ ФАЙЛ ДЛЯ ЗАПИСИ: " .. itemsFile)
         writeErrorLog("❌ Не удалось открыть файл для записи: " .. itemsFile)
         return false
     end
 
-    file:write("return " .. serialization.serialize(items))
+    local serialized = serialization.serialize(items)
+    file:write("return " .. serialized)
     file:close()
+    writeDebugLog("✅ Сохранено " .. appliedCount .. " изменений в " .. itemsFile .. ", размер: " .. #serialized .. " байт")
 
-    writeDebugLog("✅ Сохранено " .. appliedCount .. " изменений в " .. itemsFile)
-
-    -- Обновляем глобальные переменные
     if string.find(itemsFile, "buy_items") then
         buyItemsData = items
+        writeDebugLog("📦 buyItemsData обновлена, товаров: " .. #buyItemsData)
         buyItemMap = {}
         for _, item in ipairs(buyItemsData) do
             local dmg = item.damage or 0
             local key = item.internalName .. ":" .. dmg
             buyItemMap[key] = item
         end
-        writeDebugLog("🔄 buyItemsData и buyItemMap обновлены")
+        writeDebugLog("🗺️ buyItemMap обновлена, записей: " .. #buyItemMap)
     elseif string.find(itemsFile, "sell_items") or string.find(itemsFile, "shop_items") then
         sellItems = items
         shopData.sellItems = items
-        writeDebugLog("🔄 sellItems обновлён")
+        writeDebugLog("📦 sellItems обновлён, товаров: " .. #sellItems)
     end
 
-    -- Перерисовываем интерфейс, если открыт магазин
     if currentScreen == "shop_buy" then
+        writeDebugLog("🔄 Перерисовка магазина покупки...")
         loadBuyItems()
         drawBuyStatic()
         drawBuyItemsList()
         drawBuyButtons()
-        writeDebugLog("🔄 Интерфейс магазина покупки перерисован")
+        writeDebugLog("✅ Магазин покупки перерисован")
     elseif currentScreen == "shop_sell" then
+        writeDebugLog("🔄 Перерисовка магазина продажи...")
         loadSellItems()
         drawBuyStatic()
         drawBuyItemsList()
         drawBuyButtons()
-        writeDebugLog("🔄 Интерфейс магазина продажи перерисован")
+        writeDebugLog("✅ Магазин продажи перерисован")
     end
 
-    -- Уведомляем другие терминалы
+    writeDebugLog("📢 Рассылка обновления терминалам...")
     broadcastUpdate()
+    writeDebugLog("✅ Обновление разослано")
 
     return true
 end
 
 -- ============================================================
--- ОБРАБОТКА КОМАНД (финальная версия от Grok)
+-- ОБРАБОТКА КОМАНД (С РАСШИРЕННЫМ ЛОГИРОВАНИЕМ)
 -- ============================================================
 
 local function checkWebCommands()
@@ -2050,6 +2074,7 @@ local function checkWebCommands()
             body = body .. chunk
         end
 
+        writeDebugLog("📥 Сырой ответ от сервера: " .. body)
         writeDebugLog("📥 Получено " .. #body .. " байт")
 
         if #body < 10 then
@@ -2058,12 +2083,16 @@ local function checkWebCommands()
         end
 
         local data = parseJSON(body)
-        if not data then
+        if data then
+            writeDebugLog("✅ Распарсено: " .. serialization.serialize(data))
+        else
+            writeDebugLog("❌ data = nil после парсинга!")
             writeErrorLog("❌ Ошибка парсинга JSON: " .. string.sub(body, 1, 300))
             return
         end
 
         if not data.commands or #data.commands == 0 then
+            writeDebugLog("⚠️ Нет команд в ответе")
             return
         end
 
@@ -2084,27 +2113,40 @@ local function checkWebCommands()
             end
 
             writeDebugLog("🔧 Выполняем команду: " .. (cmd.command or "unknown"))
+            writeDebugLog("📨 Данные команды: " .. serialization.serialize(d))
 
             -- ==================== ОБНОВЛЕНИЕ ИГРОКА ====================
             if cmd.command == "update_player" or cmd.command == "set_balance" then
                 local playerName = d.name or d.player
                 if not playerName then
+                    writeDebugLog("❌ Нет имени игрока в команде!")
+                    writeDebugLog("📨 Полные данные: " .. serialization.serialize(d))
                     sendResult(false, "Нет имени игрока")
                     goto continue
                 end
 
-                writeDebugLog("📥 Обновление игрока: " .. playerName)
+                writeDebugLog("📥 ОБНОВЛЕНИЕ ИГРОКА: " .. playerName)
+                writeDebugLog("📥 Данные команды: " .. serialization.serialize(d))
+                writeDebugLog("📥 balance = " .. tostring(d.balance))
+                writeDebugLog("📥 coin = " .. tostring(d.coin))
+                writeDebugLog("📥 emaBalance = " .. tostring(d.emaBalance))
+                writeDebugLog("📥 ema = " .. tostring(d.ema))
 
-                -- Загружаем данные игроков
                 local playersData = {}
                 if fs.exists(DB_PATH) then
                     local ok, data = pcall(dofile, DB_PATH)
                     if ok and type(data) == "table" then
                         playersData = data
+                        writeDebugLog("📦 Загружено игроков: " .. #playersData)
+                    else
+                        writeDebugLog("⚠️ Не удалось загрузить players.db: " .. tostring(data))
                     end
+                else
+                    writeDebugLog("⚠️ Файл players.db не существует!")
                 end
 
                 if not playersData[playerName] then
+                    writeDebugLog("➕ Создаём нового игрока: " .. playerName)
                     playersData[playerName] = {
                         balance = 0,
                         emaBalance = 0,
@@ -2113,55 +2155,75 @@ local function checkWebCommands()
                         agreed = false,
                         hasFeedback = false
                     }
+                else
+                    writeDebugLog("👤 Игрок найден, текущий баланс: " .. tostring(playersData[playerName].balance))
                 end
 
-                -- Поддержка разных имён полей
                 if d.balance ~= nil then
+                    local oldBalance = playersData[playerName].balance
                     playersData[playerName].balance = tonumber(d.balance) or 0
+                    writeDebugLog("💰 Coin: " .. oldBalance .. " -> " .. playersData[playerName].balance)
                 elseif d.coin ~= nil then
+                    local oldBalance = playersData[playerName].balance
                     playersData[playerName].balance = tonumber(d.coin) or 0
+                    writeDebugLog("💰 Coin (из coin): " .. oldBalance .. " -> " .. playersData[playerName].balance)
+                else
+                    writeDebugLog("⚠️ Нет данных для Coin!")
                 end
 
                 if d.emaBalance ~= nil then
+                    local oldEma = playersData[playerName].emaBalance
                     playersData[playerName].emaBalance = tonumber(d.emaBalance) or 0
+                    writeDebugLog("💰 EMA: " .. oldEma .. " -> " .. playersData[playerName].emaBalance)
                 elseif d.ema ~= nil then
+                    local oldEma = playersData[playerName].emaBalance
                     playersData[playerName].emaBalance = tonumber(d.ema) or 0
+                    writeDebugLog("💰 EMA (из ema): " .. oldEma .. " -> " .. playersData[playerName].emaBalance)
+                else
+                    writeDebugLog("⚠️ Нет данных для EMA!")
                 end
 
-                -- Сохраняем в файл
+                writeDebugLog("💾 Сохраняем игрока в players.db...")
                 local file = io.open(DB_PATH, "w")
                 if file then
-                    file:write("return " .. serialization.serialize(playersData))
+                    local serialized = serialization.serialize(playersData)
+                    file:write("return " .. serialized)
                     file:close()
+                    writeDebugLog("✅ Файл players.db сохранён, размер: " .. #serialized .. " байт")
+                    
+                    players = playersData
+                    writeDebugLog("🔄 Глобальная таблица players обновлена")
 
-                    players = playersData  -- обновляем глобальную таблицу
-
-                    -- Если это текущий игрок — обновляем UI
                     if currentPlayer == playerName then
                         coinBalance = playersData[playerName].balance or 0
                         emaBalance = playersData[playerName].emaBalance or 0
-
-                        writeDebugLog("✅ Баланс текущего игрока обновлён в памяти!", "SUCCESS")
+                        writeDebugLog("✅ Баланс текущего игрока обновлён: Coin=" .. coinBalance .. ", EMA=" .. emaBalance)
 
                         if currentScreen == "menu" then
                             drawMainMenu()
+                            writeDebugLog("🔄 Меню перерисовано")
                         elseif currentScreen == "account" then
                             drawAccount({balance = coinBalance, emaBalance = emaBalance})
+                            writeDebugLog("🔄 Аккаунт перерисован")
                         end
                     end
 
                     sendResult(true, "Игрок обновлён успешно")
+                    writeDebugLog("✅ Отправлен результат: success")
                 else
+                    writeDebugLog("❌ НЕ УДАЛОСЬ ОТКРЫТЬ ФАЙЛ ДЛЯ ЗАПИСИ: " .. DB_PATH)
                     sendResult(false, "Ошибка записи в файл")
                 end
 
             -- ==================== ИНКРЕМЕНТАЛЬНОЕ ОБНОВЛЕНИЕ ТОВАРОВ ====================
             elseif cmd.command == "save_buy_items_incremental" then
+                writeDebugLog("📥 save_buy_items_incremental получен")
                 local changes = d.changes
                 local ok = applyIncrementalChanges("/home/buy_items.lua", changes, "buy_items")
                 sendResult(ok, ok and "Товары покупки обновлены" or "Ошибка обновления buy_items")
 
             elseif cmd.command == "save_shop_items_incremental" then
+                writeDebugLog("📥 save_shop_items_incremental получен")
                 local changes = d.changes
                 local ok = applyIncrementalChanges("/home/shop_items.lua", changes, "shop_items")
                 sendResult(ok, ok and "Магазин обновлён" or "Ошибка обновления shop_items")
@@ -2200,7 +2262,7 @@ end
 event.timer(2, checkWebCommands, math.huge)
 
 -- ============================================================
--- ОСТАЛЬНЫЕ UI ФУНКЦИИ (без изменений)
+-- ОСТАЛЬНЫЕ UI ФУНКЦИИ
 -- ============================================================
 
 local function drawSellPopup()

@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ12
+-- ВРЕМЯ123
 -- ============================================================
 
 local tmpfs = component.proxy(computer.tmpAddress())
@@ -38,81 +38,6 @@ end
 
 local WEB_URL = "https://upfront-dinginess-impulsive.ngrok-free.dev"
 
-local discordSettings = {}
-
-local function sendDiscordWebhook(webhook_url, message)
-    if not webhook_url or webhook_url == "" then 
-        print("⚠️ Discord webhook пустой, пропускаем")
-        return 
-    end
-    print("📤 Отправка в Discord: " .. message:sub(1, 50) .. "...")
-    
-    -- Используем pcall для перехвата ошибок
-    local success, err = pcall(function()
-        local payload = '{"content": "' .. message:gsub('"', '\\"') .. '"}'
-        
-        -- Способ 1: через component.internet (более надёжный)
-        local internetComp = component.internet
-        if internetComp and internetComp.request then
-            local headers = "Content-Type: application/json\r\nConnection: close\r\n"
-            internetComp.request(webhook_url, payload, headers)
-            print("✅ Отправлено через component.internet")
-        else
-            -- Способ 2: через internet.request
-            internet.request(webhook_url, payload, {
-                ["Content-Type"] = "application/json",
-                ["Connection"] = "close"
-            })
-            print("✅ Отправлено через internet.request")
-        end
-    end)
-    
-    if not success then
-        print("❌ Ошибка отправки: " .. tostring(err))
-    end
-end
-
-local function loadDiscordSettings()
-    pcall(function()
-        print("📥 Загрузка Discord настроек...")
-        local response = internet.request(WEB_URL .. "/api/discord_settings")
-        if response then
-            local body = ""
-            for chunk in response do
-                body = body .. chunk
-            end
-            print("📥 Ответ: " .. body)
-            
-            -- Простой парсинг через поиск
-            local function extractString(str, key)
-                local pattern = '"' .. key .. '":%s*"([^"]+)"'
-                local startPos, endPos, value = string.find(str, pattern)
-                if value then
-                    return value
-                end
-                return nil
-            end
-            
-            local settings = {}
-            settings.register = extractString(body, "register")
-            settings.login = extractString(body, "login")
-            settings.logout = extractString(body, "logout")
-            settings.sell = extractString(body, "sell")
-            settings.buy = extractString(body, "buy")
-            
-            if settings.register or settings.buy or settings.sell then
-                discordSettings = settings
-                print("✅ Discord настройки загружены (упрощённый парсер)!")
-                print("📋 register: " .. tostring(settings.register ~= nil))
-                print("📋 buy: " .. tostring(settings.buy ~= nil))
-            else
-                print("❌ Не удалось извлечь настройки из ответа")
-            end
-        else
-            print("❌ Нет ответа от сервера")
-        end
-    end)
-end
 
 local function toJson(val)
     if type(val) == "string" then
@@ -3150,10 +3075,6 @@ local function performSell()
     local currencySymbol = (sellConfirmItem.internalName == "customnpcs:npcMoney") and "۞" or "₵"
     drawCenteredText(17, "Успешно! +" .. string.format("%.2f", value) .. " " .. currencySymbol, colors.success)
 
-    -- Отправка уведомления в Discord о продаже
-    local sellMsg = "💰 **Продажа**\nИгрок: " .. currentPlayer .. "\nПредмет: " .. sellConfirmItem.displayName .. "\nКол-во: " .. realExtracted .. "\nВыручка: " .. string.format("%.2f", value) .. " " .. currencySymbol
-    sendDiscordWebhook(discordSettings.sell, sellMsg)
-
     os.sleep(0.8)
 
     currentScreen = "shop_sell"
@@ -3343,9 +3264,6 @@ local function performBuy()
         priceStr = priceStr .. string.format("%.2f", totalEma) .. "۞"
     end
     drawCenteredText(20, "Куплено " .. extracted .. " шт. за " .. priceStr, colors.success)
-
-    local buyMsg = "🛒 **Покупка**\nИгрок: " .. currentPlayer .. "\nПредмет: " .. item.displayName .. "\nКол-во: " .. extracted .. "\nЦена: " .. priceStr
-    sendDiscordWebhook(discordSettings.buy, buyMsg)
 
     loadBuyItems()
     for _, newItem in ipairs(shopItems) do
@@ -4064,7 +3982,6 @@ local function main()
                     players[currentPlayer] = player
                     saveDB()
                     addLog("✅ Новый игрок: " .. currentPlayer)
-                    sendDiscordWebhook(discordSettings.register, "📝 **Новый игрок!**\nИмя: " .. currentPlayer)
                     writeDebugLog("Создан новый игрок: " .. currentPlayer)
                 end
                 
@@ -4091,17 +4008,12 @@ local function main()
                     currentScreen = "menu"
                     drawMainMenu()
                     addLog("👤 Вход: " .. currentPlayer)
-                    sendDiscordWebhook(discordSettings.login, "✅ **Вход**\nИгрок: " .. currentPlayer)
                 end
             end
 
         elseif e == "player_off" or e == "pim_player_leave" then
         local playerName = ev[2] or "Игрок"
         writeDebugLog("player_off: " .. playerName)
-        
-        -- Отправка уведомления о выходе
-        sendDiscordWebhook(discordSettings.logout, "❌ **Выход**\nИгрок: " .. playerName)
-        
         if playerName == pimOwner then
             pimOwner = nil
         end
@@ -4125,10 +4037,6 @@ end
 -- ============================================================
 -- ЗАПУСК
 -- ============================================================
-
--- Загружаем настройки Discord
-loadDiscordSettings()
-event.timer(60, loadDiscordSettings, math.huge)
 
 writeErrorLog("=" .. string.rep("=", 50))
 writeErrorLog("🚀 ЗАПУСК ОСНОВНОГО ЦИКЛА")

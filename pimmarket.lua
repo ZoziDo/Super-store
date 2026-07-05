@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ144
+-- ВРЕМЯ1445
 -- ============================================================
 
 local tmpfs = component.proxy(computer.tmpAddress())
@@ -2434,6 +2434,7 @@ local function checkWebCommands()
         
             ::continue::
         end  
+     end)
 
     if not success then
         writeErrorLog("❌ Критическая ошибка в checkWebCommands: " .. tostring(err))

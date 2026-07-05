@@ -25,6 +25,8 @@ local function writeErrorLog(msg)
         file:write("[" .. time .. "] " .. msg .. "\n")
         file:close()
     end
+    -- Дополнительно отправляем на сервер
+    addLogEntry(msg, "ERROR")
 end
 
 local function writeDebugLog(msg)
@@ -75,7 +77,7 @@ end
 -- ПЕРЕМЕННАЯ ДЛЯ ТЕРМИНАЛОВ
 -- ============================================================
 
-local markets = {}  -- Словарь для хранения адресов терминалов
+local markets = {}
 
 -- ============================================================
 -- ВРЕМЯ
@@ -104,16 +106,36 @@ end
 local WEB_URL = "https://upfront-dinginess-impulsive.ngrok-free.dev"
 
 local function toJson(val)
-    if type(val) == "string" then return '"' .. val:gsub('"', '\\"') .. '"'
-    elseif type(val) == "number" or type(val) == "boolean" then return tostring(val)
+    if type(val) == "string" then
+        return '"' .. val:gsub('"', '\\"') .. '"'
+    elseif type(val) == "number" or type(val) == "boolean" then
+        return tostring(val)
     elseif type(val) == "table" then
-        local parts = {}
-        for k, v in pairs(val) do
-            table.insert(parts, '"' .. k .. '":' .. toJson(v))
+        local isArray = true
+        local count = 0
+        for k, _ in pairs(val) do
+            if type(k) ~= "number" or k < 1 or math.floor(k) ~= k then
+                isArray = false
+                break
+            end
+            count = count + 1
         end
-        return "{" .. table.concat(parts, ",") .. "}"
+        if isArray and count == #val then
+            local parts = {}
+            for i = 1, #val do
+                table.insert(parts, toJson(val[i]))
+            end
+            return "[" .. table.concat(parts, ",") .. "]"
+        else
+            local parts = {}
+            for k, v in pairs(val) do
+                table.insert(parts, '"' .. k .. '":' .. toJson(v))
+            end
+            return "{" .. table.concat(parts, ",") .. "}"
+        end
+    else
+        return "null"
     end
-    return "null"
 end
 
 local function sendToWeb(endpoint, jsonData)
@@ -123,6 +145,40 @@ local function sendToWeb(endpoint, jsonData)
             ["Connection"] = "close"
         })
     end)
+end
+
+-- ============================================================
+-- ОТПРАВКА ЛОГОВ НА ВЕБ
+-- ============================================================
+
+local logQueue = {}
+
+local function addLogEntry(text, level)
+    if not text then text = "?" end
+    level = level or "INFO"
+    local entry = {
+        text = text,
+        time = getRealTimeHM(),
+        level = level
+    }
+    table.insert(logQueue, entry)
+
+    if #logQueue >= 50 then
+        local batch = {}
+        for _, e in ipairs(logQueue) do
+            table.insert(batch, {
+                time = e.time,
+                text = e.text,
+                level = e.level
+            })
+        end
+        sendToWeb("/api/logs_batch", toJson({logs = batch}))
+        logQueue = {}
+    end
+end
+
+local function addLog(text)
+    addLogEntry(text, "INFO")
 end
 
 -- ============================================================
@@ -333,7 +389,6 @@ local admins = {}
 local players = {}
 local globalStats = { totalReports = 0, totalBuys = 0, totalSells = 0, totalRevenue = 0, totalBalance = 0 }
 local transactions = {}
-local logQueue = {}
 
 -- Автоматическое создание файлов
 local function ensureFileExists(path, defaultData)
@@ -484,20 +539,6 @@ local function addTransaction(type, playerName, item, qty, value_coin, value_ema
     while #transactions > 100 do table.remove(transactions, 1) end
 end
 
-local function addLog(text)
-    if not text then text = "?" end
-    local entry = {text = text, time = getRealTimeHM()}
-    table.insert(logQueue, entry)
-    if #logQueue > 50 then
-        local batch = {}
-        for _, e in ipairs(logQueue) do
-            table.insert(batch, {time = e.time, text = e.text, level = "INFO"})
-        end
-        sendToWeb("/api/logs_batch", toJson({logs = batch}))
-        logQueue = {}
-    end
-end
-
 -- ============================================================
 -- ФУНКЦИИ ДЛЯ ТЕРМИНАЛОВ
 -- ============================================================
@@ -530,7 +571,6 @@ local function sendStats()
     local playerList = {}
     local totalBalance = 0
     
-    -- Собираем игроков
     for name, data in pairs(players) do
         local bal = (data.balance or 0) + (data.emaBalance or 0)
         totalBalance = totalBalance + bal
@@ -708,7 +748,6 @@ local modem = component.modem
 modem.open(0xffef)
 modem.open(0xfffe)
 
--- Регистрация новых терминалов
 event.listen("modem_message", function(_, _, from, port, _, _, data)
     if port == 0xffef then
         local ok, msg = pcall(serialization.unserialize, data)
@@ -824,183 +863,138 @@ local feedbackEditMode = false
 local playerHasFeedback = false
 
 -- ============================================================
--- ПАРСЕР JSON ДЛЯ OC (БЕЗ ЗАВИСАНИЙ)
--- ============================================================
-
--- ============================================================
--- ПРОСТОЙ ПАРСЕР JSON ДЛЯ OPENCOMPUTERS
+-- НАДЁЖНЫЙ ПАРСЕР JSON
 -- ============================================================
 
 local function parseJSON(json_str)
-    if not json_str or json_str == "" then
-        return nil
-    end
-    
-    -- Для отладки показываем начало строки
-    writeDebugLog("📥 Парсим JSON: " .. string.sub(json_str, 1, 150))
-    
-    -- Убираем все лишние пробелы и переносы
-    local str = json_str:gsub("%s+", " ")
+    if not json_str or json_str == "" then return nil end
+    local str = json_str
     local pos = 1
     local len = #str
-    
-    -- Функция пропуска пробелов
+
     local function skipSpace()
-        while pos <= len and str:sub(pos, pos) == " " do
+        while pos <= len and (str:sub(pos,pos) == ' ' or str:sub(pos,pos) == '\n' or str:sub(pos,pos) == '\r' or str:sub(pos,pos) == '\t') do
             pos = pos + 1
         end
     end
-    
-    -- Парсим строку в кавычках
+
     local function parseString()
-        if str:sub(pos, pos) ~= '"' then
-            return nil
-        end
+        if str:sub(pos,pos) ~= '"' then return nil end
         pos = pos + 1
         local start = pos
         local result = ""
-        local escaped = false
-        
         while pos <= len do
-            local ch = str:sub(pos, pos)
-            if escaped then
-                if ch == '"' then
-                    result = result .. '"'
-                elseif ch == '\\' then
-                    result = result .. '\\'
-                elseif ch == '/' then
-                    result = result .. '/'
-                elseif ch == 'b' then
-                    result = result .. '\b'
-                elseif ch == 'f' then
-                    result = result .. '\f'
-                elseif ch == 'n' then
-                    result = result .. '\n'
-                elseif ch == 'r' then
-                    result = result .. '\r'
-                elseif ch == 't' then
-                    result = result .. '\t'
-                else
-                    result = result .. ch
-                end
-                escaped = false
-            elseif ch == '\\' then
-                escaped = true
-            elseif ch == '"' then
+            local ch = str:sub(pos,pos)
+            if ch == '"' then
+                result = result .. str:sub(start, pos-1)
                 pos = pos + 1
                 return result
+            elseif ch == '\\' then
+                result = result .. str:sub(start, pos-1)
+                pos = pos + 1
+                if pos > len then return nil end
+                local esc = str:sub(pos,pos)
+                if esc == '"' then result = result .. '"'
+                elseif esc == '\\' then result = result .. '\\'
+                elseif esc == '/' then result = result .. '/'
+                elseif esc == 'b' then result = result .. '\b'
+                elseif esc == 'f' then result = result .. '\f'
+                elseif esc == 'n' then result = result .. '\n'
+                elseif esc == 'r' then result = result .. '\r'
+                elseif esc == 't' then result = result .. '\t'
+                else result = result .. '\\' .. esc
+                end
+                pos = pos + 1
+                start = pos
             else
-                result = result .. ch
+                pos = pos + 1
             end
-            pos = pos + 1
         end
         return nil
     end
-    
-    -- Парсим число
+
     local function parseNumber()
         local start = pos
         while pos <= len do
-            local ch = str:sub(pos, pos)
-            if not (ch >= '0' and ch <= '9') and ch ~= '.' and ch ~= '-' then
+            local ch = str:sub(pos,pos)
+            if not (ch >= '0' and ch <= '9') and ch ~= '.' and ch ~= '-' and ch ~= 'e' and ch ~= 'E' then
                 break
             end
             pos = pos + 1
         end
         if pos > start then
-            local num = str:sub(start, pos - 1)
+            local num = str:sub(start, pos-1)
             return tonumber(num)
         end
         return nil
     end
-    
-    -- Парсим массив
+
     local function parseArray()
-        if str:sub(pos, pos) ~= '[' then
-            return nil
-        end
+        if str:sub(pos,pos) ~= '[' then return nil end
         pos = pos + 1
         local arr = {}
         skipSpace()
-        
-        if str:sub(pos, pos) == ']' then
+        if str:sub(pos,pos) == ']' then
             pos = pos + 1
             return arr
         end
-        
         while true do
             skipSpace()
             local val = parseValue()
-            if val ~= nil then
-                table.insert(arr, val)
-            end
+            if val == nil then break end
+            table.insert(arr, val)
             skipSpace()
-            local ch = str:sub(pos, pos)
-            if ch == ']' then
+            local ch = str:sub(pos,pos)
+            if ch == ',' then
+                pos = pos + 1
+            elseif ch == ']' then
                 pos = pos + 1
                 break
-            elseif ch == ',' then
-                pos = pos + 1
             else
                 break
             end
         end
         return arr
     end
-    
-    -- Парсим объект
+
     local function parseObject()
-        if str:sub(pos, pos) ~= '{' then
-            return nil
-        end
+        if str:sub(pos,pos) ~= '{' then return nil end
         pos = pos + 1
         local obj = {}
         skipSpace()
-        
-        if str:sub(pos, pos) == '}' then
+        if str:sub(pos,pos) == '}' then
             pos = pos + 1
             return obj
         end
-        
         while true do
             skipSpace()
             local key = parseString()
-            if not key then
-                break
-            end
+            if not key then break end
             skipSpace()
-            if str:sub(pos, pos) == ':' then
-                pos = pos + 1
-            else
-                break
-            end
+            if str:sub(pos,pos) ~= ':' then break end
+            pos = pos + 1
             skipSpace()
             local val = parseValue()
-            if val ~= nil then
-                obj[key] = val
-            end
+            if val == nil then break end
+            obj[key] = val
             skipSpace()
-            local ch = str:sub(pos, pos)
-            if ch == '}' then
+            local ch = str:sub(pos,pos)
+            if ch == ',' then
+                pos = pos + 1
+            elseif ch == '}' then
                 pos = pos + 1
                 break
-            elseif ch == ',' then
-                pos = pos + 1
             else
                 break
             end
         end
         return obj
     end
-    
-    -- Парсим значение (главная функция)
+
     local function parseValue()
         skipSpace()
-        if pos > len then
-            return nil
-        end
-        local ch = str:sub(pos, pos)
-        
+        if pos > len then return nil end
+        local ch = str:sub(pos,pos)
         if ch == '"' then
             return parseString()
         elseif ch == '{' then
@@ -1008,35 +1002,31 @@ local function parseJSON(json_str)
         elseif ch == '[' then
             return parseArray()
         elseif ch == 'n' then
-            if str:sub(pos, pos + 3) == 'null' then
+            if str:sub(pos,pos+3) == 'null' then
                 pos = pos + 4
                 return nil
             end
         elseif ch == 't' then
-            if str:sub(pos, pos + 3) == 'true' then
+            if str:sub(pos,pos+3) == 'true' then
                 pos = pos + 4
                 return true
             end
         elseif ch == 'f' then
-            if str:sub(pos, pos + 4) == 'false' then
+            if str:sub(pos,pos+4) == 'false' then
                 pos = pos + 5
                 return false
             end
-        elseif ch >= '0' and ch <= '9' or ch == '-' then
+        elseif (ch >= '0' and ch <= '9') or ch == '-' then
             return parseNumber()
         end
         return nil
     end
-    
-    -- Начинаем парсинг
+
     skipSpace()
     local result = parseValue()
-    
-    if result then
-        writeDebugLog("✅ JSON распарсен успешно")
+    if result ~= nil then
         return result
     else
-        writeDebugLog("❌ Не удалось распарсить JSON")
         return nil
     end
 end
@@ -1892,182 +1882,182 @@ local function drawReportScreen()
 end
 
 -- ============================================================
--- ИНКРЕМЕНТАЛЬНОЕ ПРИМЕНЕНИЕ ИЗМЕНЕНИЙ
+-- ИНКРЕМЕНТАЛЬНОЕ ПРИМЕНЕНИЕ ИЗМЕНЕНИЙ (улучшенная версия от Grok)
 -- ============================================================
 
--- Функция для применения изменений к товарам
 local function applyIncrementalChanges(itemsFile, changes, itemType)
-    writeDebugLog("📦 Применение инкрементальных изменений к " .. itemType)
-    
-    if not changes or #changes == 0 then
+    writeDebugLog("📦 Применение инкрементальных изменений к " .. itemType .. " (" .. itemsFile .. ")")
+
+    if not changes or type(changes) ~= "table" or #changes == 0 then
         writeDebugLog("ℹ️ Нет изменений для применения")
         return true
     end
-    
+
     writeDebugLog("📨 Применяем " .. #changes .. " изменений")
-    
-    -- Загружаем текущие товары
+
+    -- Загружаем текущие данные
     local items = {}
     if fs.exists(itemsFile) then
         local ok, data = pcall(dofile, itemsFile)
         if ok and type(data) == "table" then
             items = data
+        else
+            writeErrorLog("Не удалось загрузить " .. itemsFile)
+            items = {}
         end
     end
-    
-    -- Создаем карту для быстрого поиска
+
+    -- Карта для быстрого поиска
     local itemMap = {}
     for i, item in ipairs(items) do
-        local key = item.internalName .. ":" .. (item.damage or 0)
+        local key = (item.internalName or "") .. ":" .. (item.damage or 0)
         itemMap[key] = i
     end
-    
-    -- Применяем изменения
+
+    local appliedCount = 0
+
     for _, change in ipairs(changes) do
+        if not change or not change.item then goto next end
+
         local item = change.item
-        local key = item.internalName .. ":" .. (item.damage or 0)
-        
+        local key = (item.internalName or "") .. ":" .. (item.damage or 0)
+
         if change.action == "add" then
-            -- Добавляем новый товар
             table.insert(items, item)
-            writeDebugLog("➕ Добавлен: " .. (item.displayName or item.internalName))
-            
+            appliedCount = appliedCount + 1
+            writeDebugLog("➕ Добавлен: " .. (item.displayName or key))
+
         elseif change.action == "update" then
-            -- Обновляем существующий
             local idx = itemMap[key]
             if idx then
-                -- Обновляем только указанные поля
                 for k, v in pairs(item) do
                     if k ~= "internalName" and k ~= "damage" then
                         items[idx][k] = v
                     end
                 end
-                writeDebugLog("🔄 Обновлен: " .. (item.displayName or item.internalName))
+                appliedCount = appliedCount + 1
+                writeDebugLog("🔄 Обновлён: " .. (item.displayName or key))
             else
-                writeDebugLog("⚠️ Товар не найден для обновления: " .. key)
-                -- Если не найден, добавляем как новый
                 table.insert(items, item)
-                writeDebugLog("➕ Добавлен как новый: " .. (item.displayName or item.internalName))
+                appliedCount = appliedCount + 1
+                writeDebugLog("➕ Добавлен как новый: " .. (item.displayName or key))
             end
-            
+
         elseif change.action == "delete" then
-            -- Удаляем товар
             local idx = itemMap[key]
             if idx then
                 table.remove(items, idx)
-                writeDebugLog("❌ Удален: " .. key)
-                -- Обновляем карту
-                itemMap = {}
-                for i, it in ipairs(items) do
-                    local k = it.internalName .. ":" .. (it.damage or 0)
-                    itemMap[k] = i
-                end
+                appliedCount = appliedCount + 1
+                writeDebugLog("❌ Удалён: " .. key)
             else
-                writeDebugLog("⚠️ Товар не найден для удаления: " .. key)
+                writeDebugLog("⚠️ Не найден для удаления: " .. key)
             end
         end
+
+        ::next::
     end
-    
-    -- Сохраняем обновленный файл
-    local file = io.open(itemsFile, "w")
-    if file then
-        file:write("return " .. serialization.serialize(items))
-        file:close()
-        writeDebugLog("✅ Изменения применены к " .. itemsFile)
+
+    if appliedCount == 0 then
+        writeDebugLog("⚠️ Ни одно изменение не применено")
         return true
-    else
-        writeErrorLog("❌ Ошибка сохранения " .. itemsFile)
+    end
+
+    -- Сохраняем
+    local file = io.open(itemsFile, "w")
+    if not file then
+        writeErrorLog("❌ Не удалось открыть файл для записи: " .. itemsFile)
         return false
     end
-end
 
--- ============================================================
--- ОБРАБОТКА КОМАНД (ПОЛНАЯ РАБОЧАЯ ВЕРСИЯ)
--- ============================================================
+    file:write("return " .. serialization.serialize(items))
+    file:close()
 
--- БЕЗОПАСНЫЙ ПАРСЕР JSON (БЕЗ loadstring)
-local function safeParseJSON(str)
-    if not str or str == "" then return nil end
-    
-    writeDebugLog("📥 Парсим JSON, длина: " .. #str)
-    
-    -- Способ 1: через serialization (самый надёжный для OC)
-    local ok, result = pcall(serialization.unserialize, str)
-    if ok and type(result) == "table" then
-        writeDebugLog("✅ Распарсено через serialization")
-        return result
-    end
-    
-    -- Способ 2: пробуем через loadstring если доступен
-    local loadstr = loadstring or _G.loadstring
-    if loadstr then
-        local ok2, result2 = pcall(function()
-            -- Экранируем кавычки и парсим
-            local fn = loadstr("return " .. str)
-            if fn then return fn() end
-            return nil
-        end)
-        if ok2 and result2 then
-            writeDebugLog("✅ Распарсено через loadstring")
-            return result2
+    writeDebugLog("✅ Сохранено " .. appliedCount .. " изменений в " .. itemsFile)
+
+    -- Обновляем глобальные переменные
+    if string.find(itemsFile, "buy_items") then
+        buyItemsData = items
+        buyItemMap = {}
+        for _, item in ipairs(buyItemsData) do
+            local dmg = item.damage or 0
+            local key = item.internalName .. ":" .. dmg
+            buyItemMap[key] = item
         end
+        writeDebugLog("🔄 buyItemsData и buyItemMap обновлены")
+    elseif string.find(itemsFile, "sell_items") or string.find(itemsFile, "shop_items") then
+        sellItems = items
+        shopData.sellItems = items
+        writeDebugLog("🔄 sellItems обновлён")
     end
-    
-    writeDebugLog("❌ Не удалось распарсить JSON")
-    return nil
+
+    -- Перерисовываем интерфейс, если открыт магазин
+    if currentScreen == "shop_buy" then
+        loadBuyItems()
+        drawBuyStatic()
+        drawBuyItemsList()
+        drawBuyButtons()
+        writeDebugLog("🔄 Интерфейс магазина покупки перерисован")
+    elseif currentScreen == "shop_sell" then
+        loadSellItems()
+        drawBuyStatic()
+        drawBuyItemsList()
+        drawBuyButtons()
+        writeDebugLog("🔄 Интерфейс магазина продажи перерисован")
+    end
+
+    -- Уведомляем другие терминалы
+    broadcastUpdate()
+
+    return true
 end
 
 -- ============================================================
--- ОБРАБОТКА КОМАНД
+-- ОБРАБОТКА КОМАНД (финальная версия от Grok)
 -- ============================================================
 
 local function checkWebCommands()
-    writeDebugLog("🔍 checkWebCommands() вызвана")
-    
+    writeDebugLog("🔍 checkWebCommands() запущена в " .. getRealTimeHM())
+
     local success, err = pcall(function()
-        writeDebugLog("📡 Запрос к " .. WEB_URL .. "/api/commands")
-        
-        local response = internet.request(WEB_URL .. "/api/commands")
+        local url = WEB_URL .. "/api/commands"
+        writeDebugLog("📡 Запрос к: " .. url)
+
+        local response = internet.request(url)
         if not response then
-            writeDebugLog("⚠️ Нет ответа")
+            writeDebugLog("⚠️ Нет ответа от сервера")
             return
         end
-        
+
         local body = ""
-        for chunk in response do 
-            body = body .. chunk 
+        for chunk in response do
+            body = body .. chunk
         end
-        
-        writeDebugLog("📥 Длина: " .. #body)
-        
+
+        writeDebugLog("📥 Получено " .. #body .. " байт")
+
         if #body < 10 then
-            writeDebugLog("⚠️ Слишком короткий ответ")
+            writeDebugLog("⚠️ Ответ слишком короткий")
             return
         end
-        
-        -- Парсим JSON
+
         local data = parseJSON(body)
         if not data then
-            writeErrorLog("❌ Ошибка парсинга: " .. string.sub(body, 1, 200))
+            writeErrorLog("❌ Ошибка парсинга JSON: " .. string.sub(body, 1, 300))
             return
         end
-        
+
         if not data.commands or #data.commands == 0 then
-            writeDebugLog("⚠️ Команд нет")
             return
         end
-        
-        writeDebugLog("📨 Команд: " .. #data.commands)
-        
+
+        writeDebugLog("📨 Найдено команд: " .. #data.commands)
+
         for _, cmd in ipairs(data.commands) do
-            local d = cmd.data or {}
+            local d = cmd.data or cmd
             local requestId = cmd.requestId or os.time()
-            
-            writeDebugLog("📨 Команда: " .. (cmd.command or "unknown"))
-            
-            -- Функция отправки результата
+
             local function sendResult(success, msg)
-                writeDebugLog("📤 Результат: " .. (success and "✅" or "❌") .. " " .. (msg or ""))
+                writeDebugLog("📤 [" .. (cmd.command or "unknown") .. "] " .. (success and "✅" or "❌") .. " " .. (msg or ""))
                 sendToWeb("/api/command_result", toJson({
                     requestId = requestId,
                     success = success,
@@ -2075,49 +2065,28 @@ local function checkWebCommands()
                     command = cmd.command
                 }))
             end
-            
-            -- ============================================================
-            -- ОБРАБОТКА КОМАНД
-            -- ============================================================
-            
-            if cmd.command == "toggle_pause" then
-                shopPaused = not shopPaused
-                local msg = serialization.serialize({op="shop_paused", paused=shopPaused})
-                for addr in pairs(markets) do
-                    pcall(modem.send, addr, 0xffef, msg)
-                end
-                sendResult(true, shopPaused and "Пауза" or "Активен")
-            
-            elseif cmd.command == "update_market" then
-                broadcastUpdate()
-                sendResult(true, "Обновление разослано")
-            
-            elseif cmd.command == "kill_market" then
-                broadcastKill()
-                sendResult(true, "Терминалы завершены")
-            
-            -- ============================================================
-            -- ИГРОКИ
-            -- ============================================================
-            
-            elseif cmd.command == "update_player" or cmd.command == "set_balance" then
-                local playerName = d.name
+
+            writeDebugLog("🔧 Выполняем команду: " .. (cmd.command or "unknown"))
+
+            -- ==================== ОБНОВЛЕНИЕ ИГРОКА ====================
+            if cmd.command == "update_player" or cmd.command == "set_balance" then
+                local playerName = d.name or d.player
                 if not playerName then
                     sendResult(false, "Нет имени игрока")
-                    return
+                    goto continue
                 end
-                
+
                 writeDebugLog("📥 Обновление игрока: " .. playerName)
-                
-                -- Загружаем игроков
+
+                -- Загружаем данные игроков
                 local playersData = {}
                 if fs.exists(DB_PATH) then
-                    local ok2, data2 = pcall(dofile, DB_PATH)
-                    if ok2 and type(data2) == "table" then
-                        playersData = data2
+                    local ok, data = pcall(dofile, DB_PATH)
+                    if ok and type(data) == "table" then
+                        playersData = data
                     end
                 end
-                
+
                 if not playersData[playerName] then
                     playersData[playerName] = {
                         balance = 0,
@@ -2128,241 +2097,93 @@ local function checkWebCommands()
                         hasFeedback = false
                     }
                 end
-                
+
+                -- Поддержка разных имён полей
                 if d.balance ~= nil then
                     playersData[playerName].balance = tonumber(d.balance) or 0
+                elseif d.coin ~= nil then
+                    playersData[playerName].balance = tonumber(d.coin) or 0
                 end
+
                 if d.emaBalance ~= nil then
                     playersData[playerName].emaBalance = tonumber(d.emaBalance) or 0
+                elseif d.ema ~= nil then
+                    playersData[playerName].emaBalance = tonumber(d.ema) or 0
                 end
-                
+
+                -- Сохраняем в файл
                 local file = io.open(DB_PATH, "w")
                 if file then
                     file:write("return " .. serialization.serialize(playersData))
                     file:close()
-                    players = playersData
-                    
+
+                    players = playersData  -- обновляем глобальную таблицу
+
+                    -- Если это текущий игрок — обновляем UI
                     if currentPlayer == playerName then
                         coinBalance = playersData[playerName].balance or 0
                         emaBalance = playersData[playerName].emaBalance or 0
-                    end
-                    
-                    sendResult(true, "Игрок обновлён")
-                else
-                    sendResult(false, "Ошибка сохранения")
-                end
-            
-            elseif cmd.command == "toggle_ban" then
-                local playerName = d.name
-                if not playerName then
-                    sendResult(false, "Нет имени")
-                    return
-                end
-                
-                local playersData = {}
-                if fs.exists(DB_PATH) then
-                    local ok2, data2 = pcall(dofile, DB_PATH)
-                    if ok2 and type(data2) == "table" then
-                        playersData = data2
-                    end
-                end
-                
-                if playersData[playerName] then
-                    playersData[playerName].banned = not playersData[playerName].banned
-                    local status = playersData[playerName].banned and "забанен" or "разбанен"
-                    
-                    local file = io.open(DB_PATH, "w")
-                    if file then
-                        file:write("return " .. serialization.serialize(playersData))
-                        file:close()
-                        players = playersData
-                        sendResult(true, status)
-                    else
-                        sendResult(false, "Ошибка")
-                    end
-                else
-                    sendResult(false, "Игрок не найден")
-                end
-            
-            elseif cmd.command == "reset_player" then
-                local playerName = d.name
-                if not playerName then
-                    sendResult(false, "Нет имени")
-                    return
-                end
-                
-                local playersData = {}
-                if fs.exists(DB_PATH) then
-                    local ok2, data2 = pcall(dofile, DB_PATH)
-                    if ok2 and type(data2) == "table" then
-                        playersData = data2
-                    end
-                end
-                
-                if playersData[playerName] then
-                    playersData[playerName].balance = 0
-                    playersData[playerName].emaBalance = 0
-                    playersData[playerName].transactions = 0
-                    
-                    local file = io.open(DB_PATH, "w")
-                    if file then
-                        file:write("return " .. serialization.serialize(playersData))
-                        file:close()
-                        players = playersData
-                        sendResult(true, "Сброшен")
-                    else
-                        sendResult(false, "Ошибка")
-                    end
-                else
-                    sendResult(false, "Игрок не найден")
-                end
-            
-            elseif cmd.command == "add_admin" then
-                if addAdmin(d.name) then
-                    sendResult(true, "Админ добавлен")
-                else
-                    sendResult(false, "Ошибка")
-                end
-            
-            elseif cmd.command == "remove_admin" then
-                if removeAdmin(d.name) then
-                    sendResult(true, "Админ удалён")
-                else
-                    sendResult(false, "Ошибка")
-                end
-            
-            -- ============================================================
-            -- ТОВАРЫ
-            -- ============================================================
-            
-            elseif cmd.command == "save_buy_items" then
-                local items = d.items
-                if items and type(items) == "table" then
-                    local file = io.open("/home/buy_items.lua", "w")
-                    if file then
-                        file:write("return " .. serialization.serialize(items))
-                        file:close()
-                        buyItemsData = items
-                        buyItemMap = {}
-                        for _, item in ipairs(buyItemsData) do
-                            local dmg = item.damage or 0
-                            local key = item.internalName .. ":" .. dmg
-                            buyItemMap[key] = item
+
+                        writeDebugLog("✅ Баланс текущего игрока обновлён в памяти!", "SUCCESS")
+
+                        if currentScreen == "menu" then
+                            drawMainMenu()
+                        elseif currentScreen == "account" then
+                            drawAccount({balance = coinBalance, emaBalance = emaBalance})
                         end
-                        broadcastUpdate()
-                        sendResult(true, "Обновлено")
-                    else
-                        sendResult(false, "Ошибка")
                     end
+
+                    sendResult(true, "Игрок обновлён успешно")
                 else
-                    sendResult(false, "Нет данных")
+                    sendResult(false, "Ошибка записи в файл")
                 end
-            
-            elseif cmd.command == "save_shop_items" then
-                local items = d.items
-                if items and type(items) == "table" then
-                    local out = "local items = {}\nitems.sellItems = " .. serialization.serialize(items) .. "\nitems.vanillaItems = {}\nreturn items"
-                    local file = io.open("/home/shop_items.lua", "w")
-                    if file then
-                        file:write(out)
-                        file:close()
-                        sellItems = items
-                        shopData.sellItems = items
-                        broadcastUpdate()
-                        sendResult(true, "Обновлено")
-                    else
-                        sendResult(false, "Ошибка")
-                    end
-                else
-                    sendResult(false, "Нет данных")
-                end
-            
+
+            -- ==================== ИНКРЕМЕНТАЛЬНОЕ ОБНОВЛЕНИЕ ТОВАРОВ ====================
             elseif cmd.command == "save_buy_items_incremental" then
                 local changes = d.changes
-                if changes and type(changes) == "table" and #changes > 0 then
-                    local applied = applyIncrementalChanges("/home/buy_items.lua", changes, "buy_items")
-                    if applied then
-                        buyItemsData = {}
-                        if fs.exists("/home/buy_items.lua") then
-                            local ok2, data2 = pcall(dofile, "/home/buy_items.lua")
-                            if ok2 and type(data2) == "table" then
-                                buyItemsData = data2
-                            end
-                        end
-                        buyItemMap = {}
-                        for _, item in ipairs(buyItemsData) do
-                            local dmg = item.damage or 0
-                            local key = item.internalName .. ":" .. dmg
-                            buyItemMap[key] = item
-                        end
-                        broadcastUpdate()
-                        sendResult(true, "Изменения применены")
-                    else
-                        sendResult(false, "Ошибка")
-                    end
-                else
-                    sendResult(false, "Нет изменений")
-                end
-            
+                local ok = applyIncrementalChanges("/home/buy_items.lua", changes, "buy_items")
+                sendResult(ok, ok and "Товары покупки обновлены" or "Ошибка обновления buy_items")
+
             elseif cmd.command == "save_shop_items_incremental" then
                 local changes = d.changes
-                if changes and type(changes) == "table" and #changes > 0 then
-                    local applied = applyIncrementalChanges("/home/shop_items.lua", changes, "shop_items")
-                    if applied then
-                        if fs.exists("/home/shop_items.lua") then
-                            local ok2, data2 = pcall(dofile, "/home/shop_items.lua")
-                            if ok2 and type(data2) == "table" and data2.sellItems then
-                                sellItems = data2.sellItems
-                                shopData.sellItems = sellItems
-                            end
-                        end
-                        broadcastUpdate()
-                        sendResult(true, "Изменения применены")
-                    else
-                        sendResult(false, "Ошибка")
-                    end
-                else
-                    sendResult(false, "Нет изменений")
+                local ok = applyIncrementalChanges("/home/shop_items.lua", changes, "shop_items")
+                sendResult(ok, ok and "Магазин обновлён" or "Ошибка обновления shop_items")
+
+            -- ==================== ДРУГИЕ КОМАНДЫ ====================
+            elseif cmd.command == "toggle_pause" then
+                shopPaused = not shopPaused
+                local msg = serialization.serialize({op="shop_paused", paused=shopPaused})
+                for addr in pairs(markets or {}) do
+                    pcall(modem.send, addr, 0xffef, msg)
                 end
-            
-            elseif cmd.command == "get_buy_items" then
-                local items = {}
-                if fs.exists("/home/buy_items.lua") then
-                    local ok2, data2 = pcall(dofile, "/home/buy_items.lua")
-                    if ok2 and type(data2) == "table" then 
-                        items = data2 
-                    end
-                end
-                sendToWeb("/api/buy_items_data", toJson({ items = items }))
-                sendResult(true, "Данные отправлены")
-            
-            elseif cmd.command == "get_shop_items" then
-                local items = {}
-                if fs.exists("/home/shop_items.lua") then
-                    local ok2, data2 = pcall(dofile, "/home/shop_items.lua")
-                    if ok2 and type(data2) == "table" and data2.sellItems then
-                        items = data2.sellItems
-                    end
-                end
-                sendToWeb("/api/shop_items_data", toJson({ items = items }))
-                sendResult(true, "Данные отправлены")
-            
+                sendResult(true, shopPaused and "Магазин на паузе" or "Магазин активен")
+
+            elseif cmd.command == "update_market" then
+                broadcastUpdate()
+                sendResult(true, "Обновление разослано")
+
+            elseif cmd.command == "kill_market" then
+                broadcastKill()
+                sendResult(true, "Терминалы будут завершены")
+
             else
-                sendResult(false, "Неизвестная команда")
+                sendResult(false, "Неизвестная команда: " .. tostring(cmd.command))
             end
+
+            ::continue::
         end
     end)
-    
+
     if not success then
-        writeErrorLog("❌ Ошибка: " .. tostring(err))
+        writeErrorLog("❌ Критическая ошибка в checkWebCommands: " .. tostring(err))
     end
 end
 
--- Опрос команд каждые 3 секунды
-event.timer(3, checkWebCommands, math.huge)
+-- Запуск опроса команд каждые 2 секунды
+event.timer(2, checkWebCommands, math.huge)
 
 -- ============================================================
--- ОСТАЛЬНЫЕ UI ФУНКЦИИ (ПРОДОЛЖЕНИЕ)
+-- ОСТАЛЬНЫЕ UI ФУНКЦИИ (без изменений)
 -- ============================================================
 
 local function drawSellPopup()

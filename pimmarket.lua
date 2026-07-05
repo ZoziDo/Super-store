@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ123456
+-- ВРЕМЯ1
 -- ============================================================
 
 local tmpfs = component.proxy(computer.tmpAddress())
@@ -541,10 +541,10 @@ end
 -- ============================================================
 
 local function performReboot()
-    writeDebugLog("🔄 ===== НАЧАЛО REBOOT =====")
-    print("🔄 ===== НАЧАЛО REBOOT =====")
-    
-    -- Очищаем всё в памяти
+    writeDebugLog("🔄 ===== НАЧАЛО ПОЛНОГО REBOOT =====")
+    print("🔄 ===== НАЧАЛО ПОЛНОГО REBOOT =====")
+
+    -- Полная очистка памяти
     players = {}
     transactions = {}
     globalStats = { totalReports = 0, totalBuys = 0, totalSells = 0, totalRevenue = 0, totalBalance = 0 }
@@ -553,14 +553,24 @@ local function performReboot()
     buyItemsData = {}
     buyItemMap = {}
     shopItems = {}
+    filteredItems = {}
+    shopSearch = ""
+
+    -- Очистка всех файлов
+    local files = {
+        DB_PATH, STATS_PATH, FEEDBACKS_PATH, REPORTS_PATH,
+        "/home/buy_items.lua", "/home/shop_items.lua"
+    }
     
-    -- Очищаем файлы
-    local filesToClear = {DB_PATH, STATS_PATH, FEEDBACKS_PATH, REPORTS_PATH}
-    for _, path in ipairs(filesToClear) do
+    for _, path in ipairs(files) do
         if fs.exists(path) then
             local f = io.open(path, "w")
             if f then
-                if path == DB_PATH then
+                if path:find("buy_items") then
+                    f:write("return {}")
+                elseif path:find("shop_items") then
+                    f:write("return { sellItems = {}, vanillaItems = {} }")
+                elseif path == DB_PATH then
                     f:write("return {}")
                 elseif path == STATS_PATH then
                     f:write("return { totalReports = 0, totalBuys = 0, totalSells = 0, totalRevenue = 0, totalBalance = 0 }")
@@ -571,19 +581,9 @@ local function performReboot()
             end
         end
     end
-    
-    -- Очищаем файлы товаров
-    local f = io.open("/home/buy_items.lua", "w")
-    if f then f:write("return {}"); f:close() end
-    
-    f = io.open("/home/shop_items.lua", "w")
-    if f then f:write("return { sellItems = {}, vanillaItems = {} }"); f:close() end
-    
-    addLog("🔄 REBOOT: Все данные сброшены")
-    
-    -- **СРАЗУ** отправляем пустое состояние на сервер
-    print("📤 Отправляем ПУСТЫЕ данные после REBOOT...")
-    local payload = {
+
+    -- Принудительно отправляем полностью пустое состояние
+    local emptyPayload = {
         players = {},
         admins = admins or {"ZoziDo"},
         total = 0,
@@ -593,21 +593,26 @@ local function performReboot()
         total_feedbacks = 0,
         total_revenue = 0,
         online = 0,
-        paused = shopPaused,
+        paused = shopPaused or false,
         feedbacks = {},
         reports = {},
         transactions = {},
         buy_items = {},
         sell_items = {}
     }
+
+    print("📤 Отправляем ПОЛНОСТЬЮ ПУСТЫЕ данные...")
+    sendToWeb("/api/update", toJson(emptyPayload))
     
-    sendToWeb("/api/update", toJson(payload))
+    addLog("🔄 REBOOT выполнен — все данные сброшены")
     writeDebugLog("✅ Пустые данные отправлены на сервер")
-    
-    -- Перерисовываем интерфейс
+
+    -- Перезагрузка интерфейса
     currentScreen = "welcome"
+    currentPlayer = nil
+    pimOwner = nil
     drawWelcomeScreen()
-    
+
     writeDebugLog("✅ ===== REBOOT ЗАВЕРШЁН =====")
     print("✅ ===== REBOOT ЗАВЕРШЁН =====")
 end

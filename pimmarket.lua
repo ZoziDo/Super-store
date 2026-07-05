@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ1
+-- ВРЕМЯ12
 -- ============================================================
 
 local tmpfs = component.proxy(computer.tmpAddress())
@@ -543,12 +543,12 @@ end
 local function performReboot()
     writeDebugLog("🔄 Выполняется полный REBOOT")
     
-    -- Очищаем глобальные данные
+    -- ===== ОЧИЩАЕМ ГЛОБАЛЬНЫЕ ДАННЫЕ =====
     players = {}
     transactions = {}
     globalStats = { totalReports = 0, totalBuys = 0, totalSells = 0, totalRevenue = 0, totalBalance = 0 }
     
-    -- Очищаем все файлы
+    -- ===== ОЧИЩАЕМ ФАЙЛЫ =====
     local filesToClear = {
         DB_PATH,
         STATS_PATH,
@@ -575,7 +575,36 @@ local function performReboot()
         end
     end
     
-    -- Перезагружаем данные
+    -- ===== ОЧИЩАЕМ ФАЙЛЫ ТОВАРОВ =====
+    local buyItemsFile = "/home/buy_items.lua"
+    local shopItemsFile = "/home/shop_items.lua"
+    
+    if fs.exists(buyItemsFile) then
+        local file = io.open(buyItemsFile, "w")
+        if file then
+            file:write("return {}")
+            file:close()
+            writeDebugLog("🧹 Очищен файл: " .. buyItemsFile)
+        end
+    end
+    
+    if fs.exists(shopItemsFile) then
+        local file = io.open(shopItemsFile, "w")
+        if file then
+            file:write("return { sellItems = {}, vanillaItems = {} }")
+            file:close()
+            writeDebugLog("🧹 Очищен файл: " .. shopItemsFile)
+        end
+    end
+    
+    -- ===== ОЧИЩАЕМ ПЕРЕМЕННЫЕ ТОВАРОВ =====
+    sellItems = {}
+    buyItemsData = {}
+    buyItemMap = {}
+    shopItems = {}
+    
+    -- ===== ПЕРЕЗАГРУЖАЕМ ДАННЫЕ (ТЕПЕРЬ ОНИ ПУСТЫЕ) =====
+    -- Загружаем игроков (пусто)
     if fs.exists(DB_PATH) then
         local file = io.open(DB_PATH, "r")
         if file then
@@ -590,6 +619,7 @@ local function performReboot()
         end
     end
     
+    -- Загружаем статистику (пустая)
     if fs.exists(STATS_PATH) then
         local file = io.open(STATS_PATH, "r")
         if file then
@@ -608,9 +638,29 @@ local function performReboot()
         end
     end
     
+    -- Загружаем товары (пустые)
+    if fs.exists(buyItemsFile) then
+        local ok, data = pcall(dofile, buyItemsFile)
+        if ok and type(data) == "table" then 
+            buyItemsData = data 
+            for _, item in ipairs(buyItemsData) do
+                local dmg = item.damage or 0
+                local key = item.internalName .. ":" .. dmg
+                buyItemMap[key] = item
+            end
+        end
+    end
+    
+    if fs.exists(shopItemsFile) then
+        local ok, data = pcall(dofile, shopItemsFile)
+        if ok and type(data) == "table" and data.sellItems then
+            sellItems = data.sellItems or {}
+        end
+    end
+    
     addLog("🔄 REBOOT: Все данные сброшены")
     
-    -- Отправляем обновление на сервер
+    -- ===== ПРИНУДИТЕЛЬНО ОТПРАВЛЯЕМ ПУСТУЮ СТАТИСТИКУ =====
     sendStats()
     
     writeDebugLog("✅ REBOOT завершён")

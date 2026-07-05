@@ -4017,7 +4017,8 @@ local function main()
                         banned = false, 
                         agreed = false, 
                         hasFeedback = false,
-                        transactionsList = {}
+                        transactionsList = {},
+                        regDate = getRealTimeString()
                     }
                     players[currentPlayer] = player
                     saveDB()
@@ -4037,9 +4038,10 @@ local function main()
                     coinBalance = player.balance or 0
                     emaBalance = player.emaBalance or 0
                     playerTransactions = player.transactions or 0
-                    playerAgreed = player.agreed or false
+                    playerAgreed = player.agreed or false   -- <-- ЭТА СТРОКА ДОЛЖНА БЫТЬ!
+                    playerRegDate = player.regDate or getRealTimeString()
                     alreadyAuthorized = true
-                    writeDebugLog("Вход выполнен: " .. currentPlayer .. ", баланс: " .. coinBalance)
+                    writeDebugLog("Вход выполнен: " .. currentPlayer .. ", баланс: " .. coinBalance .. ", agreed: " .. tostring(playerAgreed))
                     
                     if selector then
                         addLog("🖥 Селектор доступен")

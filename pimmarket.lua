@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ11
+-- ВРЕМЯ111
 -- ============================================================
 
 local tmpfs = component.proxy(computer.tmpAddress())
@@ -880,28 +880,37 @@ local feedbackEditMode = false
 local playerHasFeedback = false
 
 -- ============================================================
--- НАДЁЖНЫЙ ПАРСЕР JSON
+-- НАДЁЖНЫЙ JSON ПАРСЕР (ФИНАЛЬНАЯ ВЕРСИЯ)
 -- ============================================================
 
 local function parseJSON(json_str)
-    if not json_str or json_str == "" then return nil end
+    if not json_str or json_str == "" then 
+        writeDebugLog("parseJSON: пустая строка")
+        return nil 
+    end
+
     local str = json_str
     local pos = 1
     local len = #str
 
+    -- Forward declaration для взаимных ссылок
+    local parseValue, parseArray, parseObject
+
     local function skipSpace()
-        while pos <= len and (str:sub(pos,pos) == ' ' or str:sub(pos,pos) == '\n' or str:sub(pos,pos) == '\r' or str:sub(pos,pos) == '\t') do
+        while pos <= len do
+            local c = str:sub(pos, pos)
+            if c ~= " " and c ~= "\n" and c ~= "\r" and c ~= "\t" then break end
             pos = pos + 1
         end
     end
 
     local function parseString()
-        if str:sub(pos,pos) ~= '"' then return nil end
+        if str:sub(pos, pos) ~= '"' then return nil end
         pos = pos + 1
         local start = pos
         local result = ""
         while pos <= len do
-            local ch = str:sub(pos,pos)
+            local ch = str:sub(pos, pos)
             if ch == '"' then
                 result = result .. str:sub(start, pos-1)
                 pos = pos + 1
@@ -910,17 +919,9 @@ local function parseJSON(json_str)
                 result = result .. str:sub(start, pos-1)
                 pos = pos + 1
                 if pos > len then return nil end
-                local esc = str:sub(pos,pos)
-                if esc == '"' then result = result .. '"'
-                elseif esc == '\\' then result = result .. '\\'
-                elseif esc == '/' then result = result .. '/'
-                elseif esc == 'b' then result = result .. '\b'
-                elseif esc == 'f' then result = result .. '\f'
-                elseif esc == 'n' then result = result .. '\n'
-                elseif esc == 'r' then result = result .. '\r'
-                elseif esc == 't' then result = result .. '\t'
-                else result = result .. '\\' .. esc
-                end
+                local esc = str:sub(pos, pos)
+                local map = {['"']='"', ['\\']='\\', ['/']='/', b='\b', f='\f', n='\n', r='\r', t='\t'}
+                result = result .. (map[esc] or '\\'..esc)
                 pos = pos + 1
                 start = pos
             else
@@ -933,54 +934,41 @@ local function parseJSON(json_str)
     local function parseNumber()
         local start = pos
         while pos <= len do
-            local ch = str:sub(pos,pos)
-            if not (ch >= '0' and ch <= '9') and ch ~= '.' and ch ~= '-' and ch ~= 'e' and ch ~= 'E' then
-                break
-            end
+            local ch = str:sub(pos, pos)
+            if not ch:match("[%d%.%-%+eE]") then break end
             pos = pos + 1
         end
-        if pos > start then
-            local num = str:sub(start, pos-1)
-            return tonumber(num)
-        end
-        return nil
+        return tonumber(str:sub(start, pos-1))
     end
 
-    -- СНАЧАЛА ОБЪЯВЛЯЕМ parseArray И parseObject
-    local function parseArray()
-        if str:sub(pos,pos) ~= '[' then return nil end
+    function parseArray()
+        if str:sub(pos, pos) ~= '[' then return nil end
         pos = pos + 1
         local arr = {}
         skipSpace()
-        if str:sub(pos,pos) == ']' then
+        if str:sub(pos, pos) == ']' then
             pos = pos + 1
             return arr
         end
         while true do
-            skipSpace()
             local val = parseValue()
             if val == nil then break end
             table.insert(arr, val)
             skipSpace()
-            local ch = str:sub(pos,pos)
-            if ch == ',' then
-                pos = pos + 1
-            elseif ch == ']' then
-                pos = pos + 1
-                break
-            else
-                break
-            end
+            local ch = str:sub(pos, pos)
+            if ch == ',' then pos = pos + 1
+            elseif ch == ']' then pos = pos + 1; break
+            else break end
         end
         return arr
     end
 
-    local function parseObject()
-        if str:sub(pos,pos) ~= '{' then return nil end
+    function parseObject()
+        if str:sub(pos, pos) ~= '{' then return nil end
         pos = pos + 1
         local obj = {}
         skipSpace()
-        if str:sub(pos,pos) == '}' then
+        if str:sub(pos, pos) == '}' then
             pos = pos + 1
             return obj
         end
@@ -989,65 +977,52 @@ local function parseJSON(json_str)
             local key = parseString()
             if not key then break end
             skipSpace()
-            if str:sub(pos,pos) ~= ':' then break end
+            if str:sub(pos, pos) ~= ':' then break end
             pos = pos + 1
             skipSpace()
             local val = parseValue()
             if val == nil then break end
             obj[key] = val
             skipSpace()
-            local ch = str:sub(pos,pos)
-            if ch == ',' then
-                pos = pos + 1
-            elseif ch == '}' then
-                pos = pos + 1
-                break
-            else
-                break
-            end
+            local ch = str:sub(pos, pos)
+            if ch == ',' then pos = pos + 1
+            elseif ch == '}' then pos = pos + 1; break
+            else break end
         end
         return obj
     end
 
-    -- А ПОТОМ parseValue (которая ИСПОЛЬЗУЕТ parseArray И parseObject)
-    local function parseValue()
+    function parseValue()
         skipSpace()
         if pos > len then return nil end
-        local ch = str:sub(pos,pos)
+        local ch = str:sub(pos, pos)
+
         if ch == '"' then
             return parseString()
         elseif ch == '{' then
             return parseObject()
         elseif ch == '[' then
             return parseArray()
-        elseif ch == 'n' then
-            if str:sub(pos,pos+3) == 'null' then
-                pos = pos + 4
-                return nil
-            end
-        elseif ch == 't' then
-            if str:sub(pos,pos+3) == 'true' then
-                pos = pos + 4
-                return true
-            end
-        elseif ch == 'f' then
-            if str:sub(pos,pos+4) == 'false' then
-                pos = pos + 5
-                return false
-            end
-        elseif (ch >= '0' and ch <= '9') or ch == '-' then
+        elseif ch == 't' and str:sub(pos, pos+3) == 'true' then
+            pos = pos + 4
+            return true
+        elseif ch == 'f' and str:sub(pos, pos+4) == 'false' then
+            pos = pos + 5
+            return false
+        elseif ch == 'n' and str:sub(pos, pos+3) == 'null' then
+            pos = pos + 4
+            return nil
+        elseif ch:match("[%d%-]") then
             return parseNumber()
         end
+        writeDebugLog("parseValue: неизвестный символ " .. ch)
         return nil
     end
 
     skipSpace()
     local result = parseValue()
-    if result ~= nil then
-        return result
-    else
-        return nil
-    end
+    writeDebugLog("parseJSON результат: " .. (result and "таблица" or "nil"))
+    return result
 end
 
 -- ============================================================

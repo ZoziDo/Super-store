@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ (ДОЛЖНО БЫТЬ ПЕРВЫМ, ПОТОМУ ЧТО addLogEntry ЕГО ИСПОЛЬЗУЕТ)
+-- ВРЕМЯ
 -- ============================================================
 
 local tmpfs = component.proxy(computer.tmpAddress())
@@ -31,97 +31,6 @@ end
 local function getRealTimeHM()
     return os.date("%H:%M:%S", getRealTimestamp())
 end
-
--- ============================================================
--- ОТПРАВКА ЛОГОВ НА ВЕБ (ТЕПЕРЬ getRealTimeHM УЖЕ ОБЪЯВЛЕНА)
--- ============================================================
-
-local logQueue = {}
-
-local function addLogEntry(text, level)
-    if not text then text = "?" end
-    level = level or "INFO"
-    local entry = {
-        text = text,
-        time = getRealTimeHM(),  -- теперь здесь всё работает
-        level = level
-    }
-    table.insert(logQueue, entry)
-
-    if #logQueue >= 50 then
-        local batch = {}
-        for _, e in ipairs(logQueue) do
-            table.insert(batch, {
-                time = e.time,
-                text = e.text,
-                level = e.level
-            })
-        end
-        sendToWeb("/api/logs_batch", toJson({logs = batch}))
-        logQueue = {}
-    end
-end
-
-local function addLog(text)
-    addLogEntry(text, "INFO")
-end
-
--- ============================================================
--- ДЕТАЛЬНОЕ ЛОГИРОВАНИЕ ОШИБОК
--- ============================================================
-
-local ERROR_LOG = "/home/errors.log"
-
-local function writeErrorLog(msg)
-    local file = io.open(ERROR_LOG, "a")
-    if file then
-        local time = os.date("%Y-%m-%d %H:%M:%S")
-        file:write("[" .. time .. "] " .. msg .. "\n")
-        file:close()
-    end
-    addLogEntry(msg, "ERROR")
-end
-
--- Перехват ошибок
-local function safeCall(func, ...)
-    local args = {...}
-    local ok, err = pcall(func, table.unpack(args))
-    if not ok then
-        local debugInfo = debug.getinfo(func, "l")
-        local line = debugInfo and debugInfo.currentline or "?"
-        local errorMsg = "ОШИБКА в строке " .. line .. ": " .. tostring(err)
-        print(errorMsg)
-        writeErrorLog(errorMsg)
-        if type(err) == "string" and err:find("nil") then
-            writeErrorLog("  → Возможно, переменная равна nil")
-        end
-        return false, err
-    end
-    return true, ok
-end
-
--- Записываем старт
-writeErrorLog("=" .. string.rep("=", 50))
-writeErrorLog("🚀 ЗАПУСК PIM MARKET")
-writeErrorLog("=" .. string.rep("=", 50))
-
--- ============================================================
--- ИГНОРИРОВАНИЕ СОБЫТИЙ
--- ============================================================
-
-event.ignore("interrupted", function() end)
-event.ignore("terminate", function() end)
-
-local originalExit = os.exit
-os.exit = function(code)
-    if code == 0 then return else originalExit(code) end
-end
-
--- ============================================================
--- ПЕРЕМЕННАЯ ДЛЯ ТЕРМИНАЛОВ
--- ============================================================
-
-local markets = {}
 
 -- ============================================================
 -- ВЕБ-ИНТЕГРАЦИЯ
@@ -170,6 +79,106 @@ local function sendToWeb(endpoint, jsonData)
         })
     end)
 end
+
+-- ============================================================
+-- ОТПРАВКА ЛОГОВ НА ВЕБ
+-- ============================================================
+
+local logQueue = {}
+
+local function addLogEntry(text, level)
+    if not text then text = "?" end
+    level = level or "INFO"
+    local entry = {
+        text = text,
+        time = getRealTimeHM(),
+        level = level
+    }
+    table.insert(logQueue, entry)
+
+    if #logQueue >= 50 then
+        local batch = {}
+        for _, e in ipairs(logQueue) do
+            table.insert(batch, {
+                time = e.time,
+                text = e.text,
+                level = e.level
+            })
+        end
+        sendToWeb("/api/logs_batch", toJson({logs = batch}))
+        logQueue = {}
+    end
+end
+
+local function addLog(text)
+    addLogEntry(text, "INFO")
+end
+
+-- ============================================================
+-- ДЕТАЛЬНОЕ ЛОГИРОВАНИЕ ОШИБОК
+-- ============================================================
+
+local ERROR_LOG = "/home/errors.log"
+
+local function writeErrorLog(msg)
+    local file = io.open(ERROR_LOG, "a")
+    if file then
+        local time = os.date("%Y-%m-%d %H:%M:%S")
+        file:write("[" .. time .. "] " .. msg .. "\n")
+        file:close()
+    end
+    addLogEntry(msg, "ERROR")
+end
+
+local function writeDebugLog(msg)
+    local file = io.open(ERROR_LOG, "a")
+    if file then
+        local time = os.date("%Y-%m-%d %H:%M:%S")
+        file:write("[" .. time .. "] 🔍 " .. msg .. "\n")
+        file:close()
+    end
+end
+
+-- Перехват ошибок
+local function safeCall(func, ...)
+    local args = {...}
+    local ok, err = pcall(func, table.unpack(args))
+    if not ok then
+        local debugInfo = debug.getinfo(func, "l")
+        local line = debugInfo and debugInfo.currentline or "?"
+        local errorMsg = "ОШИБКА в строке " .. line .. ": " .. tostring(err)
+        print(errorMsg)
+        writeErrorLog(errorMsg)
+        if type(err) == "string" and err:find("nil") then
+            writeErrorLog("  → Возможно, переменная равна nil")
+        end
+        return false, err
+    end
+    return true, ok
+end
+
+-- Записываем старт
+writeErrorLog("=" .. string.rep("=", 50))
+writeErrorLog("🚀 ЗАПУСК PIM MARKET")
+writeErrorLog("=" .. string.rep("=", 50))
+
+-- ============================================================
+-- ИГНОРИРОВАНИЕ СОБЫТИЙ
+-- ============================================================
+
+event.ignore("interrupted", function() end)
+event.ignore("terminate", function() end)
+
+local originalExit = os.exit
+os.exit = function(code)
+    if code == 0 then return else originalExit(code) end
+end
+
+-- ============================================================
+-- ПЕРЕМЕННАЯ ДЛЯ ТЕРМИНАЛОВ
+-- ============================================================
+
+local markets = {}
 
 -- ============================================================
 -- ЦВЕТА

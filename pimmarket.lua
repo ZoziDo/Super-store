@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ11125
+-- ВРЕМЯ111256
 -- ============================================================
 
 local tmpfs = component.proxy(computer.tmpAddress())
@@ -479,7 +479,12 @@ if fs.exists(STATS_PATH) then
 end
 
 local function saveDB()
-    writeDebugLog("saveDB()")
+    writeDebugLog("saveDB() – сохраняем " .. #players .. " игроков")
+    for name, data in pairs(players) do
+        if data.transactionsList then
+            writeDebugLog("   " .. name .. " имеет " .. #data.transactionsList .. " транзакций")
+        end
+    end
     local file = io.open(DB_PATH, "w")
     file:write(serialization.serialize(players))
     file:close()
@@ -541,30 +546,19 @@ local function addTransaction(type, playerName, item, qty, value_coin, value_ema
     end
     saveGlobalStats()
     
-    -- Обновляем счётчик транзакций игрока
-    if playerName and playerName ~= "?" and players[playerName] then
-        players[playerName].transactions = (players[playerName].transactions or 0) + 1
-        
-        -- Добавляем запись в список транзакций игрока
-        if not players[playerName].transactionsList then
-            players[playerName].transactionsList = {}
-        end
-        table.insert(players[playerName].transactionsList, {
-            time = getRealTimeHM(),
-            type = type,
-            item = item or "?",
-            qty = qty or 0,
-            coin = value_coin or 0,
-            ema = value_ema or 0
-        })
-        
-        saveDB()   -- сохраняем файл players.db
-        writeDebugLog("📊 Транзакции игрока " .. playerName .. ": " .. players[playerName].transactions)
-    end
-    
-    -- Глобальный список (для истории, не обязателен)
-    table.insert(transactions, {
+    -- Создаём запись транзакции
+    local transactionRecord = {
         time = getRealTimeHM(),
+        type = type,
+        item = item or "?",
+        qty = qty or 0,
+        coin = value_coin or 0,
+        ema = value_ema or 0
+    }
+    
+    -- Добавляем в глобальный список (для истории)
+    table.insert(transactions, {
+        time = transactionRecord.time,
         type = type,
         player = playerName or "?",
         item = item or "?",
@@ -573,6 +567,24 @@ local function addTransaction(type, playerName, item, qty, value_coin, value_ema
         ema = value_ema or 0
     })
     while #transactions > 100 do table.remove(transactions, 1) end
+    
+    -- Обработка для конкретного игрока
+    if playerName and playerName ~= "?" and players[playerName] then
+        -- Убедимся, что есть счётчик и список
+        players[playerName].transactions = (players[playerName].transactions or 0) + 1
+        if not players[playerName].transactionsList then
+            players[playerName].transactionsList = {}
+        end
+        -- Добавляем запись в список (НЕ перезаписываем!)
+        table.insert(players[playerName].transactionsList, transactionRecord)
+        
+        -- Сохраняем БД сразу, чтобы транзакция не потерялась
+        saveDB()
+        writeDebugLog("📊 Транзакции игрока " .. playerName .. ": " .. players[playerName].transactions)
+        writeDebugLog("📋 Список теперь содержит " .. #players[playerName].transactionsList .. " записей")
+    else
+        writeErrorLog("⚠️ Игрок " .. tostring(playerName) .. " не найден в таблице players при добавлении транзакции!")
+    end
 end
 
 -- ============================================================
@@ -607,19 +619,29 @@ local function sendStats()
     
     local playerList = {}
     local totalBalance = 0
+    local playerCount = 0
     
-    writeDebugLog("📊 Всего игроков в памяти: " .. #players)
+    -- Подсчёт игроков (players - таблица, а не массив)
+    for _ in pairs(players) do playerCount = playerCount + 1 end
+    writeDebugLog("📊 Всего игроков в памяти: " .. playerCount)
+    
     for name, data in pairs(players) do
         writeDebugLog("   👤 " .. name .. ": Coin=" .. tostring(data.balance or 0) .. ", EMA=" .. tostring(data.emaBalance or 0))
         local bal = (data.balance or 0) + (data.emaBalance or 0)
         totalBalance = totalBalance + bal
+        
+        -- Убедимся, что transactionsList всегда есть (для старых записей)
+        if not data.transactionsList then
+            data.transactionsList = {}
+        end
+        
         table.insert(playerList, {
             name = name,
             balance = data.balance or 0,
             emaBalance = data.emaBalance or 0,
             transactions = data.transactions or 0,
             banned = data.banned or false,
-            transactionsList = data.transactionsList or {}   -- <-- новое поле
+            transactionsList = data.transactionsList   -- <-- полный список транзакций игрока
         })
     end
     
@@ -627,6 +649,7 @@ local function sendStats()
     globalStats.totalBalance = totalBalance
     saveGlobalStats()
     
+    -- Загрузка отзывов
     local feedbacksList = {}
     if fs.exists(FEEDBACKS_PATH) then
         local file = io.open(FEEDBACKS_PATH, "r")
@@ -640,6 +663,7 @@ local function sendStats()
         end
     end
     
+    -- Загрузка репортов
     local reportsList = {}
     if fs.exists(REPORTS_PATH) then
         local file = io.open(REPORTS_PATH, "r")
@@ -656,6 +680,7 @@ local function sendStats()
         end
     end
     
+    -- Загрузка товаров для покупки
     local buyItems = {}
     if fs.exists("/home/buy_items.lua") then
         local ok, data = pcall(dofile, "/home/buy_items.lua")
@@ -669,6 +694,7 @@ local function sendStats()
         writeErrorLog("⚠️ Файл /home/buy_items.lua не найден")
     end
     
+    -- Загрузка товаров для продажи
     local sellItems = {}
     if fs.exists("/home/shop_items.lua") then
         local ok, data = pcall(dofile, "/home/shop_items.lua")
@@ -682,7 +708,8 @@ local function sendStats()
         writeErrorLog("⚠️ Файл /home/shop_items.lua не найден")
     end
     
-    sendToWeb("/api/update", toJson({
+    -- Отправка на сервер
+    local payload = {
         players = playerList,
         admins = admins,
         total = #playerList,
@@ -695,12 +722,17 @@ local function sendStats()
         paused = false,
         feedbacks = feedbacksList,
         reports = reportsList,
-        transactions = transactions,
+        transactions = transactions,      -- глобальный список (не обязателен)
         buy_items = buyItems,
         sell_items = sellItems
-    }))
+    }
     
-    writeDebugLog("📤 Отправлены данные: " .. #playerList .. " игроков, " .. #buyItems .. " товаров для покупки, " .. #sellItems .. " товаров для продажи")
+    -- Дополнительное логирование размера данных перед отправкой
+    local jsonData = toJson(payload)
+    writeDebugLog("📤 Размер JSON: " .. #jsonData .. " байт")
+    writeDebugLog("📤 Отправлены данные: " .. #playerList .. " игроков, " .. #buyItems .. " товаров покупки, " .. #sellItems .. " товаров продажи")
+    
+    sendToWeb("/api/update", jsonData)
 end
 
 event.timer(30, sendStats, math.huge)

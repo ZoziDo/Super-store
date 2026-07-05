@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ123456
+-- ВРЕМЯ1
 -- ============================================================
 
 local tmpfs = component.proxy(computer.tmpAddress())
@@ -3271,7 +3271,7 @@ local function performBuy()
     os.sleep(0.4)
 
     -- ============================================================
-    -- ⭐ ЭКСПОРТ ПРЕДМЕТА (СПЕЦИАЛЬНО ДЛЯ GraviSuite)
+    -- ⭐ ЭКСПОРТ ПРЕДМЕТА (FINAL FIX)
     -- ============================================================
     
     local itemName = item.internalName
@@ -3285,18 +3285,16 @@ local function performBuy()
 
     -- Находим предмет в сети
     local networkItems = me.getItemsInNetwork()
-    local foundItem = nil
+    local foundItems = {}
     local totalQty = 0
     for _, meItem in ipairs(networkItems) do
         if meItem.name == itemName and (meItem.damage or 0) == itemDamage then
             totalQty = totalQty + (meItem.size or 0)
-            if not foundItem then
-                foundItem = meItem
-            end
+            table.insert(foundItems, meItem)
         end
     end
 
-    if not foundItem then
+    if #foundItems == 0 then
         writeDebugLog("❌ Предмет не найден в сети!")
         drawCenteredText(20, "Предмет не найден в сети!", colors.error)
         os.sleep(0.8)
@@ -3308,11 +3306,11 @@ local function performBuy()
         return
     end
 
-    writeDebugLog("✅ Найдено в сети: " .. foundItem.name .. " x" .. totalQty)
+    writeDebugLog("✅ Найдено в сети: " .. itemName .. " x" .. totalQty)
 
     -- Получаем максимальный размер стака
     local maxStackSize = 64
-    local ok, detail = pcall(me.getItemDetail, me, foundItem.name, foundItem.damage or 0)
+    local ok, detail = pcall(me.getItemDetail, me, itemName, itemDamage)
     if ok and detail and detail.maxSize then
         maxStackSize = detail.maxSize
         writeDebugLog("📦 Максимальный стак: " .. maxStackSize)
@@ -3325,41 +3323,57 @@ local function performBuy()
     while remaining > 0 do
         local toTake = math.min(remaining, maxStackSize)
         
-        -- ⭐ ЭКСПОРТ БЕЗ DAMAGE (только по имени)
-        local fingerprint = {
-            id = foundItem.name
+        -- ⭐ ПРОБУЕМ РАЗНЫЕ ФОРМАТЫ FINGERPRINT
+        local fingerprints = {
+            -- Вариант 1: только id
+            { id = itemName },
+            -- Вариант 2: id + dmg
+            { id = itemName, dmg = itemDamage },
+            -- Вариант 3: id + dmg + label (если есть)
+            { id = itemName, dmg = itemDamage, label = item.displayName or itemName },
+            -- Вариант 4: для GraviSuite может работать с dmg = -1
+            { id = itemName, dmg = -1 },
+            -- Вариант 5: без dmg, с label
+            { id = itemName, label = item.displayName or itemName }
         }
         
-        writeDebugLog("🔍 Экспорт: " .. fingerprint.id .. " (без damage) x" .. toTake)
+        local exported = false
         
-        local success, result = pcall(function()
-            return me.exportItem(fingerprint, PULL_DIRECTION, toTake)
-        end)
+        for i, fingerprint in ipairs(fingerprints) do
+            writeDebugLog("🔍 Попытка " .. i .. ": " .. fingerprint.id .. " (dmg:" .. (fingerprint.dmg or "nil") .. ") x" .. toTake)
+            
+            local success, result = pcall(function()
+                return me.exportItem(fingerprint, PULL_DIRECTION, toTake)
+            end)
 
-        local got = 0
-        if success then
-            if type(result) == "number" then
-                got = result
-            elseif type(result) == "boolean" and result == true then
-                got = toTake
-            elseif type(result) == "table" then
-                got = result.count or result.amount or result.size or toTake
+            local got = 0
+            if success then
+                if type(result) == "number" then
+                    got = result
+                elseif type(result) == "boolean" and result == true then
+                    got = toTake
+                elseif type(result) == "table" then
+                    got = result.count or result.amount or result.size or toTake
+                else
+                    lastError = "неизвестный ответ: " .. tostring(result)
+                end
             else
-                lastError = "неизвестный ответ: " .. tostring(result)
+                lastError = tostring(result)
             end
-        else
-            lastError = tostring(result)
-        end
 
-        if got > 0 then
-            extracted = extracted + got
-            remaining = remaining - got
-            writeDebugLog("✅ Выдано " .. got .. ", осталось " .. remaining)
-        else
-            if lastError == nil then
-                lastError = "не удалось выдать (вернулось 0 или false)"
+            if got > 0 then
+                extracted = extracted + got
+                remaining = remaining - got
+                writeDebugLog("✅ ВЫДАНО! (способ " .. i .. ") " .. got .. ", осталось " .. remaining)
+                exported = true
+                break
+            else
+                writeDebugLog("❌ Способ " .. i .. " не сработал: " .. (lastError or "0"))
             end
-            writeDebugLog("⚠️ Ошибка выдачи: " .. lastError)
+        end
+        
+        if not exported then
+            writeDebugLog("⚠️ Все способы экспорта не сработали!")
             break
         end
     end

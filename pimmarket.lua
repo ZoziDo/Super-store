@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ1445
+-- ВРЕМЯ14456
 -- ============================================================
 
 local tmpfs = component.proxy(computer.tmpAddress())
@@ -1131,17 +1131,27 @@ local function syncCurrentPlayer()
     end
     
     if playersData[currentPlayer] then
+        -- ⭐ СОХРАНЯЕМ СТАРЫЙ ФЛАГ agreed (на случай если в файле его нет)
+        local oldAgreed = playerAgreed
+        
         -- Обновляем глобальные переменные из файла
         coinBalance = playersData[currentPlayer].balance or 0
         emaBalance = playersData[currentPlayer].emaBalance or 0
         playerTransactions = playersData[currentPlayer].transactions or 0
-        playerAgreed = playersData[currentPlayer].agreed or false
+        -- ⭐ ВАЖНО: если в файле нет agreed - используем старый
+        if playersData[currentPlayer].agreed ~= nil then
+            playerAgreed = playersData[currentPlayer].agreed
+        else
+            -- Если в файле нет поля agreed, сохраняем текущее значение
+            playersData[currentPlayer].agreed = oldAgreed
+            playerAgreed = oldAgreed
+        end
         playerRegDate = playersData[currentPlayer].regDate or ""
         
         -- Обновляем глобальную таблицу
         players = playersData
         
-        writeDebugLog("✅ Синхронизирован: Agreed=" .. tostring(playerAgreed))
+        writeDebugLog("✅ Синхронизирован: Agreed=" .. tostring(playerAgreed) .. " (из файла: " .. tostring(playersData[currentPlayer].agreed) .. ")")
         return true
     end
     
@@ -2293,6 +2303,7 @@ local function checkWebCommands()
                     }
                 end
                 
+                -- ⭐ СОХРАНЯЕМ ВАЖНЫЕ ФЛАГИ ДО ОБНОВЛЕНИЯ
                 local oldAgreed = playersData[playerName].agreed or false
                 local oldHasFeedback = playersData[playerName].hasFeedback or false
                 local oldBanned = playersData[playerName].banned or false
@@ -2302,6 +2313,7 @@ local function checkWebCommands()
                 
                 writeDebugLog("📌 Старые флаги: agreed=" .. tostring(oldAgreed) .. ", hasFeedback=" .. tostring(oldHasFeedback))
                 
+                -- Обновляем баланс
                 if d.balance ~= nil then
                     playersData[playerName].balance = tonumber(d.balance) or 0
                     writeDebugLog("💰 Coin обновлён: " .. tostring(playersData[playerName].balance))
@@ -2319,6 +2331,7 @@ local function checkWebCommands()
                     writeDebugLog("💰 EMA (из ema): " .. tostring(playersData[playerName].emaBalance))
                 end
                 
+                -- ⭐ ВОССТАНАВЛИВАЕМ ВСЕ ФЛАГИ (они НЕ должны меняться при обновлении баланса!)
                 playersData[playerName].agreed = oldAgreed
                 playersData[playerName].hasFeedback = oldHasFeedback
                 playersData[playerName].banned = oldBanned
@@ -2345,7 +2358,7 @@ local function checkWebCommands()
                     coinBalance = playersData[playerName].balance or 0
                     emaBalance = playersData[playerName].emaBalance or 0
                     playerTransactions = playersData[playerName].transactions or 0
-                    playerAgreed = playersData[playerName].agreed or false
+                    playerAgreed = playersData[playerName].agreed or false  -- ⭐ ЗАГРУЖАЕМ ИЗ ДАННЫХ
                     playerRegDate = playersData[playerName].regDate or ""
                     
                     writeDebugLog("✅ Текущий игрок обновлён: Coin=" .. coinBalance .. ", EMA=" .. emaBalance .. ", Agreed=" .. tostring(playerAgreed))
@@ -2361,10 +2374,12 @@ local function checkWebCommands()
                     end
                 end
                 
-                if currentPlayer then syncCurrentPlayer() end
+                -- ⭐ УБИРАЕМ syncCurrentPlayer() - он НЕ НУЖЕН здесь!
+                -- if currentPlayer then syncCurrentPlayer() end  -- <-- УБЕРИ ЭТУ СТРОКУ!
                 
                 sendResult(true, "Игрок обновлён успешно")
                 writeDebugLog("✅ Команда update_player выполнена")
+            end
                 
         
             -- ==================== ИНКРЕМЕНТАЛЬНОЕ ОБНОВЛЕНИЕ ТОВАРОВ ====================

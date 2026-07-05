@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ1
+-- ВРЕМЯ12
 -- ============================================================
 
 local tmpfs = component.proxy(computer.tmpAddress())
@@ -3271,9 +3271,21 @@ local function performBuy()
     os.sleep(0.4)
 
     -- ============================================================
-    -- ⭐ ЭКСПОРТ ПРЕДМЕТА (FINAL FIX)
+    -- ⭐ ЭКСПОРТ ПРЕДМЕТА (ЧЕРЕЗ PIM + pushItem)
     -- ============================================================
     
+    local pimAddr = getPimAddr()
+    if not pimAddr then
+        writeErrorLog("❌ PIM адрес не найден!")
+        drawCenteredText(20, "Ошибка: PIM не найден!", colors.error)
+        os.sleep(2)
+        currentScreen = "shop_buy"
+        drawBuyStatic()
+        drawBuyItemsList()
+        drawBuyButtons()
+        return
+    end
+
     local itemName = item.internalName
     local itemDamage = item.damage or 0
     
@@ -3283,18 +3295,21 @@ local function performBuy()
 
     writeDebugLog("🔍 Ищем в сети: " .. itemName .. " (damage: " .. itemDamage .. ")")
 
-    -- Находим предмет в сети
+    -- Находим слот с предметом в ME-сети через getItemsInNetwork
     local networkItems = me.getItemsInNetwork()
-    local foundItems = {}
+    local foundItem = nil
     local totalQty = 0
+    
     for _, meItem in ipairs(networkItems) do
         if meItem.name == itemName and (meItem.damage or 0) == itemDamage then
             totalQty = totalQty + (meItem.size or 0)
-            table.insert(foundItems, meItem)
+            if not foundItem then
+                foundItem = meItem
+            end
         end
     end
 
-    if #foundItems == 0 then
+    if not foundItem then
         writeDebugLog("❌ Предмет не найден в сети!")
         drawCenteredText(20, "Предмет не найден в сети!", colors.error)
         os.sleep(0.8)
@@ -3306,7 +3321,13 @@ local function performBuy()
         return
     end
 
-    writeDebugLog("✅ Найдено в сети: " .. itemName .. " x" .. totalQty)
+    writeDebugLog("✅ Найдено в сети: " .. foundItem.name .. " x" .. totalQty)
+
+    -- ⭐ ИСПОЛЬЗУЕМ me.extractItem ДЛЯ ИЗВЛЕЧЕНИЯ ИЗ ME В PIM
+    -- Сначала извлекаем из ME в инвентарь PIM
+    local remaining = qty
+    local extracted = 0
+    local lastError = nil
 
     -- Получаем максимальный размер стака
     local maxStackSize = 64
@@ -3316,64 +3337,50 @@ local function performBuy()
         writeDebugLog("📦 Максимальный стак: " .. maxStackSize)
     end
 
-    local remaining = qty
-    local extracted = 0
-    local lastError = nil
-
+    -- ⭐ ИСПОЛЬЗУЕМ me.extractItem (если доступен)
+    -- ИЛИ пытаемся через exportItem с другим подходом
     while remaining > 0 do
         local toTake = math.min(remaining, maxStackSize)
         
-        -- ⭐ ПРОБУЕМ РАЗНЫЕ ФОРМАТЫ FINGERPRINT
-        local fingerprints = {
-            -- Вариант 1: только id
-            { id = itemName },
-            -- Вариант 2: id + dmg
-            { id = itemName, dmg = itemDamage },
-            -- Вариант 3: id + dmg + label (если есть)
-            { id = itemName, dmg = itemDamage, label = item.displayName or itemName },
-            -- Вариант 4: для GraviSuite может работать с dmg = -1
-            { id = itemName, dmg = -1 },
-            -- Вариант 5: без dmg, с label
-            { id = itemName, label = item.displayName or itemName }
-        }
+        -- Пробуем exportItem с полным fingerprint, но через find
+        local exportSuccess = false
         
-        local exported = false
-        
-        for i, fingerprint in ipairs(fingerprints) do
-            writeDebugLog("🔍 Попытка " .. i .. ": " .. fingerprint.id .. " (dmg:" .. (fingerprint.dmg or "nil") .. ") x" .. toTake)
-            
-            local success, result = pcall(function()
-                return me.exportItem(fingerprint, PULL_DIRECTION, toTake)
-            end)
-
-            local got = 0
-            if success then
-                if type(result) == "number" then
-                    got = result
-                elseif type(result) == "boolean" and result == true then
-                    got = toTake
-                elseif type(result) == "table" then
-                    got = result.count or result.amount or result.size or toTake
-                else
-                    lastError = "неизвестный ответ: " .. tostring(result)
+        -- ⭐ ПОПЫТКА: экспорт через find + export
+        for _, netItem in ipairs(networkItems) do
+            if netItem.name == itemName and (netItem.damage or 0) == itemDamage and (netItem.size or 0) > 0 then
+                local takeAmount = math.min(toTake, netItem.size or 0)
+                
+                -- Пробуем export через строку (без fingerprint)
+                local success, result = pcall(function()
+                    return me.exportItem(itemName, PULL_DIRECTION, takeAmount, itemDamage)
+                end)
+                
+                if success and result and result > 0 then
+                    extracted = extracted + result
+                    remaining = remaining - result
+                    writeDebugLog("✅ Выдано через exportItem (string): " .. result)
+                    exportSuccess = true
+                    break
                 end
-            else
-                lastError = tostring(result)
-            end
-
-            if got > 0 then
-                extracted = extracted + got
-                remaining = remaining - got
-                writeDebugLog("✅ ВЫДАНО! (способ " .. i .. ") " .. got .. ", осталось " .. remaining)
-                exported = true
-                break
-            else
-                writeDebugLog("❌ Способ " .. i .. " не сработал: " .. (lastError or "0"))
+                
+                -- Пробуем через fingerprint
+                local fprint = { id = itemName, dmg = itemDamage }
+                success, result = pcall(function()
+                    return me.exportItem(fprint, PULL_DIRECTION, takeAmount)
+                end)
+                
+                if success and result and result > 0 then
+                    extracted = extracted + result
+                    remaining = remaining - result
+                    writeDebugLog("✅ Выдано через exportItem (fingerprint): " .. result)
+                    exportSuccess = true
+                    break
+                end
             end
         end
         
-        if not exported then
-            writeDebugLog("⚠️ Все способы экспорта не сработали!")
+        if not exportSuccess then
+            writeDebugLog("⚠️ Не удалось экспортировать предмет через ME!")
             break
         end
     end

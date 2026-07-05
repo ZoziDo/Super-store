@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ12
+-- ВРЕМЯ123
 -- ============================================================
 
 local tmpfs = component.proxy(computer.tmpAddress())
@@ -544,7 +544,7 @@ local function performReboot()
     writeDebugLog("🔄 ===== НАЧАЛО ПОЛНОГО REBOOT =====")
     print("🔄 ===== НАЧАЛО ПОЛНОГО REBOOT =====")
 
-    -- Полная очистка ВСЕГО
+    -- ===== 1. ОЧИЩАЕМ ВСЕ ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ =====
     players = {}
     transactions = {}
     globalStats = { totalReports = 0, totalBuys = 0, totalSells = 0, totalRevenue = 0, totalBalance = 0 }
@@ -554,30 +554,132 @@ local function performReboot()
     buyItemMap = {}
     shopItems = {}
     filteredItems = {}
+    
+    -- Очищаем переменные игрока
+    currentPlayer = nil
+    currentToken = nil
+    pimOwner = nil
+    coinBalance = 0.0
+    emaBalance = 0.0
+    playerTransactions = 0
+    playerRegDate = ""
+    playerAgreed = false
+    alreadyAuthorized = false
 
-    -- Очистка файлов
-    local files = {DB_PATH, STATS_PATH, FEEDBACKS_PATH, REPORTS_PATH, "/home/buy_items.lua", "/home/shop_items.lua"}
-    for _, path in ipairs(files) do
+    writeDebugLog("🧹 Глобальные переменные очищены")
+
+    -- ===== 2. ОЧИЩАЕМ ВСЕ ФАЙЛЫ =====
+    writeDebugLog("🧹 Очищаем файлы...")
+    
+    -- Список файлов для очистки
+    local filesToClear = {
+        {path = DB_PATH, content = "return {}"},
+        {path = STATS_PATH, content = "return { totalReports = 0, totalBuys = 0, totalSells = 0, totalRevenue = 0, totalBalance = 0 }"},
+        {path = FEEDBACKS_PATH, content = "return {}"},
+        {path = REPORTS_PATH, content = ""},
+        {path = "/home/buy_items.lua", content = "return {}"},
+        {path = "/home/shop_items.lua", content = "return { sellItems = {}, vanillaItems = {} }"}
+    }
+    
+    for _, fileInfo in ipairs(filesToClear) do
+        local path = fileInfo.path
         if fs.exists(path) then
-            local f = io.open(path, "w")
-            if f then
-                if path:find("buy_items") then
-                    f:write("return {}")
-                elseif path:find("shop_items") then
-                    f:write("return { sellItems = {}, vanillaItems = {} }")
-                elseif path == DB_PATH then
-                    f:write("return {}")
-                elseif path == STATS_PATH then
-                    f:write("return { totalReports = 0, totalBuys = 0, totalSells = 0, totalRevenue = 0, totalBalance = 0 }")
-                else
-                    f:write("{}")
-                end
-                f:close()
+            local file = io.open(path, "w")
+            if file then
+                file:write(fileInfo.content)
+                file:close()
+                writeDebugLog("✅ Очищен файл: " .. path)
+            else
+                writeErrorLog("❌ НЕ УДАЛОСЬ ОТКРЫТЬ: " .. path)
+            end
+        else
+            -- Если файла нет - создаём с правильным содержимым
+            local file = io.open(path, "w")
+            if file then
+                file:write(fileInfo.content)
+                file:close()
+                writeDebugLog("✅ Создан файл: " .. path)
             end
         end
     end
 
-    -- **СРАЗУ** отправляем полностью пустое состояние
+    -- ===== 3. ПРИНУДИТЕЛЬНО ПЕРЕЗАГРУЖАЕМ ДАННЫЕ ИЗ ПУСТЫХ ФАЙЛОВ =====
+    writeDebugLog("🔄 Перезагружаем пустые данные из файлов...")
+    
+    -- Перезагружаем админов (они должны остаться)
+    if fs.exists(ADMINS_PATH) then
+        local file = io.open(ADMINS_PATH, "r")
+        if file then
+            local raw = file:read("*a")
+            file:close()
+            if raw and #raw > 0 then
+                local ok, data = pcall(serialization.unserialize, raw)
+                if ok and type(data) == "table" then 
+                    admins = data 
+                end
+            end
+        end
+    end
+    
+    -- Перезагружаем игроков (пусто)
+    if fs.exists(DB_PATH) then
+        local file = io.open(DB_PATH, "r")
+        if file then
+            local raw = file:read("*a")
+            file:close()
+            if raw and #raw > 0 then
+                local ok, data = pcall(serialization.unserialize, raw)
+                if ok and type(data) == "table" then 
+                    players = data 
+                end
+            end
+        end
+    end
+    
+    -- Перезагружаем статистику (пустая)
+    if fs.exists(STATS_PATH) then
+        local file = io.open(STATS_PATH, "r")
+        if file then
+            local raw = file:read("*a")
+            file:close()
+            if raw and #raw > 0 then
+                local ok, data = pcall(serialization.unserialize, raw)
+                if ok and type(data) then
+                    globalStats.totalReports = data.totalReports or 0
+                    globalStats.totalBuys = data.totalBuys or 0
+                    globalStats.totalSells = data.totalSells or 0
+                    globalStats.totalRevenue = data.totalRevenue or 0
+                    globalStats.totalBalance = data.totalBalance or 0
+                end
+            end
+        end
+    end
+    
+    -- Перезагружаем товары (пустые)
+    if fs.exists("/home/buy_items.lua") then
+        local ok, data = pcall(dofile, "/home/buy_items.lua")
+        if ok and type(data) == "table" then 
+            buyItemsData = data 
+            buyItemMap = {}
+            for _, item in ipairs(buyItemsData) do
+                local dmg = item.damage or 0
+                local key = item.internalName .. ":" .. dmg
+                buyItemMap[key] = item
+            end
+        end
+    end
+    
+    if fs.exists("/home/shop_items.lua") then
+        local ok, data = pcall(dofile, "/home/shop_items.lua")
+        if ok and type(data) == "table" and data.sellItems then
+            sellItems = data.sellItems or {}
+        end
+    end
+
+    writeDebugLog("📊 После перезагрузки: игроков = " .. #players)
+    print("📊 После перезагрузки: игроков = " .. #players)
+
+    -- ===== 4. ОТПРАВЛЯЕМ ПУСТУЮ СТАТИСТИКУ =====
     local emptyPayload = {
         players = {},
         admins = admins or {"ZoziDo"},
@@ -602,10 +704,8 @@ local function performReboot()
     addLog("🔄 REBOOT: Все данные полностью сброшены")
     writeDebugLog("✅ Пустые данные отправлены")
 
-    -- Перезагрузка интерфейса
+    -- ===== 5. ОБНОВЛЯЕМ ЭКРАН =====
     currentScreen = "welcome"
-    currentPlayer = nil
-    pimOwner = nil
     drawWelcomeScreen()
 
     writeDebugLog("✅ ===== REBOOT ЗАВЕРШЁН =====")

@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ1
+-- ВРЕМЯ12
 -- ============================================================
 
 local tmpfs = component.proxy(computer.tmpAddress())
@@ -2337,8 +2337,10 @@ local function checkWebCommands()
                 -- Если в данных передано состояние - используем его, иначе переключаем
                 if d.paused ~= nil then
                     shopPaused = d.paused
+                    writeDebugLog("📥 Установлен режим обслуживания: " .. tostring(shopPaused) .. " (из данных)")
                 else
                     shopPaused = not shopPaused
+                    writeDebugLog("📥 Переключён режим обслуживания: " .. tostring(shopPaused))
                 end
                 
                 addLog(shopPaused and "⏸️ Магазин переведён в режим обслуживания" or "🟢 Магазин открыт")
@@ -2369,6 +2371,7 @@ local function checkWebCommands()
                 elseif currentScreen == "shop" then
                     drawShopMenu()
                 elseif currentScreen == "shop_buy" or currentScreen == "shop_sell" then
+                    -- Если игрок в магазине, возвращаем его в главное меню
                     currentScreen = "menu"
                     drawMainMenu()
                 end
@@ -4006,116 +4009,145 @@ local function main()
             end
 
         elseif e == "player_on" or e == "pim" or e == "pim_player_enter" then
-        local playerName = ev[2] or "Игрок"
-        writeDebugLog("player_on: " .. playerName)
-        
-        if not pimOwner then
-            pimOwner = playerName
-        end
-        currentPlayer = playerName:match("^%s*(.-)%s*$") or playerName
-        
-        if alreadyAuthorized then
-            if currentScreen == "auth" or currentScreen == "account_loading" then
-                currentScreen = "menu"
-                drawMainMenu()
-            end
-        elseif currentToken then
-            alreadyAuthorized = true
-            if currentScreen == "auth" or currentScreen == "account_loading" then
-                currentScreen = "menu"
-                drawMainMenu()
-            end
-        else
-            writeDebugLog("Новый вход: " .. playerName)
-            coinBalance = 0.0
-            emaBalance = 0.0
-            playerAgreed = false
-            currentScreen = "auth"
-            authStartTime = os.clock()
-            drawAuthScreen()
+            local playerName = ev[2] or "Игрок"
+            writeDebugLog("player_on: " .. playerName)
             
-            local player = players[currentPlayer]
-            if not player then
-                player = { 
-                    balance = 0, 
-                    emaBalance = 0, 
-                    transactions = 0, 
-                    banned = false, 
-                    agreed = false, 
-                    hasFeedback = false,
-                    transactionsList = {},
-                    regDate = getRealTimeString()
-                }
-                players[currentPlayer] = player
-                saveDB()
-                addLog("✅ Новый игрок: " .. currentPlayer)
-                writeDebugLog("Создан новый игрок: " .. currentPlayer)
-                -- НОВЫЙ ЛОГ: Регистрация
-                sendToWeb("/api/new_log", toJson({
-                    time = getRealTimeHM(),
-                    level = "SUCCESS",
-                    text = "Новый игрок: " .. currentPlayer
-                }))
-            end
-            
-            if player.banned then
-                drawCenteredText(20, "Вы забанены!", colors.error)
-                os.sleep(2)
-                currentPlayer = nil
-                currentScreen = "welcome"
-                drawWelcomeScreen()
-            else
-                currentToken = tostring(math.floor(math.random() * 900000000 + 100000000))
-                coinBalance = player.balance or 0
-                emaBalance = player.emaBalance or 0
-                playerTransactions = player.transactions or 0
-                playerAgreed = player.agreed or false
-                playerRegDate = player.regDate or getRealTimeString()
-                alreadyAuthorized = true
-                writeDebugLog("Вход выполнен: " .. currentPlayer .. ", баланс: " .. coinBalance .. ", agreed: " .. tostring(playerAgreed))
+            -- ===== ПРОВЕРКА РЕЖИМА ОБСЛУЖИВАНИЯ =====
+            if shopPaused then
+                writeDebugLog("⏸️ Режим обслуживания активен, вход запрещён для: " .. playerName)
                 
-                if selector then
-                    addLog("🖥 Селектор доступен")
+                -- Показываем сообщение о режиме обслуживания
+                gpu.setBackground(colors.bg_main)
+                gpu.fill(1, 1, 80, 25, " ")
+                drawBigTitle()
+                gpu.setForeground(colors.error)
+                drawCenteredText(17, "⏸️ РЕЖИМ ОБСЛУЖИВАНИЯ", colors.error)
+                drawCenteredText(18, "Магазин временно закрыт", colors.error)
+                drawCenteredText(19, "Пожалуйста, зайдите позже", colors.text_main)
+                gpu.setForeground(colors.text_main)
+                drawCenteredText(22, "--===============|VIP SHOP|===============--", colors.text_main)
+                drawTempMessage()
+                
+                -- Ждём пока игрок уйдёт с PIM или режим отключат
+                while shopPaused do
+                    local ev2 = {event.pull(1)}
+                    if ev2[1] == "player_off" or ev2[1] == "pim_player_leave" then
+                        writeDebugLog("👤 Игрок ушёл с PIM: " .. playerName)
+                        drawWelcomeScreen()
+                        break
+                    end
+                end
+                goto continue
+            end
+            -- ===== КОНЕЦ ПРОВЕРКИ =====
+            
+            if not pimOwner then
+                pimOwner = playerName
+            end
+            currentPlayer = playerName:match("^%s*(.-)%s*$") or playerName
+            
+            if alreadyAuthorized then
+                if currentScreen == "auth" or currentScreen == "account_loading" then
+                    currentScreen = "menu"
+                    drawMainMenu()
+                end
+            elseif currentToken then
+                alreadyAuthorized = true
+                if currentScreen == "auth" or currentScreen == "account_loading" then
+                    currentScreen = "menu"
+                    drawMainMenu()
+                end
+            else
+                writeDebugLog("Новый вход: " .. playerName)
+                coinBalance = 0.0
+                emaBalance = 0.0
+                playerAgreed = false
+                currentScreen = "auth"
+                authStartTime = os.clock()
+                drawAuthScreen()
+                
+                local player = players[currentPlayer]
+                if not player then
+                    player = { 
+                        balance = 0, 
+                        emaBalance = 0, 
+                        transactions = 0, 
+                        banned = false, 
+                        agreed = false, 
+                        hasFeedback = false,
+                        transactionsList = {},
+                        regDate = getRealTimeString()
+                    }
+                    players[currentPlayer] = player
+                    saveDB()
+                    addLog("✅ Новый игрок: " .. currentPlayer)
+                    writeDebugLog("Создан новый игрок: " .. currentPlayer)
+                    -- НОВЫЙ ЛОГ: Регистрация
+                    sendToWeb("/api/new_log", toJson({
+                        time = getRealTimeHM(),
+                        level = "SUCCESS",
+                        text = "Новый игрок: " .. currentPlayer
+                    }))
                 end
                 
-                currentScreen = "menu"
-                drawMainMenu()
-                addLog("👤 Вход: " .. currentPlayer)
-                -- НОВЫЙ ЛОГ: Вход
-                sendToWeb("/api/new_log", toJson({
-                    time = getRealTimeHM(),
-                    level = "INFO",
-                    text = "Вход: " .. currentPlayer
-                }))
+                if player.banned then
+                    drawCenteredText(20, "Вы забанены!", colors.error)
+                    os.sleep(2)
+                    currentPlayer = nil
+                    currentScreen = "welcome"
+                    drawWelcomeScreen()
+                else
+                    currentToken = tostring(math.floor(math.random() * 900000000 + 100000000))
+                    coinBalance = player.balance or 0
+                    emaBalance = player.emaBalance or 0
+                    playerTransactions = player.transactions or 0
+                    playerAgreed = player.agreed or false
+                    playerRegDate = player.regDate or getRealTimeString()
+                    alreadyAuthorized = true
+                    writeDebugLog("Вход выполнен: " .. currentPlayer .. ", баланс: " .. coinBalance .. ", agreed: " .. tostring(playerAgreed))
+                    
+                    if selector then
+                        addLog("🖥 Селектор доступен")
+                    end
+                    
+                    currentScreen = "menu"
+                    drawMainMenu()
+                    addLog("👤 Вход: " .. currentPlayer)
+                    -- НОВЫЙ ЛОГ: Вход
+                    sendToWeb("/api/new_log", toJson({
+                        time = getRealTimeHM(),
+                        level = "INFO",
+                        text = "Вход: " .. currentPlayer
+                    }))
+                end
             end
-        end
-
-        elseif e == "player_off" or e == "pim_player_leave" then
-        local playerName = ev[2] or "Игрок"
-        writeDebugLog("player_off: " .. playerName)
-        -- НОВЫЙ ЛОГ: Выход
-        addLog("👤 Выход: " .. playerName)
-        sendToWeb("/api/new_log", toJson({
-            time = getRealTimeHM(),
-            level = "INFO",
-            text = "Выход: " .. playerName
-        }))
         
-        if playerName == pimOwner then
-            pimOwner = nil
+        elseif e == "player_off" or e == "pim_player_leave" then
+            local playerName = ev[2] or "Игрок"
+            writeDebugLog("player_off: " .. playerName)
+            -- НОВЫЙ ЛОГ: Выход
+            addLog("👤 Выход: " .. playerName)
+            sendToWeb("/api/new_log", toJson({
+                time = getRealTimeHM(),
+                level = "INFO",
+                text = "Выход: " .. playerName
+            }))
+            
+            if playerName == pimOwner then
+                pimOwner = nil
+            end
+            currentPlayer = nil
+            currentToken = nil
+            alreadyAuthorized = false
+            currentScreen = "welcome"
+            selectedItem = nil
+            hoveredIndex = 0
+            selectedIndex = 0
+            pcall(updateSelectorDisplay, nil)
+            pcall(selector.setSlot, 0, nil)
+            pcall(selector.setSlot, 1, nil)
+            drawWelcomeScreen()
         end
-        currentPlayer = nil
-        currentToken = nil
-        alreadyAuthorized = false
-        currentScreen = "welcome"
-        selectedItem = nil
-        hoveredIndex = 0
-        selectedIndex = 0
-        pcall(updateSelectorDisplay, nil)
-        pcall(selector.setSlot, 0, nil)
-        pcall(selector.setSlot, 1, nil)
-        drawWelcomeScreen()
-    end
 
         ::continue::
     end

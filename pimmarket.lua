@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ1235
+-- ВРЕМЯ12356
 -- ============================================================
 
 local tmpfs = component.proxy(computer.tmpAddress())
@@ -1731,9 +1731,19 @@ local function drawWelcomeScreen()
     gpu.setBackground(colors.bg_main)
     gpu.fill(1, 1, 80, 25, " ")
     drawBigTitle()
-    gpu.setForeground(colors.success)
-    drawCenteredText(18, "↓   Встаньте на PIM   ↓", colors.accent_main)
-    drawCenteredText(19, "━━━━━━━━━━━━━━━━━━━", colors.accent_main)
+    
+    -- Проверяем режим обслуживания
+    if shopPaused then
+        gpu.setForeground(colors.error)
+        drawCenteredText(18, "⏸️ РЕЖИМ ОБСЛУЖИВАНИЯ", colors.error)
+        drawCenteredText(19, "Магазин временно закрыт", colors.error)
+        drawCenteredText(20, "Пожалуйста, зайдите позже", colors.text_main)
+    else
+        gpu.setForeground(colors.success)
+        drawCenteredText(18, "↓   Встаньте на PIM   ↓", colors.accent_main)
+        drawCenteredText(19, "━━━━━━━━━━━━━━━━━━━", colors.accent_main)
+    end
+    
     gpu.setForeground(colors.text_main)
     drawCenteredText(22, "--===============|VIP SHOP|===============--", colors.text_main)
     gpu.setBackground(colors.bg_main)
@@ -1745,10 +1755,22 @@ local function drawAuthScreen()
     gpu.setBackground(colors.bg_main)
     gpu.fill(1, 1, 80, 25, " ")
     drawBigTitle()
-    gpu.setForeground(colors.text_bright)
-    drawCenteredText(18, "Авторизация....", colors.text_bright)
-    gpu.setForeground(colors.text_main)
-    drawCenteredText(22, "--===============|VIP SHOP|===============--", colors.accent_secondary)
+    
+    -- Проверяем режим обслуживания
+    if shopPaused then
+        gpu.setForeground(colors.error)
+        drawCenteredText(17, "⏸️ РЕЖИМ ОБСЛУЖИВАНИЯ", colors.error)
+        drawCenteredText(18, "Магазин временно закрыт", colors.error)
+        drawCenteredText(19, "Пожалуйста, зайдите позже", colors.text_main)
+        gpu.setForeground(colors.text_main)
+        drawCenteredText(22, "--===============|VIP SHOP|===============--", colors.accent_secondary)
+    else
+        gpu.setForeground(colors.text_bright)
+        drawCenteredText(18, "Авторизация....", colors.text_bright)
+        gpu.setForeground(colors.text_main)
+        drawCenteredText(22, "--===============|VIP SHOP|===============--", colors.accent_secondary)
+    end
+    
     gpu.setBackground(colors.bg_main)
     drawTempMessage()
 end
@@ -2310,13 +2332,39 @@ local function checkWebCommands()
                 local ok = applyIncrementalChanges("/home/shop_items.lua", changes, "shop_items")
                 sendResult(ok, ok and "Магазин обновлён" or "Ошибка обновления shop_items")
 
-            -- ==================== ДРУГИЕ КОМАНДЫ ====================
+            -- ==================== РЕЖИМ ОБСЛУЖИВАНИЯ ====================
             elseif cmd.command == "toggle_pause" then
                 shopPaused = not shopPaused
-                local msg = serialization.serialize({op="shop_paused", paused=shopPaused})
+                addLog(shopPaused and "⏸️ Магазин переведён в режим обслуживания" or "🟢 Магазин открыт")
+                
+                -- Отправляем уведомление на веб-сервер
+                sendToWeb("/api/new_log", toJson({
+                    time = getRealTimeHM(),
+                    level = "INFO",
+                    text = shopPaused and "⏸️ Магазин переведён в режим обслуживания" or "🟢 Магазин открыт"
+                }))
+                
+                -- Рассылаем уведомление терминалам
+                local msg = serialization.serialize({op = "shop_paused", paused = shopPaused})
                 for addr in pairs(markets or {}) do
                     pcall(modem.send, addr, 0xffef, msg)
                 end
+                
+                -- Обновляем экран в зависимости от текущего состояния
+                if currentScreen == "welcome" then
+                    drawWelcomeScreen()
+                elseif currentScreen == "auth" then
+                    drawAuthScreen()
+                elseif currentScreen == "menu" then
+                    drawMainMenu()
+                elseif currentScreen == "shop" then
+                    drawShopMenu()
+                elseif currentScreen == "shop_buy" or currentScreen == "shop_sell" then
+                    -- Если игрок в магазине, возвращаем его в главное меню
+                    currentScreen = "menu"
+                    drawMainMenu()
+                end
+                
                 sendResult(true, shopPaused and "Магазин на паузе" or "Магазин активен")
 
             elseif cmd.command == "update_market" then

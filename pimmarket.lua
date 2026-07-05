@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ1235655
+-- ВРЕМЯ1
 -- ============================================================
 
 local tmpfs = component.proxy(computer.tmpAddress())
@@ -743,10 +743,10 @@ local function sendStats()
         total_feedbacks = #feedbacksList,
         total_revenue = globalStats.totalRevenue or 0,
         online = 0,
-        paused = false,
+        paused = shopPaused,  -- <-- ДОЛЖНО БЫТЬ shopPaused, НЕ false!
         feedbacks = feedbacksList,
         reports = reportsList,
-        transactions = allPlayerTransactions,   -- <-- ИСПРАВЛЕНО: все транзакции из БД
+        transactions = allPlayerTransactions,
         buy_items = buyItems,
         sell_items = sellItems
     }
@@ -2334,7 +2334,13 @@ local function checkWebCommands()
 
             -- ==================== РЕЖИМ ОБСЛУЖИВАНИЯ ====================
             elseif cmd.command == "toggle_pause" then
-                shopPaused = not shopPaused
+                -- Если в данных передано состояние - используем его, иначе переключаем
+                if d.paused ~= nil then
+                    shopPaused = d.paused
+                else
+                    shopPaused = not shopPaused
+                end
+                
                 addLog(shopPaused and "⏸️ Магазин переведён в режим обслуживания" or "🟢 Магазин открыт")
                 
                 -- Отправляем уведомление на веб-сервер
@@ -2350,6 +2356,9 @@ local function checkWebCommands()
                     pcall(modem.send, addr, 0xffef, msg)
                 end
                 
+                -- Принудительно отправляем статистику для синхронизации с сайтом
+                sendStats()
+                
                 -- Обновляем экран в зависимости от текущего состояния
                 if currentScreen == "welcome" then
                     drawWelcomeScreen()
@@ -2360,7 +2369,6 @@ local function checkWebCommands()
                 elseif currentScreen == "shop" then
                     drawShopMenu()
                 elseif currentScreen == "shop_buy" or currentScreen == "shop_sell" then
-                    -- Если игрок в магазине, возвращаем его в главное меню
                     currentScreen = "menu"
                     drawMainMenu()
                 end

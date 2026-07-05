@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ144567
+-- ВРЕМЯ1
 -- ============================================================
 
 local tmpfs = component.proxy(computer.tmpAddress())
@@ -2290,27 +2290,31 @@ local function checkWebCommands()
                     end
                 end
                 
+                -- Проверяем, есть ли игрок уже в глобальной таблице players (в памяти)
+                local existingPlayer = players[playerName]
+                
                 if not playersData[playerName] then
-                    writeDebugLog("➕ Создаём нового игрока: " .. playerName)
+                    writeDebugLog("➕ Создаём нового игрока в playersData: " .. playerName)
+                    -- Используем данные из существующего игрока в памяти, если есть
                     playersData[playerName] = {
-                        balance = 0,
-                        emaBalance = 0,
-                        transactions = 0,
-                        banned = false,
-                        agreed = false,
-                        hasFeedback = false,
-                        regDate = os.date("%d.%m.%Y %H:%M:%S", getRealTimestamp()),
-                        transactionsList = {}
+                        balance = existingPlayer and existingPlayer.balance or 0,
+                        emaBalance = existingPlayer and existingPlayer.emaBalance or 0,
+                        transactions = existingPlayer and existingPlayer.transactions or 0,
+                        banned = existingPlayer and existingPlayer.banned or false,
+                        agreed = existingPlayer and existingPlayer.agreed or false,
+                        hasFeedback = existingPlayer and existingPlayer.hasFeedback or false,
+                        regDate = existingPlayer and existingPlayer.regDate or os.date("%d.%m.%Y %H:%M:%S", getRealTimestamp()),
+                        transactionsList = existingPlayer and existingPlayer.transactionsList or {}
                     }
                 end
                 
-                -- Сохраняем старые флаги
-                local oldAgreed = playersData[playerName].agreed or false
-                local oldHasFeedback = playersData[playerName].hasFeedback or false
-                local oldBanned = playersData[playerName].banned or false
-                local oldTransactions = playersData[playerName].transactions or 0
-                local oldTransactionsList = playersData[playerName].transactionsList or {}
-                local oldRegDate = playersData[playerName].regDate or os.date("%d.%m.%Y %H:%M:%S", getRealTimestamp())
+                -- Сохраняем старые флаги (из playersData, но если их нет - используем из существующего)
+                local oldAgreed = playersData[playerName].agreed or (existingPlayer and existingPlayer.agreed) or false
+                local oldHasFeedback = playersData[playerName].hasFeedback or (existingPlayer and existingPlayer.hasFeedback) or false
+                local oldBanned = playersData[playerName].banned or (existingPlayer and existingPlayer.banned) or false
+                local oldTransactions = playersData[playerName].transactions or (existingPlayer and existingPlayer.transactions) or 0
+                local oldTransactionsList = playersData[playerName].transactionsList or (existingPlayer and existingPlayer.transactionsList) or {}
+                local oldRegDate = playersData[playerName].regDate or (existingPlayer and existingPlayer.regDate) or os.date("%d.%m.%Y %H:%M:%S", getRealTimestamp())
                 
                 writeDebugLog("📌 Старые флаги: agreed=" .. tostring(oldAgreed) .. ", hasFeedback=" .. tostring(oldHasFeedback))
                 
@@ -2332,7 +2336,7 @@ local function checkWebCommands()
                     writeDebugLog("💰 EMA (из ema): " .. tostring(playersData[playerName].emaBalance))
                 end
                 
-                -- Восстанавливаем флаги
+                -- Восстанавливаем флаги (они не должны меняться)
                 playersData[playerName].agreed = oldAgreed
                 playersData[playerName].hasFeedback = oldHasFeedback
                 playersData[playerName].banned = oldBanned
@@ -2376,11 +2380,9 @@ local function checkWebCommands()
                     end
                 end
                 
-                -- ⭐ НЕ ВЫЗЫВАЙ syncCurrentPlayer() здесь! Он уже вызывается в начале checkWebCommands.
-                
                 sendResult(true, "Игрок обновлён успешно")
                 writeDebugLog("✅ Команда update_player выполнена")
-    
+            
                 
             -- ==================== ИНКРЕМЕНТАЛЬНОЕ ОБНОВЛЕНИЕ ТОВАРОВ ====================
             elseif cmd.command == "save_buy_items_incremental" then

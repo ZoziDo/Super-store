@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ1
+-- ВРЕМЯ12
 -- ============================================================
 
 local tmpfs = component.proxy(computer.tmpAddress())
@@ -2263,67 +2263,70 @@ local function applyIncrementalChanges(itemsFile, changes, itemType)
 end
 
 local function checkWebCommands()
+    print("")
+    print("🔍 checkWebCommands() ЗАПУЩЕНА В " .. getRealTimeHM())
+    print("")
+
     local success, err = pcall(function()
         local url = WEB_URL .. "/api/commands"
+        print("📡 URL: " .. url)
 
-        -- Пробуем сделать запрос с обработкой ошибок
-        local response, errMsg = pcall(function()
-            return internet.request(url, nil, {
-                ["Content-Type"] = "application/json",
-                ["Connection"] = "close"
-            })
-        end)
+        -- ПРОСТОЙ ЗАПРОС БЕЗ ЛИШНИХ ОБЁРТОК
+        local response = internet.request(url, nil, {
+            ["Content-Type"] = "application/json",
+            ["Connection"] = "close"
+        })
 
         if not response then
-            writeDebugLog("⚠️ Нет ответа от сервера (pcall failed): " .. tostring(errMsg))
+            print("❌ НЕТ ОТВЕТА ОТ СЕРВЕРА")
+            writeDebugLog("⚠️ internet.request вернул nil/false")
             return
         end
 
-        if not response or type(response) ~= "table" then
-            writeDebugLog("⚠️ Неверный тип ответа от сервера: " .. type(response))
-            return
-        end
-
-        -- Пытаемся прочитать тело ответа
+        -- ЧИТАЕМ ТЕЛО
         local body = ""
-        local readSuccess, readErr = pcall(function()
-            for chunk in response do
-                if chunk then
-                    body = body .. chunk
+        local isFirst = true
+        for chunk in response do
+            if chunk then
+                body = body .. chunk
+                if isFirst then
+                    print("📥 Первый чанк: " .. chunk:sub(1, 100))
+                    isFirst = false
                 end
             end
-        end)
-
-        if not readSuccess then
-            writeErrorLog("⚠️ Ошибка чтения ответа: " .. tostring(readErr))
-            return
         end
+
+        print("📥 Длина тела: " .. #body .. " байт")
 
         if #body < 5 then
-            writeDebugLog("⚠️ Пустой или слишком короткий ответ, длина: " .. #body)
+            print("⚠️ ПУСТОЙ ОТВЕТ")
+            writeDebugLog("⚠️ Пустой ответ от /api/commands")
             return
         end
 
-        if body:match("^%s*<") or body:match("^%s*<!DOCTYPE") then
-            writeErrorLog("⚠️ Получен HTML вместо JSON: " .. body:sub(1, 200))
-            return
-        end
-
+        -- ПАРСИМ JSON
         local data = parseJSON(body)
         if not data then
-            writeErrorLog("❌ Ошибка парсинга JSON от /api/commands")
+            print("❌ ОШИБКА ПАРСИНГА JSON")
+            writeErrorLog("❌ Ошибка парсинга JSON: " .. body:sub(1, 300))
             return
         end
 
+        print("✅ JSON РАСПАРСЕН")
+
         if not data.commands or #data.commands == 0 then
+            print("⚠️ НЕТ КОМАНД")
             return
         end
+
+        print("📨 НАЙДЕНО КОМАНД: " .. #data.commands)
 
         for _, cmd in ipairs(data.commands) do
             local d = cmd.data or cmd
             local requestId = cmd.requestId or os.time()
 
             local function sendResult(success, msg)
+                print("📤 [" .. (cmd.command or "unknown") .. "] " .. (success and "✅" or "❌") .. " " .. (msg or ""))
                 sendToWeb("/api/command_result", toJson({
                     requestId = requestId,
                     success = success,
@@ -2332,13 +2335,22 @@ local function checkWebCommands()
                 }))
             end
 
+            print("🔧 ВЫПОЛНЯЮ: " .. (cmd.command or "unknown"))
+
             -- ==================== ОБНОВЛЕНИЕ ИГРОКА ====================
             if cmd.command == "update_player" or cmd.command == "set_balance" then
                 local playerName = d.name or d.player
                 if not playerName then
+                    print("❌ Нет имени игрока")
                     sendResult(false, "Нет имени игрока")
                     goto continue
                 end
+
+                print("📥 ОБНОВЛЕНИЕ ИГРОКА: " .. playerName)
+                print("   balance: " .. tostring(d.balance))
+                print("   coin: " .. tostring(d.coin))
+                print("   emaBalance: " .. tostring(d.emaBalance))
+                print("   ema: " .. tostring(d.ema))
 
                 local playersData = {}
                 if fs.exists(DB_PATH) then
@@ -2376,7 +2388,7 @@ local function checkWebCommands()
                     file:write("return " .. serialization.serialize(playersData))
                     file:close()
                     players = playersData
-
+                    print("✅ Игрок обновлён")
                     if currentPlayer == playerName then
                         coinBalance = playersData[playerName].balance or 0
                         emaBalance = playersData[playerName].emaBalance or 0
@@ -2391,11 +2403,23 @@ local function checkWebCommands()
 
             -- ==================== ИНКРЕМЕНТАЛЬНОЕ ОБНОВЛЕНИЕ ТОВАРОВ ====================
             elseif cmd.command == "save_buy_items_incremental" then
+                print("")
+                print("📥📥📥 ПОЛУЧЕНА КОМАНДА save_buy_items_incremental")
+                print("📦 Изменений: " .. (#d.changes or 0))
+                print("")
+
                 local ok = applyIncrementalChanges("/home/buy_items.lua", d.changes, "buy_items")
+                print("📤 Результат: " .. tostring(ok))
                 sendResult(ok, ok and "Товары покупки обновлены" or "Ошибка")
 
             elseif cmd.command == "save_shop_items_incremental" then
+                print("")
+                print("📥📥📥 ПОЛУЧЕНА КОМАНДА save_shop_items_incremental")
+                print("📦 Изменений: " .. (#d.changes or 0))
+                print("")
+
                 local ok = applyIncrementalChanges("/home/shop_items.lua", d.changes, "shop_items")
+                print("📤 Результат: " .. tostring(ok))
                 sendResult(ok, ok and "Магазин обновлён" or "Ошибка")
 
             -- ==================== РЕЖИМ ОБСЛУЖИВАНИЯ ====================
@@ -2405,6 +2429,7 @@ local function checkWebCommands()
                 else
                     shopPaused = not shopPaused
                 end
+                print("⏸️ Режим обслуживания: " .. tostring(shopPaused))
                 
                 addLog(shopPaused and "⏸️ Магазин переведён в режим обслуживания" or "🟢 Магазин открыт")
                 sendToWeb("/api/new_log", toJson({
@@ -2550,7 +2575,10 @@ local function checkWebCommands()
 
             -- ==================== REBOOT ====================
             elseif cmd.command == "reboot" then
-                -- Полная очистка всех данных
+                print("")
+                print("🔥🔥🔥 ПОЛУЧЕНА КОМАНДА REBOOT 🔥🔥🔥")
+                print("")
+                
                 players = {}
                 transactions = {}
                 globalStats = { totalReports = 0, totalBuys = 0, totalSells = 0, totalRevenue = 0, totalBalance = 0 }
@@ -2570,7 +2598,6 @@ local function checkWebCommands()
                 playerAgreed = false
                 alreadyAuthorized = false
                 
-                -- Очищаем файлы
                 local filesToClear = {
                     DB_PATH,
                     STATS_PATH,
@@ -2598,11 +2625,11 @@ local function checkWebCommands()
                                 file:write("return { sellItems = {}, vanillaItems = {} }")
                             end
                             file:close()
+                            print("🧹 Очищен: " .. path)
                         end
                     end
                 end
                 
-                -- Перезагружаем админов
                 if fs.exists(ADMINS_PATH) then
                     local file = io.open(ADMINS_PATH, "r")
                     if file then
@@ -2615,7 +2642,6 @@ local function checkWebCommands()
                     end
                 end
                 
-                -- Отправляем пустую статистику
                 local emptyPayload = {
                     players = {},
                     admins = admins or {"ZoziDo"},
@@ -2643,7 +2669,10 @@ local function checkWebCommands()
 
             -- ==================== UPDATE ====================
             elseif cmd.command == "update" then
-                -- Полная очистка всех данных
+                print("")
+                print("📥 ПОЛУЧЕНА КОМАНДА UPDATE")
+                print("")
+                
                 players = {}
                 transactions = {}
                 globalStats = { totalReports = 0, totalBuys = 0, totalSells = 0, totalRevenue = 0, totalBalance = 0 }
@@ -2696,8 +2725,12 @@ local function checkWebCommands()
     end)
 
     if not success then
+        print("❌❌❌ КРИТИЧЕСКАЯ ОШИБКА: " .. tostring(err))
         writeErrorLog("❌ Критическая ошибка в checkWebCommands: " .. tostring(err))
     end
+    print("")
+    print("🔍 checkWebCommands() ЗАВЕРШЕНА")
+    print("")
 end
 
 local function safeCheckWebCommands()

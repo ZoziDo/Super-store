@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ123
+-- ВРЕМЯ1235
 -- ============================================================
 
 local tmpfs = component.proxy(computer.tmpAddress())
@@ -3053,14 +3053,12 @@ local function performSell()
         coinBalance = coinBalance + value
     end
     
-    -- Сохраняем баланс игрока в БД
     if currentPlayer and players[currentPlayer] then
         players[currentPlayer].balance = coinBalance
         players[currentPlayer].emaBalance = emaBalance
         saveDB()
     end
     
-    -- Обновляем транзакции игрока
     playerTransactions = playerTransactions + 1
     if currentPlayer and players[currentPlayer] then
         players[currentPlayer].transactions = (players[currentPlayer].transactions or 0) + 1
@@ -3074,6 +3072,14 @@ local function performSell()
     gpu.fill(2, 17, 78, 1, " ")
     local currencySymbol = (sellConfirmItem.internalName == "customnpcs:npcMoney") and "۞" or "₵"
     drawCenteredText(17, "Успешно! +" .. string.format("%.2f", value) .. " " .. currencySymbol, colors.success)
+
+    -- НОВЫЙ ЛОГ: Продажа
+    addLog("💰 Продажа: " .. currentPlayer .. " " .. sellConfirmItem.displayName .. " x" .. realExtracted .. " за " .. string.format("%.2f", value) .. currencySymbol)
+    sendToWeb("/api/new_log", toJson({
+        time = getRealTimeHM(),
+        level = "SUCCESS",
+        text = "Продажа: " .. currentPlayer .. " " .. sellConfirmItem.displayName .. " x" .. realExtracted .. " за " .. string.format("%.2f", value) .. currencySymbol
+    }))
 
     os.sleep(0.8)
 
@@ -3214,7 +3220,6 @@ local function performBuy()
         coinBalance = coinBalance - actuallySpentCoin
         emaBalance = emaBalance - actuallySpentEma
         
-        -- Обновляем транзакции игрока
         playerTransactions = playerTransactions + 1
         if currentPlayer and players[currentPlayer] then
             players[currentPlayer].transactions = (players[currentPlayer].transactions or 0) + 1
@@ -3238,14 +3243,12 @@ local function performBuy()
     coinBalance = coinBalance - totalCoin
     emaBalance = emaBalance - totalEma
     
-    -- Сохраняем баланс игрока в БД
     if currentPlayer and players[currentPlayer] then
         players[currentPlayer].balance = coinBalance
         players[currentPlayer].emaBalance = emaBalance
         saveDB()
     end
     
-    -- Обновляем транзакции игрока
     playerTransactions = playerTransactions + 1
     if currentPlayer and players[currentPlayer] then
         players[currentPlayer].transactions = (players[currentPlayer].transactions or 0) + 1
@@ -3264,6 +3267,14 @@ local function performBuy()
         priceStr = priceStr .. string.format("%.2f", totalEma) .. "۞"
     end
     drawCenteredText(20, "Куплено " .. extracted .. " шт. за " .. priceStr, colors.success)
+
+    -- НОВЫЙ ЛОГ: Покупка
+    addLog("🛒 Покупка: " .. currentPlayer .. " " .. item.displayName .. " x" .. extracted .. " за " .. priceStr)
+    sendToWeb("/api/new_log", toJson({
+        time = getRealTimeHM(),
+        level = "SUCCESS",
+        text = "Покупка: " .. currentPlayer .. " " .. item.displayName .. " x" .. extracted .. " за " .. priceStr
+    }))
 
     loadBuyItems()
     for _, newItem in ipairs(shopItems) do
@@ -3939,81 +3950,101 @@ local function main()
             end
 
         elseif e == "player_on" or e == "pim" or e == "pim_player_enter" then
-            local playerName = ev[2] or "Игрок"
-            writeDebugLog("player_on: " .. playerName)
-            
-            if not pimOwner then
-                pimOwner = playerName
+        local playerName = ev[2] or "Игрок"
+        writeDebugLog("player_on: " .. playerName)
+        
+        if not pimOwner then
+            pimOwner = playerName
+        end
+        currentPlayer = playerName:match("^%s*(.-)%s*$") or playerName
+        
+        if alreadyAuthorized then
+            if currentScreen == "auth" or currentScreen == "account_loading" then
+                currentScreen = "menu"
+                drawMainMenu()
             end
-            currentPlayer = playerName:match("^%s*(.-)%s*$") or playerName
+        elseif currentToken then
+            alreadyAuthorized = true
+            if currentScreen == "auth" or currentScreen == "account_loading" then
+                currentScreen = "menu"
+                drawMainMenu()
+            end
+        else
+            writeDebugLog("Новый вход: " .. playerName)
+            coinBalance = 0.0
+            emaBalance = 0.0
+            playerAgreed = false
+            currentScreen = "auth"
+            authStartTime = os.clock()
+            drawAuthScreen()
             
-            if alreadyAuthorized then
-                if currentScreen == "auth" or currentScreen == "account_loading" then
-                    currentScreen = "menu"
-                    drawMainMenu()
-                end
-            elseif currentToken then
-                alreadyAuthorized = true
-                if currentScreen == "auth" or currentScreen == "account_loading" then
-                    currentScreen = "menu"
-                    drawMainMenu()
-                end
+            local player = players[currentPlayer]
+            if not player then
+                player = { 
+                    balance = 0, 
+                    emaBalance = 0, 
+                    transactions = 0, 
+                    banned = false, 
+                    agreed = false, 
+                    hasFeedback = false,
+                    transactionsList = {},
+                    regDate = getRealTimeString()
+                }
+                players[currentPlayer] = player
+                saveDB()
+                addLog("✅ Новый игрок: " .. currentPlayer)
+                writeDebugLog("Создан новый игрок: " .. currentPlayer)
+                -- НОВЫЙ ЛОГ: Регистрация
+                sendToWeb("/api/new_log", toJson({
+                    time = getRealTimeHM(),
+                    level = "SUCCESS",
+                    text = "Новый игрок: " .. currentPlayer
+                }))
+            end
+            
+            if player.banned then
+                drawCenteredText(20, "Вы забанены!", colors.error)
+                os.sleep(2)
+                currentPlayer = nil
+                currentScreen = "welcome"
+                drawWelcomeScreen()
             else
-                writeDebugLog("Новый вход: " .. playerName)
-                coinBalance = 0.0
-                emaBalance = 0.0
-                playerAgreed = false
-                currentScreen = "auth"
-                authStartTime = os.clock()
-                drawAuthScreen()
+                currentToken = tostring(math.floor(math.random() * 900000000 + 100000000))
+                coinBalance = player.balance or 0
+                emaBalance = player.emaBalance or 0
+                playerTransactions = player.transactions or 0
+                playerAgreed = player.agreed or false
+                playerRegDate = player.regDate or getRealTimeString()
+                alreadyAuthorized = true
+                writeDebugLog("Вход выполнен: " .. currentPlayer .. ", баланс: " .. coinBalance .. ", agreed: " .. tostring(playerAgreed))
                 
-                local player = players[currentPlayer]
-                if not player then
-                    player = { 
-                        balance = 0, 
-                        emaBalance = 0, 
-                        transactions = 0, 
-                        banned = false, 
-                        agreed = false, 
-                        hasFeedback = false,
-                        transactionsList = {},
-                        regDate = getRealTimeString()
-                    }
-                    players[currentPlayer] = player
-                    saveDB()
-                    addLog("✅ Новый игрок: " .. currentPlayer)
-                    writeDebugLog("Создан новый игрок: " .. currentPlayer)
+                if selector then
+                    addLog("🖥 Селектор доступен")
                 end
                 
-                if player.banned then
-                    drawCenteredText(20, "Вы забанены!", colors.error)
-                    os.sleep(2)
-                    currentPlayer = nil
-                    currentScreen = "welcome"
-                    drawWelcomeScreen()
-                else
-                    currentToken = tostring(math.floor(math.random() * 900000000 + 100000000))
-                    coinBalance = player.balance or 0
-                    emaBalance = player.emaBalance or 0
-                    playerTransactions = player.transactions or 0
-                    playerAgreed = player.agreed or false   -- <-- ЭТА СТРОКА ДОЛЖНА БЫТЬ!
-                    playerRegDate = player.regDate or getRealTimeString()
-                    alreadyAuthorized = true
-                    writeDebugLog("Вход выполнен: " .. currentPlayer .. ", баланс: " .. coinBalance .. ", agreed: " .. tostring(playerAgreed))
-                    
-                    if selector then
-                        addLog("🖥 Селектор доступен")
-                    end
-                    
-                    currentScreen = "menu"
-                    drawMainMenu()
-                    addLog("👤 Вход: " .. currentPlayer)
-                end
+                currentScreen = "menu"
+                drawMainMenu()
+                addLog("👤 Вход: " .. currentPlayer)
+                -- НОВЫЙ ЛОГ: Вход
+                sendToWeb("/api/new_log", toJson({
+                    time = getRealTimeHM(),
+                    level = "INFO",
+                    text = "Вход: " .. currentPlayer
+                }))
             end
+        end
 
         elseif e == "player_off" or e == "pim_player_leave" then
         local playerName = ev[2] or "Игрок"
         writeDebugLog("player_off: " .. playerName)
+        -- НОВЫЙ ЛОГ: Выход
+        addLog("👤 Выход: " .. playerName)
+        sendToWeb("/api/new_log", toJson({
+            time = getRealTimeHM(),
+            level = "INFO",
+            text = "Выход: " .. playerName
+        }))
+        
         if playerName == pimOwner then
             pimOwner = nil
         end

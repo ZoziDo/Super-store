@@ -743,7 +743,7 @@ local function sendStats()
         total_feedbacks = #feedbacksList,
         total_revenue = globalStats.totalRevenue or 0,
         online = 0,
-        paused = shopPaused,  -- <-- ИСПРАВЛЕНО: теперь отправляем реальное состояние
+        paused = shopPaused,
         feedbacks = feedbacksList,
         reports = reportsList,
         transactions = allPlayerTransactions,
@@ -2336,7 +2336,15 @@ local function checkWebCommands()
 
             -- ==================== РЕЖИМ ОБСЛУЖИВАНИЯ ====================
             elseif cmd.command == "toggle_pause" then
-                shopPaused = not shopPaused
+                -- Если в данных передано состояние - используем его, иначе переключаем
+                if d.paused ~= nil then
+                    shopPaused = d.paused
+                    writeDebugLog("📥 Установлен режим обслуживания: " .. tostring(shopPaused) .. " (из данных)")
+                else
+                    shopPaused = not shopPaused
+                    writeDebugLog("📥 Переключён режим обслуживания: " .. tostring(shopPaused))
+                end
+                
                 addLog(shopPaused and "⏸️ Магазин переведён в режим обслуживания" or "🟢 Магазин открыт")
                 
                 -- Отправляем уведомление на веб-сервер
@@ -2352,7 +2360,10 @@ local function checkWebCommands()
                     pcall(modem.send, addr, 0xffef, msg)
                 end
                 
-                -- ===== ОБНОВЛЯЕМ ЭКРАН =====
+                -- Принудительно отправляем статистику для синхронизации с сайтом
+                sendStats()
+                
+                -- Обновляем экран в зависимости от текущего состояния
                 if currentScreen == "welcome" then
                     drawWelcomeScreen()
                 elseif currentScreen == "auth" then
@@ -2366,7 +2377,6 @@ local function checkWebCommands()
                     currentScreen = "menu"
                     drawMainMenu()
                 end
-                -- ===== КОНЕЦ ОБНОВЛЕНИЯ =====
                 
                 sendResult(true, shopPaused and "Магазин на паузе" or "Магазин активен")
 

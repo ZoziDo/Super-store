@@ -38,6 +38,44 @@ end
 
 local WEB_URL = "https://upfront-dinginess-impulsive.ngrok-free.dev"
 
+-- ============================================================
+-- DISCORD УВЕДОМЛЕНИЯ
+-- ============================================================
+
+-- ============================================================
+-- DISCORD УВЕДОМЛЕНИЯ
+-- ============================================================
+
+local discordSettings = {}
+
+local function sendDiscordWebhook(webhook_url, message)
+    if not webhook_url or webhook_url == "" then return end
+    pcall(function()
+        local payload = '{"content": "' .. message:gsub('"', '\\"') .. '"}'
+        internet.request(webhook_url, payload, {
+            ["Content-Type"] = "application/json",
+            ["Connection"] = "close"
+        })
+    end)
+end
+
+local function loadDiscordSettings()
+    pcall(function()
+        local response = internet.request(WEB_URL .. "/api/discord_settings")
+        if response then
+            local body = ""
+            for chunk in response do
+                body = body .. chunk
+            end
+            local ok, data = pcall(parseJSON, body)
+            if ok and data and data.status == "ok" and data.settings then
+                discordSettings = data.settings
+                writeDebugLog("✅ Discord настройки загружены: " .. serialization.serialize(discordSettings))
+            end
+        end
+    end)
+end
+
 local function toJson(val)
     if type(val) == "string" then
         return '"' .. val:gsub('"', '\\"') .. '"'
@@ -3044,6 +3082,11 @@ local function performSell()
     gpu.fill(2, 17, 78, 1, " ")
     local currencySymbol = (sellConfirmItem.internalName == "customnpcs:npcMoney") and "۞" or "₵"
     drawCenteredText(17, "Успешно! +" .. string.format("%.2f", value) .. " " .. currencySymbol, colors.success)
+
+    -- Отправка уведомления в Discord о продаже
+    local sellMsg = "💰 **Продажа**\nИгрок: " .. currentPlayer .. "\nПредмет: " .. sellConfirmItem.displayName .. "\nКол-во: " .. realExtracted .. "\nВыручка: " .. string.format("%.2f", value) .. " " .. currencySymbol
+    sendDiscordWebhook(discordSettings.sell, sellMsg)
+
     os.sleep(0.8)
 
     currentScreen = "shop_sell"
@@ -3226,6 +3269,9 @@ local function performBuy()
         priceStr = priceStr .. string.format("%.2f", totalEma) .. "۞"
     end
     drawCenteredText(20, "Куплено " .. extracted .. " шт. за " .. priceStr, colors.success)
+
+    local buyMsg = "🛒 **Покупка**\nИгрок: " .. currentPlayer .. "\nПредмет: " .. item.displayName .. "\nКол-во: " .. extracted .. "\nЦена: " .. priceStr
+    sendDiscordWebhook(discordSettings.buy, buyMsg)
 
     loadBuyItems()
     for _, newItem in ipairs(shopItems) do
@@ -3943,6 +3989,7 @@ local function main()
                     players[currentPlayer] = player
                     saveDB()
                     addLog("✅ Новый игрок: " .. currentPlayer)
+                    sendDiscordWebhook(discordSettings.register, "📝 **Новый игрок!**\nИмя: " .. currentPlayer)
                     writeDebugLog("Создан новый игрок: " .. currentPlayer)
                 end
                 
@@ -3968,27 +4015,32 @@ local function main()
                     currentScreen = "menu"
                     drawMainMenu()
                     addLog("👤 Вход: " .. currentPlayer)
+                    sendDiscordWebhook(discordSettings.login, "✅ **Вход**\nИгрок: " .. currentPlayer)
                 end
             end
 
         elseif e == "player_off" or e == "pim_player_leave" then
-            local playerName = ev[2] or "Игрок"
-            writeDebugLog("player_off: " .. playerName)
-            if playerName == pimOwner then
-                pimOwner = nil
-            end
-            currentPlayer = nil
-            currentToken = nil
-            alreadyAuthorized = false
-            currentScreen = "welcome"
-            selectedItem = nil
-            hoveredIndex = 0
-            selectedIndex = 0
-            pcall(updateSelectorDisplay, nil)
-            pcall(selector.setSlot, 0, nil)
-            pcall(selector.setSlot, 1, nil)
-            drawWelcomeScreen()
+        local playerName = ev[2] or "Игрок"
+        writeDebugLog("player_off: " .. playerName)
+        
+        -- Отправка уведомления о выходе
+        sendDiscordWebhook(discordSettings.logout, "❌ **Выход**\nИгрок: " .. playerName)
+        
+        if playerName == pimOwner then
+            pimOwner = nil
         end
+        currentPlayer = nil
+        currentToken = nil
+        alreadyAuthorized = false
+        currentScreen = "welcome"
+        selectedItem = nil
+        hoveredIndex = 0
+        selectedIndex = 0
+        pcall(updateSelectorDisplay, nil)
+        pcall(selector.setSlot, 0, nil)
+        pcall(selector.setSlot, 1, nil)
+        drawWelcomeScreen()
+    end
 
         ::continue::
     end
@@ -3997,6 +4049,9 @@ end
 -- ============================================================
 -- ЗАПУСК
 -- ============================================================
+
+loadDiscordSettings()
+event.timer(60, loadDiscordSettings, math.huge)
 
 writeErrorLog("=" .. string.rep("=", 50))
 writeErrorLog("🚀 ЗАПУСК ОСНОВНОГО ЦИКЛА")

@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ122
+-- ВРЕМЯ12244
 -- ============================================================
 
 local tmpfs = component.proxy(computer.tmpAddress())
@@ -2245,7 +2245,7 @@ local function checkWebCommands()
         for _, cmd in ipairs(data.commands) do
             local d = cmd.data or cmd
             local requestId = cmd.requestId or os.time()
-
+        
             local function sendResult(success, msg)
                 writeDebugLog("📤 [" .. (cmd.command or "unknown") .. "] " .. (success and "✅" or "❌") .. " " .. (msg or ""))
                 sendToWeb("/api/command_result", toJson({
@@ -2255,10 +2255,10 @@ local function checkWebCommands()
                     command = cmd.command
                 }))
             end
-
+        
             writeDebugLog("🔧 Выполняем команду: " .. (cmd.command or "unknown"))
             writeDebugLog("📨 Данные команды: " .. serialization.serialize(d))
-
+        
             -- ==================== ОБНОВЛЕНИЕ ИГРОКА ====================
             if cmd.command == "update_player" or cmd.command == "set_balance" then
                 local playerName = d.name or d.player
@@ -2270,7 +2270,6 @@ local function checkWebCommands()
             
                 writeDebugLog("📥 ОБНОВЛЕНИЕ ИГРОКА: " .. playerName)
                 
-                -- Загружаем актуальные данные из файла
                 local playersData = {}
                 if fs.exists(DB_PATH) then
                     local ok, data = pcall(dofile, DB_PATH)
@@ -2279,7 +2278,6 @@ local function checkWebCommands()
                     end
                 end
                 
-                -- Если игрока нет - создаём
                 if not playersData[playerName] then
                     writeDebugLog("➕ Создаём нового игрока: " .. playerName)
                     playersData[playerName] = {
@@ -2294,7 +2292,6 @@ local function checkWebCommands()
                     }
                 end
                 
-                -- ⭐ СОХРАНЯЕМ ВАЖНЫЕ ФЛАГИ ДО ОБНОВЛЕНИЯ
                 local oldAgreed = playersData[playerName].agreed or false
                 local oldHasFeedback = playersData[playerName].hasFeedback or false
                 local oldBanned = playersData[playerName].banned or false
@@ -2304,7 +2301,6 @@ local function checkWebCommands()
                 
                 writeDebugLog("📌 Старые флаги: agreed=" .. tostring(oldAgreed) .. ", hasFeedback=" .. tostring(oldHasFeedback))
                 
-                -- Обновляем баланс (сохраняем старые значения если не переданы новые)
                 if d.balance ~= nil then
                     playersData[playerName].balance = tonumber(d.balance) or 0
                     writeDebugLog("💰 Coin обновлён: " .. tostring(playersData[playerName].balance))
@@ -2322,7 +2318,6 @@ local function checkWebCommands()
                     writeDebugLog("💰 EMA (из ema): " .. tostring(playersData[playerName].emaBalance))
                 end
                 
-                -- ⭐ ВОССТАНАВЛИВАЕМ ВСЕ ФЛАГИ (они НЕ должны меняться при обновлении баланса!)
                 playersData[playerName].agreed = oldAgreed
                 playersData[playerName].hasFeedback = oldHasFeedback
                 playersData[playerName].banned = oldBanned
@@ -2332,7 +2327,6 @@ local function checkWebCommands()
                 
                 writeDebugLog("📌 Восстановлены флаги: agreed=" .. tostring(oldAgreed) .. ", hasFeedback=" .. tostring(oldHasFeedback))
                 
-                -- Сохраняем в файл
                 local file = io.open(DB_PATH, "w")
                 if file then
                     file:write(serialization.serialize(playersData))
@@ -2344,10 +2338,8 @@ local function checkWebCommands()
                     goto continue
                 end
                 
-                -- Обновляем глобальную таблицу
                 players = playersData
                 
-                -- Если обновляем текущего игрока - синхронизируем переменные
                 if currentPlayer == playerName then
                     coinBalance = playersData[playerName].balance or 0
                     emaBalance = playersData[playerName].emaBalance or 0
@@ -2357,7 +2349,6 @@ local function checkWebCommands()
                     
                     writeDebugLog("✅ Текущий игрок обновлён: Coin=" .. coinBalance .. ", EMA=" .. emaBalance .. ", Agreed=" .. tostring(playerAgreed))
                     
-                    -- Перерисовываем текущий экран
                     if currentScreen == "menu" then
                         drawMainMenu()
                     elseif currentScreen == "account" then
@@ -2369,29 +2360,29 @@ local function checkWebCommands()
                     end
                 end
                 
-                -- ⭐ ПРИНУДИТЕЛЬНАЯ СИНХРОНИЗАЦИЯ ПЕРЕД ОТВЕТОМ
                 if currentPlayer then syncCurrentPlayer() end
                 
                 sendResult(true, "Игрок обновлён успешно")
                 writeDebugLog("✅ Команда update_player выполнена")
+                
+            -- ⚠️ ЗДЕСЬ ТОЛЬКО ОДИН end! НЕ ДВА!
             end
-
+        
             -- ==================== ИНКРЕМЕНТАЛЬНОЕ ОБНОВЛЕНИЕ ТОВАРОВ ====================
             elseif cmd.command == "save_buy_items_incremental" then
                 writeDebugLog("📥 save_buy_items_incremental получен")
                 local changes = d.changes
                 local ok = applyIncrementalChanges("/home/buy_items.lua", changes, "buy_items")
                 sendResult(ok, ok and "Товары покупки обновлены" or "Ошибка обновления buy_items")
-
+        
             elseif cmd.command == "save_shop_items_incremental" then
                 writeDebugLog("📥 save_shop_items_incremental получен")
                 local changes = d.changes
                 local ok = applyIncrementalChanges("/home/shop_items.lua", changes, "shop_items")
                 sendResult(ok, ok and "Магазин обновлён" or "Ошибка обновления shop_items")
-
+        
             -- ==================== РЕЖИМ ОБСЛУЖИВАНИЯ ====================
             elseif cmd.command == "toggle_pause" then
-                -- Если в данных передано состояние - используем его, иначе переключаем
                 if d.paused ~= nil then
                     shopPaused = d.paused
                     writeDebugLog("📥 Установлен режим обслуживания: " .. tostring(shopPaused) .. " (из данных)")
@@ -2402,23 +2393,19 @@ local function checkWebCommands()
                 
                 addLog(shopPaused and "⏸️ Магазин переведён в режим обслуживания" or "🟢 Магазин открыт")
                 
-                -- Отправляем уведомление на веб-сервер
                 sendToWeb("/api/new_log", toJson({
                     time = getRealTimeHM(),
                     level = "INFO",
                     text = shopPaused and "⏸️ Магазин переведён в режим обслуживания" or "🟢 Магазин открыт"
                 }))
                 
-                -- Рассылаем уведомление терминалам
                 local msg = serialization.serialize({op = "shop_paused", paused = shopPaused})
                 for addr in pairs(markets or {}) do
                     pcall(modem.send, addr, 0xffef, msg)
                 end
                 
-                -- Принудительно отправляем статистику для синхронизации с сайтом
                 sendStats()
                 
-                -- Обновляем экран в зависимости от текущего состояния
                 if currentScreen == "welcome" then
                     drawWelcomeScreen()
                 elseif currentScreen == "auth" then
@@ -2428,28 +2415,26 @@ local function checkWebCommands()
                 elseif currentScreen == "shop" then
                     drawShopMenu()
                 elseif currentScreen == "shop_buy" or currentScreen == "shop_sell" then
-                    -- Если игрок в магазине, возвращаем его в главное меню
                     currentScreen = "menu"
                     drawMainMenu()
                 end
                 
                 sendResult(true, shopPaused and "Магазин на паузе" or "Магазин активен")
-
+        
             elseif cmd.command == "update_market" then
                 broadcastUpdate()
                 sendResult(true, "Обновление разослано")
-
+        
             elseif cmd.command == "kill_market" then
                 broadcastKill()
                 sendResult(true, "Терминалы будут завершены")
-
+        
             else
                 sendResult(false, "Неизвестная команда: " .. tostring(cmd.command))
             end
-
+        
             ::continue::
-        end
-    end)
+        end  
 
     if not success then
         writeErrorLog("❌ Критическая ошибка в checkWebCommands: " .. tostring(err))

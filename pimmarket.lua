@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ
+-- ВРЕМЯ1
 -- ============================================================
 
 local tmpfs = component.proxy(computer.tmpAddress())

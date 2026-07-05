@@ -2989,9 +2989,14 @@ local function performSell()
     end
 
     local value = realExtracted * (sellConfirmItem.price or 0)
+    local coinAmount = 0
+    local emaAmount = 0
+    
     if sellConfirmItem.internalName == "customnpcs:npcMoney" then
+        emaAmount = value
         emaBalance = emaBalance + value
     else
+        coinAmount = value
         coinBalance = coinBalance + value
     end
     
@@ -3002,7 +3007,7 @@ local function performSell()
         saveDB()
     end
     
-    addTransaction("sell", currentPlayer or "?", sellConfirmItem.displayName or "?", realExtracted, 0, value)
+    addTransaction("sell", currentPlayer or "?", sellConfirmItem.displayName or "?", realExtracted, coinAmount, emaAmount)
     addLog("💰 Продажа: " .. (currentPlayer or "?") .. " " .. (sellConfirmItem.displayName or "?") .. " x" .. realExtracted)
 
     gpu.setBackground(colors.bg_main)

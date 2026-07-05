@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ1
+-- ВРЕМЯ12
 -- ============================================================
 
 local tmpfs = component.proxy(computer.tmpAddress())
@@ -544,7 +544,7 @@ local function performReboot()
     writeDebugLog("🔄 ===== НАЧАЛО ПОЛНОГО REBOOT =====")
     print("🔄 ===== НАЧАЛО ПОЛНОГО REBOOT =====")
 
-    -- Полная очистка памяти
+    -- Полная очистка ВСЕГО
     players = {}
     transactions = {}
     globalStats = { totalReports = 0, totalBuys = 0, totalSells = 0, totalRevenue = 0, totalBalance = 0 }
@@ -554,14 +554,9 @@ local function performReboot()
     buyItemMap = {}
     shopItems = {}
     filteredItems = {}
-    shopSearch = ""
 
-    -- Очистка всех файлов
-    local files = {
-        DB_PATH, STATS_PATH, FEEDBACKS_PATH, REPORTS_PATH,
-        "/home/buy_items.lua", "/home/shop_items.lua"
-    }
-    
+    -- Очистка файлов
+    local files = {DB_PATH, STATS_PATH, FEEDBACKS_PATH, REPORTS_PATH, "/home/buy_items.lua", "/home/shop_items.lua"}
     for _, path in ipairs(files) do
         if fs.exists(path) then
             local f = io.open(path, "w")
@@ -582,7 +577,7 @@ local function performReboot()
         end
     end
 
-    -- Принудительно отправляем полностью пустое состояние
+    -- **СРАЗУ** отправляем полностью пустое состояние
     local emptyPayload = {
         players = {},
         admins = admins or {"ZoziDo"},
@@ -601,11 +596,11 @@ local function performReboot()
         sell_items = {}
     }
 
-    print("📤 Отправляем ПОЛНОСТЬЮ ПУСТЫЕ данные...")
+    print("📤 Отправляем ПОЛНОСТЬЮ ПУСТЫЕ данные на сервер...")
     sendToWeb("/api/update", toJson(emptyPayload))
     
-    addLog("🔄 REBOOT выполнен — все данные сброшены")
-    writeDebugLog("✅ Пустые данные отправлены на сервер")
+    addLog("🔄 REBOOT: Все данные полностью сброшены")
+    writeDebugLog("✅ Пустые данные отправлены")
 
     -- Перезагрузка интерфейса
     currentScreen = "welcome"
@@ -697,6 +692,12 @@ end
 -- ============================================================
 
 local function sendStats()
+    -- Защита от отправки старых данных сразу после reboot
+    if #players == 0 and #transactions == 0 then
+        writeDebugLog("📤 sendStats: Пропуск — данные только что обнулены")
+        return
+    end
+
     writeDebugLog("📊 sendStats() начат")
     
     local playerList = {}

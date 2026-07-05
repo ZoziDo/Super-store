@@ -36,7 +36,7 @@ end
 -- ВЕБ-ИНТЕГРАЦИЯ
 -- ============================================================
 
-local WEB_URL = "http://localhost:8888"
+local WEB_URL = "https://upfront-dinginess-impulsive.ngrok-free.dev"
 
 
 local function toJson(val)

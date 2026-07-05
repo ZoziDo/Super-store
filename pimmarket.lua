@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ1234
+-- ВРЕМЯ12345
 -- ============================================================
 
 local tmpfs = component.proxy(computer.tmpAddress())
@@ -544,172 +544,69 @@ local function performReboot()
     writeDebugLog("🔄 ===== НАЧАЛО REBOOT =====")
     print("🔄 ===== НАЧАЛО REBOOT =====")
     
-    -- ===== ПОКАЗЫВАЕМ ТЕКУЩЕЕ СОСТОЯНИЕ =====
-    local playerCount = 0
-    for _ in pairs(players) do playerCount = playerCount + 1 end
-    writeDebugLog("📊 ДО REBOOT: Игроков в памяти: " .. playerCount)
-    writeDebugLog("📊 ДО REBOOT: Транзакций: " .. #transactions)
-    writeDebugLog("📊 ДО REBOOT: Баланс: " .. globalStats.totalBalance)
-    print("📊 ДО REBOOT: Игроков в памяти: " .. playerCount)
-    
-    -- ===== ОЧИЩАЕМ ГЛОБАЛЬНЫЕ ДАННЫЕ =====
-    writeDebugLog("🧹 Очищаем глобальные данные...")
+    -- Очищаем всё в памяти
     players = {}
     transactions = {}
     globalStats = { totalReports = 0, totalBuys = 0, totalSells = 0, totalRevenue = 0, totalBalance = 0 }
-    writeDebugLog("✅ Глобальные данные очищены")
     
-    -- ===== ОЧИЩАЕМ ФАЙЛЫ =====
-    writeDebugLog("🧹 Очищаем файлы...")
-    local filesToClear = {
-        DB_PATH,
-        STATS_PATH,
-        FEEDBACKS_PATH,
-        REPORTS_PATH
-    }
-    
-    for _, path in ipairs(filesToClear) do
-        if fs.exists(path) then
-            writeDebugLog("📁 Найден файл: " .. path)
-            local file = io.open(path, "w")
-            if file then
-                if path == DB_PATH then
-                    file:write(serialization.serialize({}))
-                    writeDebugLog("✅ Очищен DB_PATH: " .. path)
-                elseif path == STATS_PATH then
-                    file:write(serialization.serialize({ totalReports = 0, totalBuys = 0, totalSells = 0, totalRevenue = 0, totalBalance = 0 }))
-                    writeDebugLog("✅ Очищен STATS_PATH: " .. path)
-                elseif path == FEEDBACKS_PATH then
-                    file:write(serialization.serialize({}))
-                    writeDebugLog("✅ Очищен FEEDBACKS_PATH: " .. path)
-                elseif path == REPORTS_PATH then
-                    file:write("")
-                    writeDebugLog("✅ Очищен REPORTS_PATH: " .. path)
-                end
-                file:close()
-            else
-                writeErrorLog("❌ НЕ УДАЛОСЬ ОТКРЫТЬ ФАЙЛ: " .. path)
-            end
-        else
-            writeDebugLog("⚠️ Файл не найден: " .. path)
-        end
-    end
-    
-    -- ===== ОЧИЩАЕМ ФАЙЛЫ ТОВАРОВ =====
-    local buyItemsFile = "/home/buy_items.lua"
-    local shopItemsFile = "/home/shop_items.lua"
-    
-    writeDebugLog("🧹 Очищаем файлы товаров...")
-    
-    if fs.exists(buyItemsFile) then
-        writeDebugLog("📁 Найден buy_items.lua")
-        local file = io.open(buyItemsFile, "w")
-        if file then
-            file:write("return {}")
-            file:close()
-            writeDebugLog("✅ Очищен buy_items.lua")
-        else
-            writeErrorLog("❌ НЕ УДАЛОСЬ ОТКРЫТЬ buy_items.lua")
-        end
-    else
-        writeDebugLog("⚠️ buy_items.lua не найден")
-    end
-    
-    if fs.exists(shopItemsFile) then
-        writeDebugLog("📁 Найден shop_items.lua")
-        local file = io.open(shopItemsFile, "w")
-        if file then
-            file:write("return { sellItems = {}, vanillaItems = {} }")
-            file:close()
-            writeDebugLog("✅ Очищен shop_items.lua")
-        else
-            writeErrorLog("❌ НЕ УДАЛОСЬ ОТКРЫТЬ shop_items.lua")
-        end
-    else
-        writeDebugLog("⚠️ shop_items.lua не найден")
-    end
-    
-    -- ===== ОЧИЩАЕМ ПЕРЕМЕННЫЕ ТОВАРОВ =====
-    writeDebugLog("🧹 Очищаем переменные товаров...")
     sellItems = {}
     buyItemsData = {}
     buyItemMap = {}
     shopItems = {}
-    writeDebugLog("✅ Переменные товаров очищены")
     
-    -- ===== ПЕРЕЗАГРУЖАЕМ ДАННЫЕ =====
-    writeDebugLog("🔄 Перезагружаем данные из файлов...")
-    
-    -- Загружаем игроков
-    if fs.exists(DB_PATH) then
-        writeDebugLog("📁 Загружаем DB_PATH: " .. DB_PATH)
-        local file = io.open(DB_PATH, "r")
-        if file then
-            local raw = file:read("*a")
-            file:close()
-            writeDebugLog("📄 Содержимое DB_PATH: " .. (raw or "nil"))
-            if raw and #raw > 0 then
-                local ok, data = pcall(serialization.unserialize, raw)
-                if ok and data then 
-                    players = data 
-                    writeDebugLog("✅ Игроки загружены: " .. #players)
+    -- Очищаем файлы
+    local filesToClear = {DB_PATH, STATS_PATH, FEEDBACKS_PATH, REPORTS_PATH}
+    for _, path in ipairs(filesToClear) do
+        if fs.exists(path) then
+            local f = io.open(path, "w")
+            if f then
+                if path == DB_PATH then
+                    f:write("return {}")
+                elseif path == STATS_PATH then
+                    f:write("return { totalReports = 0, totalBuys = 0, totalSells = 0, totalRevenue = 0, totalBalance = 0 }")
                 else
-                    writeErrorLog("❌ Ошибка парсинга DB_PATH: " .. tostring(ok))
+                    f:write("{}")
                 end
-            else
-                writeDebugLog("⚠️ DB_PATH пуст")
+                f:close()
             end
-        else
-            writeErrorLog("❌ НЕ УДАЛОСЬ ОТКРЫТЬ DB_PATH для чтения")
         end
-    else
-        writeDebugLog("⚠️ DB_PATH не найден")
     end
     
-    -- Загружаем статистику
-    if fs.exists(STATS_PATH) then
-        writeDebugLog("📁 Загружаем STATS_PATH: " .. STATS_PATH)
-        local file = io.open(STATS_PATH, "r")
-        if file then
-            local raw = file:read("*a")
-            file:close()
-            writeDebugLog("📄 Содержимое STATS_PATH: " .. (raw or "nil"))
-            if raw and #raw > 0 then
-                local ok, data = pcall(serialization.unserialize, raw)
-                if ok and data then
-                    globalStats.totalReports = data.totalReports or 0
-                    globalStats.totalBuys = data.totalBuys or 0
-                    globalStats.totalSells = data.totalSells or 0
-                    globalStats.totalRevenue = data.totalRevenue or 0
-                    globalStats.totalBalance = data.totalBalance or 0
-                    writeDebugLog("✅ Статистика загружена")
-                else
-                    writeErrorLog("❌ Ошибка парсинга STATS_PATH")
-                end
-            else
-                writeDebugLog("⚠️ STATS_PATH пуст")
-            end
-        else
-            writeErrorLog("❌ НЕ УДАЛОСЬ ОТКРЫТЬ STATS_PATH для чтения")
-        end
-    else
-        writeDebugLog("⚠️ STATS_PATH не найден")
-    end
+    -- Очищаем файлы товаров
+    local f = io.open("/home/buy_items.lua", "w")
+    if f then f:write("return {}"); f:close() end
     
-    -- ===== ПОКАЗЫВАЕМ СОСТОЯНИЕ ПОСЛЕ ОЧИСТКИ =====
-    local newPlayerCount = 0
-    for _ in pairs(players) do newPlayerCount = newPlayerCount + 1 end
-    writeDebugLog("📊 ПОСЛЕ REBOOT: Игроков в памяти: " .. newPlayerCount)
-    writeDebugLog("📊 ПОСЛЕ REBOOT: Транзакций: " .. #transactions)
-    writeDebugLog("📊 ПОСЛЕ REBOOT: Баланс: " .. globalStats.totalBalance)
-    print("📊 ПОСЛЕ REBOOT: Игроков в памяти: " .. newPlayerCount)
+    f = io.open("/home/shop_items.lua", "w")
+    if f then f:write("return { sellItems = {}, vanillaItems = {} }"); f:close() end
     
     addLog("🔄 REBOOT: Все данные сброшены")
     
-    -- ===== ПРИНУДИТЕЛЬНО ОТПРАВЛЯЕМ СТАТИСТИКУ =====
-    writeDebugLog("📤 Отправляем пустую статистику на сервер...")
-    sendStats()
-    writeDebugLog("✅ Статистика отправлена")
+    -- **СРАЗУ** отправляем пустое состояние на сервер
+    print("📤 Отправляем ПУСТЫЕ данные после REBOOT...")
+    local payload = {
+        players = {},
+        admins = admins or {"ZoziDo"},
+        total = 0,
+        total_balance = 0,
+        total_transactions = 0,
+        total_reports = 0,
+        total_feedbacks = 0,
+        total_revenue = 0,
+        online = 0,
+        paused = shopPaused,
+        feedbacks = {},
+        reports = {},
+        transactions = {},
+        buy_items = {},
+        sell_items = {}
+    }
+    
+    sendToWeb("/api/update", toJson(payload))
+    writeDebugLog("✅ Пустые данные отправлены на сервер")
+    
+    -- Перерисовываем интерфейс
+    currentScreen = "welcome"
+    drawWelcomeScreen()
     
     writeDebugLog("✅ ===== REBOOT ЗАВЕРШЁН =====")
     print("✅ ===== REBOOT ЗАВЕРШЁН =====")

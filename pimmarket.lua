@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ12345
+-- ВРЕМЯ123456
 -- ============================================================
 
 local tmpfs = component.proxy(computer.tmpAddress())
@@ -699,10 +699,6 @@ local function sendStats()
     local playerCount = 0
     local allPlayerTransactions = {}
     
-    -- Подсчёт игроков
-    for _ in pairs(players) do playerCount = playerCount + 1 end
-    writeDebugLog("📊 Всего игроков в памяти: " .. playerCount)
-    print("📊 sendStats: Игроков в памяти: " .. playerCount)
     
     for name, data in pairs(players) do
         writeDebugLog("   👤 " .. name .. ": Coin=" .. tostring(data.balance or 0) .. ", EMA=" .. tostring(data.emaBalance or 0))
@@ -742,9 +738,11 @@ local function sendStats()
         return a.time > b.time
     end)
     
-    writeDebugLog("👥 Игроков отправлено: " .. #playerList)
-    writeDebugLog("📋 Всего транзакций отправлено: " .. #allPlayerTransactions)
-    print("📤 sendStats: Отправляем " .. #playerList .. " игроков")
+    -- Убрать эти логи
+    -- writeDebugLog("👥 Игроков отправлено: " .. #playerList)
+    -- writeDebugLog("📋 Всего транзакций отправлено: " .. #allPlayerTransactions)
+    -- print("📤 sendStats: Отправляем " .. #playerList .. " игроков")
+    
     globalStats.totalBalance = totalBalance
     saveGlobalStats()
     
@@ -785,7 +783,8 @@ local function sendStats()
         local ok, data = pcall(dofile, "/home/buy_items.lua")
         if ok and type(data) == "table" then 
             buyItems = data 
-            writeDebugLog("📦 Загружены buy_items: " .. #buyItems .. " товаров")
+            -- Убрать этот лог
+            -- writeDebugLog("📦 Загружены buy_items: " .. #buyItems .. " товаров")
         else
             writeErrorLog("❌ Ошибка загрузки buy_items.lua")
         end
@@ -799,7 +798,8 @@ local function sendStats()
         local ok, data = pcall(dofile, "/home/shop_items.lua")
         if ok and type(data) == "table" and data.sellItems then
             sellItems = data.sellItems
-            writeDebugLog("📦 Загружены sell_items: " .. #sellItems .. " товаров")
+            -- Убрать этот лог
+            -- writeDebugLog("📦 Загружены sell_items: " .. #sellItems .. " товаров")
         else
             writeErrorLog("❌ Ошибка загрузки shop_items.lua")
         end
@@ -827,9 +827,10 @@ local function sendStats()
     }
     
     local jsonData = toJson(payload)
-    writeDebugLog("📤 Размер JSON: " .. #jsonData .. " байт")
-    writeDebugLog("📤 Отправлены данные: " .. #playerList .. " игроков, " .. #buyItems .. " товаров покупки, " .. #sellItems .. " товаров продажи")
-    writeDebugLog("📤 Режим обслуживания: " .. tostring(shopPaused))  -- <-- ДОБАВЛЕНО для отладки
+    -- Убрать эти логи
+    -- writeDebugLog("📤 Размер JSON: " .. #jsonData .. " байт")
+    -- writeDebugLog("📤 Отправлены данные: " .. #playerList .. " игроков, " .. #buyItems .. " товаров покупки, " .. #sellItems .. " товаров продажи")
+    -- writeDebugLog("📤 Режим обслуживания: " .. tostring(shopPaused))
     
     sendToWeb("/api/update", jsonData)
 end

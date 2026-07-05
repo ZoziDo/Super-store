@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ14566
+-- ВРЕМЯ1
 -- ============================================================
 
 local tmpfs = component.proxy(computer.tmpAddress())
@@ -42,14 +42,18 @@ local discordSettings = {}
 
 local function sendDiscordWebhook(webhook_url, message)
     if not webhook_url or webhook_url == "" then 
+        print("⚠️ Discord webhook пустой, пропускаем")
         return 
     end
+    print("📤 Отправка в Discord: " .. message:sub(1, 50) .. "...")
     pcall(function()
+        -- Правильный синтаксис для internet.request в OC с POST
         local payload = '{"content": "' .. message:gsub('"', '\\"') .. '"}'
-        internet.request(webhook_url, payload, {
+        local headers = {
             ["Content-Type"] = "application/json",
             ["Connection"] = "close"
-        })
+        }
+        internet.request(webhook_url, payload, headers)
     end)
 end
 

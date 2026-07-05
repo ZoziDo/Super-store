@@ -2121,6 +2121,13 @@ local function checkWebCommands()
             return
         end
 
+        -- Проверяем статус ответа (для internet.request в OC)
+        local status = response.getStatus and response:getStatus() or response.code or response.status
+        if status and status ~= 200 then
+            writeErrorLog("⚠️ Сервер вернул HTTP " .. tostring(status) .. " на запрос " .. url)
+            return
+        end
+
         local body = ""
         for chunk in response do
             body = body .. chunk

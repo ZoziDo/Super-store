@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ111256
+-- ВРЕМЯ1
 -- ============================================================
 
 local tmpfs = component.proxy(computer.tmpAddress())
@@ -1938,47 +1938,69 @@ local function applyIncrementalChanges(itemsFile, changes, itemType)
     writeDebugLog("📦 Применение инкрементальных изменений к " .. itemType)
     writeDebugLog("📦 Файл: " .. itemsFile)
     writeDebugLog("📦 Количество изменений: " .. (#changes or 0))
-    
-    for i, change in ipairs(changes or {}) do
-        writeDebugLog("📦 Изменение #" .. i .. ": action=" .. (change.action or "?") .. ", item=" .. serialization.serialize(change.item or {}))
-    end
 
     if not changes or type(changes) ~= "table" or #changes == 0 then
         writeDebugLog("ℹ️ Нет изменений для применения")
         return true
     end
 
-    writeDebugLog("📨 Применяем " .. #changes .. " изменений")
+    -- Определяем тип файла
+    local isShopFile = string.find(itemsFile, "shop_items") ~= nil
 
-    local items = {}
+    -- Загружаем данные из файла
+    local fileData = {}
+    local sellItemsList = {}
+
     if fs.exists(itemsFile) then
-        writeDebugLog("📂 Файл существует: " .. itemsFile)
         local ok, data = pcall(dofile, itemsFile)
         if ok and type(data) == "table" then
-            items = data
-            writeDebugLog("📦 Загружено " .. #items .. " товаров из файла")
+            fileData = data
+            if isShopFile and fileData.sellItems and type(fileData.sellItems) == "table" then
+                sellItemsList = fileData.sellItems
+                writeDebugLog("📦 Загружены sell_items из shop_items.lua: " .. #sellItemsList .. " товаров")
+            elseif not isShopFile then
+                sellItemsList = data
+                writeDebugLog("📦 Загружены buy_items: " .. #sellItemsList .. " товаров")
+            else
+                writeDebugLog("⚠️ В shop_items.lua нет поля sellItems, создаём новое")
+                sellItemsList = {}
+                fileData.sellItems = sellItemsList
+                fileData.vanillaItems = fileData.vanillaItems or {}
+            end
         else
-            writeDebugLog("❌ Не удалось загрузить " .. itemsFile .. ": " .. tostring(data))
-            items = {}
+            writeDebugLog("⚠️ Не удалось загрузить " .. itemsFile .. ", создаём новый")
+            if isShopFile then
+                fileData = { sellItems = {}, vanillaItems = {} }
+                sellItemsList = fileData.sellItems
+            else
+                sellItemsList = {}
+                fileData = sellItemsList
+            end
         end
     else
-        writeDebugLog("⚠️ Файл не существует: " .. itemsFile)
-        items = {}
+        writeDebugLog("⚠️ Файл не существует: " .. itemsFile .. ", создаём новый")
+        if isShopFile then
+            fileData = { sellItems = {}, vanillaItems = {} }
+            sellItemsList = fileData.sellItems
+        else
+            sellItemsList = {}
+            fileData = sellItemsList
+        end
     end
 
+    -- Строим карту товаров для быстрого поиска
     local itemMap = {}
-    for i, item in ipairs(items) do
+    for i, item in ipairs(sellItemsList) do
         local key = (item.internalName or "") .. ":" .. (item.damage or 0)
         itemMap[key] = i
     end
-    writeDebugLog("🗺️ Построена карта товаров: " .. #itemMap .. " записей")
 
     local appliedCount = 0
 
     for _, change in ipairs(changes) do
-        if not change or not change.item then 
+        if not change or not change.item then
             writeDebugLog("⚠️ Пропускаем пустое изменение")
-            goto next 
+            goto next
         end
 
         local item = change.item
@@ -1986,26 +2008,24 @@ local function applyIncrementalChanges(itemsFile, changes, itemType)
         writeDebugLog("🔍 Обработка: " .. key .. ", action=" .. (change.action or "?"))
 
         if change.action == "add" then
-            table.insert(items, item)
+            table.insert(sellItemsList, item)
             appliedCount = appliedCount + 1
-            writeDebugLog("➕ Добавлен: " .. (item.displayName or key) .. " в позицию " .. #items)
+            writeDebugLog("➕ Добавлен: " .. (item.displayName or key))
 
         elseif change.action == "update" then
             local idx = itemMap[key]
             if idx then
-                writeDebugLog("🔄 Найден товар в позиции " .. idx)
+                -- Обновляем существующий товар
                 for k, v in pairs(item) do
                     if k ~= "internalName" and k ~= "damage" then
-                        local old = items[idx][k]
-                        items[idx][k] = v
-                        writeDebugLog("   📝 " .. k .. ": " .. tostring(old) .. " -> " .. tostring(v))
+                        sellItemsList[idx][k] = v
                     end
                 end
                 appliedCount = appliedCount + 1
                 writeDebugLog("🔄 Обновлён: " .. (item.displayName or key))
             else
-                writeDebugLog("⚠️ Товар не найден для обновления: " .. key .. ", добавляем как новый")
-                table.insert(items, item)
+                -- Если не нашли – добавляем как новый
+                table.insert(sellItemsList, item)
                 appliedCount = appliedCount + 1
                 writeDebugLog("➕ Добавлен как новый: " .. (item.displayName or key))
             end
@@ -2013,7 +2033,7 @@ local function applyIncrementalChanges(itemsFile, changes, itemType)
         elseif change.action == "delete" then
             local idx = itemMap[key]
             if idx then
-                table.remove(items, idx)
+                table.remove(sellItemsList, idx)
                 appliedCount = appliedCount + 1
                 writeDebugLog("❌ Удалён: " .. key)
             else
@@ -2029,55 +2049,58 @@ local function applyIncrementalChanges(itemsFile, changes, itemType)
         return true
     end
 
+    -- Сохраняем файл
     writeDebugLog("💾 Сохраняем файл: " .. itemsFile)
     local file = io.open(itemsFile, "w")
     if not file then
-        writeDebugLog("❌ НЕ УДАЛОСЬ ОТКРЫТЬ ФАЙЛ ДЛЯ ЗАПИСИ: " .. itemsFile)
         writeErrorLog("❌ Не удалось открыть файл для записи: " .. itemsFile)
         return false
     end
 
-    local serialized = serialization.serialize(items)
+    local serialized
+    if isShopFile then
+        -- Для shop_items.lua сохраняем всю структуру
+        serialized = serialization.serialize(fileData)
+    else
+        -- Для buy_items.lua сохраняем только список
+        serialized = serialization.serialize(sellItemsList)
+    end
+
     file:write("return " .. serialized)
     file:close()
-    writeDebugLog("✅ Сохранено " .. appliedCount .. " изменений в " .. itemsFile .. ", размер: " .. #serialized .. " байт")
+    writeDebugLog("✅ Сохранено " .. appliedCount .. " изменений в " .. itemsFile)
 
-    if string.find(itemsFile, "buy_items") then
-        buyItemsData = items
-        writeDebugLog("📦 buyItemsData обновлена, товаров: " .. #buyItemsData)
+    -- Обновляем глобальные переменные
+    if isShopFile then
+        sellItems = sellItemsList
+        shopData.sellItems = sellItemsList
+        shopData.vanillaItems = fileData.vanillaItems or {}
+        writeDebugLog("📦 sellItems обновлён, товаров: " .. #sellItems)
+    else
+        buyItemsData = sellItemsList
         buyItemMap = {}
         for _, item in ipairs(buyItemsData) do
             local dmg = item.damage or 0
             local key = item.internalName .. ":" .. dmg
             buyItemMap[key] = item
         end
-        writeDebugLog("🗺️ buyItemMap обновлена, записей: " .. #buyItemMap)
-    elseif string.find(itemsFile, "sell_items") or string.find(itemsFile, "shop_items") then
-        sellItems = items
-        shopData.sellItems = items
-        writeDebugLog("📦 sellItems обновлён, товаров: " .. #sellItems)
+        writeDebugLog("📦 buyItemsData обновлена, товаров: " .. #buyItemsData)
     end
 
+    -- Перерисовка UI (если нужно)
     if currentScreen == "shop_buy" then
-        writeDebugLog("🔄 Перерисовка магазина покупки...")
         loadBuyItems()
         drawBuyStatic()
         drawBuyItemsList()
         drawBuyButtons()
-        writeDebugLog("✅ Магазин покупки перерисован")
     elseif currentScreen == "shop_sell" then
-        writeDebugLog("🔄 Перерисовка магазина продажи...")
         loadSellItems()
         drawBuyStatic()
         drawBuyItemsList()
         drawBuyButtons()
-        writeDebugLog("✅ Магазин продажи перерисован")
     end
 
-    writeDebugLog("📢 Рассылка обновления терминалам...")
     broadcastUpdate()
-    writeDebugLog("✅ Обновление разослано")
-
     return true
 end
 

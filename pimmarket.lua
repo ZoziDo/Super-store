@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ12345
+-- ВРЕМЯ1234566
 -- ============================================================
 
 local tmpfs = component.proxy(computer.tmpAddress())
@@ -2405,32 +2405,83 @@ end
 -- ОБРАБОТКА КОМАНД (С РАСШИРЕННЫМ ЛОГИРОВАНИЕМ)
 -- ============================================================
 
+-- ============================================================
+-- ОБРАБОТКА КОМАНД (С МАКСИМАЛЬНЫМ ЛОГИРОВАНИЕМ)
+-- ============================================================
+
 local function checkWebCommands()
-    writeDebugLog("🔍 checkWebCommands() запущена в " .. getRealTimeHM())
+    print("")
+    print("🔍🔍🔍 checkWebCommands() ЗАПУЩЕНА В " .. getRealTimeHM() .. " 🔍🔍🔍")
+    print("")
 
     local success, err = pcall(function()
         local url = WEB_URL .. "/api/commands"
-        writeDebugLog("📡 Запрос к: " .. url)
+        print("📡 URL ЗАПРОСА: " .. url)
+        print("📡 ВРЕМЯ: " .. getRealTimeHM())
+        print("")
 
-        -- Пробуем сделать запрос с обработкой ошибок
-        local response, errMsg = pcall(function()
-            return internet.request(url, nil, {
+        -- Пробуем сделать запрос
+        print("📡 ОТПРАВЛЯЮ ЗАПРОС...")
+        local response = nil
+        local reqSuccess, reqErr = pcall(function()
+            response = internet.request(url, nil, {
                 ["Content-Type"] = "application/json",
                 ["Connection"] = "close"
             })
         end)
 
-        if not response then
-            writeDebugLog("⚠️ Нет ответа от сервера (pcall failed): " .. tostring(errMsg))
+        print("📡 РЕЗУЛЬТАТ ЗАПРОСА:")
+        print("   reqSuccess: " .. tostring(reqSuccess))
+        print("   reqErr: " .. tostring(reqErr))
+        print("   response тип: " .. type(response))
+        print("   response значение: " .. tostring(response))
+
+        if not reqSuccess then
+            print("❌❌❌ ОШИБКА ЗАПРОСА: " .. tostring(reqErr))
+            writeErrorLog("❌ Ошибка запроса: " .. tostring(reqErr))
             return
         end
 
         if not response or type(response) ~= "table" then
-            writeDebugLog("⚠️ Неверный тип ответа от сервера: " .. type(response))
-            return
+            print("❌❌❌ НЕВЕРНЫЙ ТИП ОТВЕТА: " .. type(response))
+            print("❌❌❌ ОТВЕТ: " .. tostring(response))
+            writeErrorLog("❌ Неверный тип ответа: " .. type(response))
+            
+            -- Пробуем альтернативный URL
+            print("")
+            print("🔄 ПРОБУЮ АЛЬТЕРНАТИВНЫЙ URL...")
+            local altUrl = "http://localhost:8888/api/commands"
+            print("📡 ALT URL: " .. altUrl)
+            
+            local altResponse = nil
+            local altSuccess, altErr = pcall(function()
+                altResponse = internet.request(altUrl, nil, {
+                    ["Content-Type"] = "application/json",
+                    ["Connection"] = "close"
+                })
+            end)
+            
+            print("   altSuccess: " .. tostring(altSuccess))
+            print("   altErr: " .. tostring(altErr))
+            print("   altResponse тип: " .. type(altResponse))
+            
+            if altSuccess and type(altResponse) == "table" then
+                print("✅ ALT URL РАБОТАЕТ!")
+                response = altResponse
+                -- Сохраняем рабочий URL
+                WEB_URL = "http://localhost:8888"
+                print("✅ WEB_URL изменён на: " .. WEB_URL)
+            else
+                print("❌ ALT URL ТОЖЕ НЕ РАБОТАЕТ")
+                return
+            end
+        else
+            print("✅ ОТВЕТ ПОЛУЧЕН, ТИП: table")
         end
 
-        -- Пытаемся прочитать тело ответа
+        -- Читаем тело ответа
+        print("")
+        print("📥 ЧИТАЮ ТЕЛО ОТВЕТА...")
         local body = ""
         local readSuccess, readErr = pcall(function()
             for chunk in response do
@@ -2441,45 +2492,56 @@ local function checkWebCommands()
         end)
 
         if not readSuccess then
-            writeErrorLog("⚠️ Ошибка чтения ответа: " .. tostring(readErr))
+            print("❌❌❌ ОШИБКА ЧТЕНИЯ: " .. tostring(readErr))
+            writeErrorLog("❌ Ошибка чтения: " .. tostring(readErr))
             return
         end
 
-        -- Проверяем, есть ли тело ответа
+        print("📥 ДЛИНА ТЕЛА: " .. #body .. " байт")
+        print("📥 ТЕЛО (первые 200 символов): " .. body:sub(1, 200))
+
         if #body < 5 then
-            writeDebugLog("⚠️ Пустой или слишком короткий ответ, длина: " .. #body)
+            print("❌❌❌ ТЕЛО СЛИШКОМ КОРОТКОЕ")
             return
         end
 
-        -- Проверяем, не является ли ответ HTML ошибкой (например, от ngrok)
+        -- Проверяем HTML
         if body:match("^%s*<") or body:match("^%s*<!DOCTYPE") then
-            writeErrorLog("⚠️ Получен HTML вместо JSON: " .. body:sub(1, 200))
+            print("❌❌❌ ПОЛУЧЕН HTML ВМЕСТО JSON")
+            print("📥 HTML: " .. body:sub(1, 500))
+            writeErrorLog("❌ Получен HTML: " .. body:sub(1, 200))
             return
         end
-
-        writeDebugLog("📥 Получено " .. #body .. " байт")
 
         -- Парсим JSON
+        print("")
+        print("📥 ПАРСИМ JSON...")
         local data = parseJSON(body)
         if not data then
-            writeErrorLog("❌ Ошибка парсинга JSON от /api/commands")
-            writeDebugLog("Сырой ответ: " .. body:sub(1, 400))
+            print("❌❌❌ ОШИБКА ПАРСИНГА JSON")
+            print("📥 Сырой ответ: " .. body:sub(1, 400))
+            writeErrorLog("❌ Ошибка парсинга JSON")
             return
         end
+        print("✅ JSON РАСПАРСЕН")
 
         if not data.commands or #data.commands == 0 then
-            writeDebugLog("⚠️ Нет команд в ответе")
+            print("⚠️ НЕТ КОМАНД В ОТВЕТЕ")
             return
         end
 
-        writeDebugLog("📨 Найдено команд: " .. #data.commands)
+        print("📨 НАЙДЕНО КОМАНД: " .. #data.commands)
+        for i, cmd in ipairs(data.commands) do
+            print("   " .. i .. ". " .. (cmd.command or "unknown"))
+        end
+        print("")
 
         for _, cmd in ipairs(data.commands) do
             local d = cmd.data or cmd
             local requestId = cmd.requestId or os.time()
 
             local function sendResult(success, msg)
-                writeDebugLog("📤 [" .. (cmd.command or "unknown") .. "] " .. (success and "✅" or "❌") .. " " .. (msg or ""))
+                print("📤 [" .. (cmd.command or "unknown") .. "] " .. (success and "✅" or "❌") .. " " .. (msg or ""))
                 sendToWeb("/api/command_result", toJson({
                     requestId = requestId,
                     success = success,
@@ -2488,41 +2550,34 @@ local function checkWebCommands()
                 }))
             end
 
-            writeDebugLog("🔧 Выполняем команду: " .. (cmd.command or "unknown"))
-            writeDebugLog("📨 Данные команды: " .. serialization.serialize(d))
+            print("🔧 ВЫПОЛНЯЮ КОМАНДУ: " .. (cmd.command or "unknown"))
 
             -- ==================== ОБНОВЛЕНИЕ ИГРОКА ====================
             if cmd.command == "update_player" or cmd.command == "set_balance" then
                 local playerName = d.name or d.player
                 if not playerName then
-                    writeDebugLog("❌ Нет имени игрока в команде!")
-                    writeDebugLog("📨 Полные данные: " .. serialization.serialize(d))
+                    print("❌ Нет имени игрока в команде!")
                     sendResult(false, "Нет имени игрока")
                     goto continue
                 end
 
-                writeDebugLog("📥 ОБНОВЛЕНИЕ ИГРОКА: " .. playerName)
-                writeDebugLog("📥 Данные команды: " .. serialization.serialize(d))
-                writeDebugLog("📥 balance = " .. tostring(d.balance))
-                writeDebugLog("📥 coin = " .. tostring(d.coin))
-                writeDebugLog("📥 emaBalance = " .. tostring(d.emaBalance))
-                writeDebugLog("📥 ema = " .. tostring(d.ema))
+                print("📥 ОБНОВЛЕНИЕ ИГРОКА: " .. playerName)
+                print("   balance: " .. tostring(d.balance))
+                print("   coin: " .. tostring(d.coin))
+                print("   emaBalance: " .. tostring(d.emaBalance))
+                print("   ema: " .. tostring(d.ema))
 
                 local playersData = {}
                 if fs.exists(DB_PATH) then
                     local ok, data = pcall(dofile, DB_PATH)
                     if ok and type(data) == "table" then
                         playersData = data
-                        writeDebugLog("📦 Загружено игроков: " .. #playersData)
-                    else
-                        writeDebugLog("⚠️ Не удалось загрузить players.db: " .. tostring(data))
+                        print("📦 Загружено игроков: " .. #playersData)
                     end
-                else
-                    writeDebugLog("⚠️ Файл players.db не существует!")
                 end
 
                 if not playersData[playerName] then
-                    writeDebugLog("➕ Создаём нового игрока: " .. playerName)
+                    print("➕ Создаём нового игрока: " .. playerName)
                     playersData[playerName] = {
                         balance = 0,
                         emaBalance = 0,
@@ -2531,91 +2586,59 @@ local function checkWebCommands()
                         agreed = false,
                         hasFeedback = false
                     }
-                else
-                    writeDebugLog("👤 Игрок найден, текущий баланс: " .. tostring(playersData[playerName].balance))
                 end
 
                 if d.balance ~= nil then
-                    local oldBalance = playersData[playerName].balance
                     playersData[playerName].balance = tonumber(d.balance) or 0
-                    writeDebugLog("💰 Coin: " .. oldBalance .. " -> " .. playersData[playerName].balance)
                 elseif d.coin ~= nil then
-                    local oldBalance = playersData[playerName].balance
                     playersData[playerName].balance = tonumber(d.coin) or 0
-                    writeDebugLog("💰 Coin (из coin): " .. oldBalance .. " -> " .. playersData[playerName].balance)
-                else
-                    writeDebugLog("⚠️ Нет данных для Coin!")
                 end
 
                 if d.emaBalance ~= nil then
-                    local oldEma = playersData[playerName].emaBalance
                     playersData[playerName].emaBalance = tonumber(d.emaBalance) or 0
-                    writeDebugLog("💰 EMA: " .. oldEma .. " -> " .. playersData[playerName].emaBalance)
                 elseif d.ema ~= nil then
-                    local oldEma = playersData[playerName].emaBalance
                     playersData[playerName].emaBalance = tonumber(d.ema) or 0
-                    writeDebugLog("💰 EMA (из ema): " .. oldEma .. " -> " .. playersData[playerName].emaBalance)
-                else
-                    writeDebugLog("⚠️ Нет данных для EMA!")
                 end
 
-                writeDebugLog("💾 Сохраняем игрока в players.db...")
                 local file = io.open(DB_PATH, "w")
                 if file then
-                    local serialized = serialization.serialize(playersData)
-                    file:write("return " .. serialized)
+                    file:write("return " .. serialization.serialize(playersData))
                     file:close()
-                    writeDebugLog("✅ Файл players.db сохранён, размер: " .. #serialized .. " байт")
-                    
                     players = playersData
-                    writeDebugLog("🔄 Глобальная таблица players обновлена")
-
+                    print("✅ Игрок обновлён")
                     if currentPlayer == playerName then
                         coinBalance = playersData[playerName].balance or 0
                         emaBalance = playersData[playerName].emaBalance or 0
-                        writeDebugLog("✅ Баланс текущего игрока обновлён: Coin=" .. coinBalance .. ", EMA=" .. emaBalance)
-
-                        if currentScreen == "menu" then
-                            drawMainMenu()
-                            writeDebugLog("🔄 Меню перерисовано")
-                        elseif currentScreen == "account" then
-                            drawAccount({balance = coinBalance, emaBalance = emaBalance})
-                            writeDebugLog("🔄 Аккаунт перерисован")
+                        if currentScreen == "menu" then drawMainMenu()
+                        elseif currentScreen == "account" then drawAccount({balance = coinBalance, emaBalance = emaBalance})
                         end
                     end
-
-                    sendResult(true, "Игрок обновлён успешно")
-                    writeDebugLog("✅ Отправлен результат: success")
+                    sendResult(true, "Игрок обновлён")
                 else
-                    writeDebugLog("❌ НЕ УДАЛОСЬ ОТКРЫТЬ ФАЙЛ ДЛЯ ЗАПИСИ: " .. DB_PATH)
-                    sendResult(false, "Ошибка записи в файл")
+                    sendResult(false, "Ошибка записи")
                 end
 
             -- ==================== ИНКРЕМЕНТАЛЬНОЕ ОБНОВЛЕНИЕ ТОВАРОВ ====================
             elseif cmd.command == "save_buy_items_incremental" then
-                writeDebugLog("📥 save_buy_items_incremental получен")
-                local changes = d.changes
-                local ok = applyIncrementalChanges("/home/buy_items.lua", changes, "buy_items")
-                sendResult(ok, ok and "Товары покупки обновлены" or "Ошибка обновления buy_items")
+                print("📥 save_buy_items_incremental")
+                local ok = applyIncrementalChanges("/home/buy_items.lua", d.changes, "buy_items")
+                sendResult(ok, ok and "Товары покупки обновлены" or "Ошибка")
 
             elseif cmd.command == "save_shop_items_incremental" then
-                writeDebugLog("📥 save_shop_items_incremental получен")
-                local changes = d.changes
-                local ok = applyIncrementalChanges("/home/shop_items.lua", changes, "shop_items")
-                sendResult(ok, ok and "Магазин обновлён" or "Ошибка обновления shop_items")
+                print("📥 save_shop_items_incremental")
+                local ok = applyIncrementalChanges("/home/shop_items.lua", d.changes, "shop_items")
+                sendResult(ok, ok and "Магазин обновлён" or "Ошибка")
 
             -- ==================== РЕЖИМ ОБСЛУЖИВАНИЯ ====================
             elseif cmd.command == "toggle_pause" then
                 if d.paused ~= nil then
                     shopPaused = d.paused
-                    writeDebugLog("📥 Установлен режим обслуживания: " .. tostring(shopPaused) .. " (из данных)")
                 else
                     shopPaused = not shopPaused
-                    writeDebugLog("📥 Переключён режим обслуживания: " .. tostring(shopPaused))
                 end
+                print("⏸️ Режим обслуживания: " .. tostring(shopPaused))
                 
                 addLog(shopPaused and "⏸️ Магазин переведён в режим обслуживания" or "🟢 Магазин открыт")
-                
                 sendToWeb("/api/new_log", toJson({
                     time = getRealTimeHM(),
                     level = "INFO",
@@ -2629,14 +2652,10 @@ local function checkWebCommands()
                 
                 sendStats()
                 
-                if currentScreen == "welcome" then
-                    drawWelcomeScreen()
-                elseif currentScreen == "auth" then
-                    drawAuthScreen()
-                elseif currentScreen == "menu" then
-                    drawMainMenu()
-                elseif currentScreen == "shop" then
-                    drawShopMenu()
+                if currentScreen == "welcome" then drawWelcomeScreen()
+                elseif currentScreen == "auth" then drawAuthScreen()
+                elseif currentScreen == "menu" then drawMainMenu()
+                elseif currentScreen == "shop" then drawShopMenu()
                 elseif currentScreen == "shop_buy" or currentScreen == "shop_sell" then
                     currentScreen = "menu"
                     drawMainMenu()
@@ -2656,25 +2675,21 @@ local function checkWebCommands()
 
             -- ==================== ПОЛУЧЕНИЕ ТОВАРОВ ====================
             elseif cmd.command == "get_buy_items" then
-                writeDebugLog("📥 get_buy_items получен")
+                print("📥 get_buy_items")
                 local buyItems = {}
                 if fs.exists("/home/buy_items.lua") then
                     local ok, data = pcall(dofile, "/home/buy_items.lua")
-                    if ok and type(data) == "table" then 
-                        buyItems = data 
-                    end
+                    if ok and type(data) == "table" then buyItems = data end
                 end
                 sendResult(true, "buy_items отправлены")
                 sendToWeb("/api/update", toJson({buy_items = buyItems}))
                 
             elseif cmd.command == "get_shop_items" then
-                writeDebugLog("📥 get_shop_items получен")
+                print("📥 get_shop_items")
                 local shopItems = {}
                 if fs.exists("/home/shop_items.lua") then
                     local ok, data = pcall(dofile, "/home/shop_items.lua")
-                    if ok and type(data) == "table" then 
-                        shopItems = data.sellItems or {}
-                    end
+                    if ok and type(data) == "table" then shopItems = data.sellItems or {} end
                 end
                 sendResult(true, "shop_items отправлены")
                 sendToWeb("/api/update", toJson({sell_items = shopItems}))
@@ -2690,9 +2705,7 @@ local function checkWebCommands()
                 local playersData = {}
                 if fs.exists(DB_PATH) then
                     local ok, data = pcall(dofile, DB_PATH)
-                    if ok and type(data) == "table" then
-                        playersData = data
-                    end
+                    if ok and type(data) == "table" then playersData = data end
                 end
                 
                 if playersData[playerName] then
@@ -2721,9 +2734,7 @@ local function checkWebCommands()
                 local playersData = {}
                 if fs.exists(DB_PATH) then
                     local ok, data = pcall(dofile, DB_PATH)
-                    if ok and type(data) == "table" then
-                        playersData = data
-                    end
+                    if ok and type(data) == "table" then playersData = data end
                 end
                 
                 if playersData[playerName] then
@@ -2774,7 +2785,9 @@ local function checkWebCommands()
             -- ==================== REBOOT (ПОЛНАЯ ОЧИСТКА) ====================
             elseif cmd.command == "reboot" then
                 print("")
-                print("🔥🔥🔥 ПОЛУЧЕНА КОМАНДА REBOOT ОТ СЕРВЕРА 🔥🔥🔥")
+                print("🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥")
+                print("🔥🔥🔥     ПОЛУЧЕНА КОМАНДА REBOOT     🔥🔥🔥")
+                print("🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥")
                 print("")
                 
                 print("📊 СОСТОЯНИЕ ДО REBOOT (в обработчике):")
@@ -2786,6 +2799,7 @@ local function checkWebCommands()
                 print("   sell_items: " .. #sellItems)
                 
                 -- ===== ПОЛНАЯ ОЧИСТКА ВСЕХ ДАННЫХ В OC =====
+                print("🧹 ОЧИЩАЮ ВСЕ ДАННЫЕ...")
                 players = {}
                 transactions = {}
                 globalStats = { totalReports = 0, totalBuys = 0, totalSells = 0, totalRevenue = 0, totalBalance = 0 }
@@ -2806,7 +2820,10 @@ local function checkWebCommands()
                 playerAgreed = false
                 alreadyAuthorized = false
                 
+                print("✅ ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ОЧИЩЕНЫ")
+                
                 -- Очищаем файлы на диске
+                print("🧹 ОЧИЩАЮ ФАЙЛЫ...")
                 local filesToClear = {
                     DB_PATH,
                     STATS_PATH,
@@ -2834,14 +2851,14 @@ local function checkWebCommands()
                                 file:write("return { sellItems = {}, vanillaItems = {} }")
                             end
                             file:close()
-                            print("🧹 Очищен файл: " .. path)
+                            print("   ✅ Очищен: " .. path)
                         end
                     end
                 end
-                
-                print("✅ Все данные в OC очищены!")
+                print("✅ ФАЙЛЫ ОЧИЩЕНЫ")
                 
                 -- Принудительно отправляем пустую статистику на сервер
+                print("📤 ОТПРАВЛЯЮ ПУСТУЮ СТАТИСТИКУ...")
                 local emptyPayload = {
                     players = {},
                     admins = admins or {"ZoziDo"},
@@ -2860,9 +2877,8 @@ local function checkWebCommands()
                     sell_items = {}
                 }
                 
-                print("📤 Отправляем ПУСТУЮ статистику на сервер...")
                 sendToWeb("/api/update", toJson(emptyPayload))
-                print("✅ Пустая статистика отправлена")
+                print("✅ ПУСТАЯ СТАТИСТИКА ОТПРАВЛЕНА")
                 
                 print("📊 СОСТОЯНИЕ ПОСЛЕ REBOOT (в обработчике):")
                 pc = 0
@@ -2871,17 +2887,18 @@ local function checkWebCommands()
                 print("   Транзакций: " .. #transactions)
                 print("   buy_items: " .. #buyItemsData)
                 print("   sell_items: " .. #sellItems)
+                print("")
+                print("🔥🔥🔥 REBOOT ЗАВЕРШЁН 🔥🔥🔥")
+                print("")
                 
                 sendResult(true, "Reboot выполнен")
-                
-                -- Обновляем экран
                 currentScreen = "welcome"
                 drawWelcomeScreen()
 
             -- ==================== ПРИНУДИТЕЛЬНОЕ ОБНОВЛЕНИЕ ====================
             elseif cmd.command == "update" then
                 print("")
-                print("📥 ПОЛУЧЕНА КОМАНДА UPDATE ОТ СЕРВЕРА")
+                print("📥📥📥 ПОЛУЧЕНА КОМАНДА UPDATE 📥📥📥")
                 print("")
                 
                 -- Очищаем все данные
@@ -2904,9 +2921,8 @@ local function checkWebCommands()
                 playerAgreed = false
                 alreadyAuthorized = false
                 
-                print("✅ Все данные в OC очищены (update)")
+                print("✅ ВСЕ ДАННЫЕ ОЧИЩЕНЫ (UPDATE)")
                 
-                -- Принудительно отправляем пустую статистику
                 local emptyPayload = {
                     players = {},
                     admins = admins or {"ZoziDo"},
@@ -2925,13 +2941,10 @@ local function checkWebCommands()
                     sell_items = {}
                 }
                 
-                print("📤 Отправляем ПУСТУЮ статистику на сервер...")
                 sendToWeb("/api/update", toJson(emptyPayload))
-                print("✅ Пустая статистика отправлена")
+                print("📤 ПУСТАЯ СТАТИСТИКА ОТПРАВЛЕНА")
                 
                 sendResult(true, "Update выполнен")
-                
-                -- Обновляем экран
                 currentScreen = "welcome"
                 drawWelcomeScreen()
 
@@ -2945,9 +2958,12 @@ local function checkWebCommands()
     end)
 
     if not success then
-        writeErrorLog("❌ Критическая ошибка в checkWebCommands: " .. tostring(err))
-        print("❌ checkWebCommands error: " .. tostring(err))
+        print("❌❌❌ КРИТИЧЕСКАЯ ОШИБКА В checkWebCommands: " .. tostring(err))
+        writeErrorLog("❌ Критическая ошибка: " .. tostring(err))
     end
+    print("")
+    print("🔍🔍🔍 checkWebCommands() ЗАВЕРШЕНА 🔍🔍🔍")
+    print("")
 end
 
 local function safeCheckWebCommands()

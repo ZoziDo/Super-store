@@ -2379,9 +2379,7 @@ local function checkWebCommands()
                 
                 sendResult(true, "Игрок обновлён успешно")
                 writeDebugLog("✅ Команда update_player выполнена")
-            end
                 
-        
             -- ==================== ИНКРЕМЕНТАЛЬНОЕ ОБНОВЛЕНИЕ ТОВАРОВ ====================
             elseif cmd.command == "save_buy_items_incremental" then
                 writeDebugLog("📥 save_buy_items_incremental получен")

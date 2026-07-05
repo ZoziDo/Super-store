@@ -1,3 +1,5 @@
+ЩАс всегда горит Выключен, когда нажима режим обслуживания, снизу выскакивает сообщение Режим обслуживания Выключен, то есть он не переключает включить или выключить, так же в игре ничего не происходит на паузу не ставится
+
 local component = require("component")
 local event = require("event")
 local gpu = component.gpu
@@ -13,7 +15,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ1
+-- ВРЕМЯ12356
 -- ============================================================
 
 local tmpfs = component.proxy(computer.tmpAddress())
@@ -36,7 +38,7 @@ end
 -- ВЕБ-ИНТЕГРАЦИЯ
 -- ============================================================
 
-local WEB_URL = "http://localhost:8888"
+local WEB_URL = "https://upfront-dinginess-impulsive.ngrok-free.dev"
 
 
 local function toJson(val)
@@ -536,86 +538,6 @@ local function removeAdmin(playerName)
     return false
 end
 
--- ============================================================
--- REBOOT - ПОЛНЫЙ СБРОС ДАННЫХ
--- ============================================================
-
-local function performReboot()
-    writeDebugLog("🔄 Выполняется полный REBOOT")
-    
-    -- Очищаем глобальные данные
-    players = {}
-    transactions = {}
-    globalStats = { totalReports = 0, totalBuys = 0, totalSells = 0, totalRevenue = 0, totalBalance = 0 }
-    
-    -- Очищаем все файлы
-    local filesToClear = {
-        DB_PATH,
-        STATS_PATH,
-        FEEDBACKS_PATH,
-        REPORTS_PATH
-    }
-    
-    for _, path in ipairs(filesToClear) do
-        if fs.exists(path) then
-            local file = io.open(path, "w")
-            if file then
-                if path == DB_PATH then
-                    file:write(serialization.serialize({}))
-                elseif path == STATS_PATH then
-                    file:write(serialization.serialize({ totalReports = 0, totalBuys = 0, totalSells = 0, totalRevenue = 0, totalBalance = 0 }))
-                elseif path == FEEDBACKS_PATH then
-                    file:write(serialization.serialize({}))
-                elseif path == REPORTS_PATH then
-                    file:write("")
-                end
-                file:close()
-                writeDebugLog("🧹 Очищен файл: " .. path)
-            end
-        end
-    end
-    
-    -- Перезагружаем данные
-    if fs.exists(DB_PATH) then
-        local file = io.open(DB_PATH, "r")
-        if file then
-            local raw = file:read("*a")
-            file:close()
-            if raw and #raw > 0 then
-                local ok, data = pcall(serialization.unserialize, raw)
-                if ok and data then 
-                    players = data 
-                end
-            end
-        end
-    end
-    
-    if fs.exists(STATS_PATH) then
-        local file = io.open(STATS_PATH, "r")
-        if file then
-            local raw = file:read("*a")
-            file:close()
-            if raw and #raw > 0 then
-                local ok, data = pcall(serialization.unserialize, raw)
-                if ok and data then
-                    globalStats.totalReports = data.totalReports or 0
-                    globalStats.totalBuys = data.totalBuys or 0
-                    globalStats.totalSells = data.totalSells or 0
-                    globalStats.totalRevenue = data.totalRevenue or 0
-                    globalStats.totalBalance = data.totalBalance or 0
-                end
-            end
-        end
-    end
-    
-    addLog("🔄 REBOOT: Все данные сброшены")
-    
-    -- Отправляем обновление на сервер
-    sendStats()
-    
-    writeDebugLog("✅ REBOOT завершён")
-end
-
 local function addTransaction(type, playerName, item, qty, value_coin, value_ema)
     writeDebugLog("addTransaction: " .. type .. " " .. (playerName or "?"))
     
@@ -823,10 +745,10 @@ local function sendStats()
         total_feedbacks = #feedbacksList,
         total_revenue = globalStats.totalRevenue or 0,
         online = 0,
-        paused = shopPaused,
+        paused = false,
         feedbacks = feedbacksList,
         reports = reportsList,
-        transactions = allPlayerTransactions,
+        transactions = allPlayerTransactions,   -- <-- ИСПРАВЛЕНО: все транзакции из БД
         buy_items = buyItems,
         sell_items = sellItems
     }
@@ -834,11 +756,9 @@ local function sendStats()
     local jsonData = toJson(payload)
     writeDebugLog("📤 Размер JSON: " .. #jsonData .. " байт")
     writeDebugLog("📤 Отправлены данные: " .. #playerList .. " игроков, " .. #buyItems .. " товаров покупки, " .. #sellItems .. " товаров продажи")
-    writeDebugLog("📤 Режим обслуживания: " .. tostring(shopPaused))  -- <-- ДОБАВЛЕНО для отладки
     
     sendToWeb("/api/update", jsonData)
 end
-
 
 event.timer(30, sendStats, math.huge)
 
@@ -1817,7 +1737,7 @@ local function drawWelcomeScreen()
     -- Проверяем режим обслуживания
     if shopPaused then
         gpu.setForeground(colors.error)
-        drawCenteredText(18, "РЕЖИМ ОБСЛУЖИВАНИЯ", colors.error)
+        drawCenteredText(18, "⏸️ РЕЖИМ ОБСЛУЖИВАНИЯ", colors.error)
         drawCenteredText(19, "Магазин временно закрыт", colors.error)
         drawCenteredText(20, "Пожалуйста, зайдите позже", colors.text_main)
     else
@@ -2242,58 +2162,38 @@ local function checkWebCommands()
         local url = WEB_URL .. "/api/commands"
         writeDebugLog("📡 Запрос к: " .. url)
 
-        -- Пробуем сделать запрос с обработкой ошибок
-        local response, errMsg = pcall(function()
-            return internet.request(url, nil, {
-                ["Content-Type"] = "application/json",
-                ["Connection"] = "close"
-            })
-        end)
-
+        local response = internet.request(url)
         if not response then
-            writeDebugLog("⚠️ Нет ответа от сервера (pcall failed): " .. tostring(errMsg))
+            writeDebugLog("⚠️ Нет ответа от сервера")
             return
         end
 
-        if not response or type(response) ~= "table" then
-            writeDebugLog("⚠️ Неверный тип ответа от сервера: " .. type(response))
+        -- Проверяем статус ответа (для internet.request в OC)
+        local status = response.getStatus and response:getStatus() or response.code or response.status
+        if status and status ~= 200 then
+            writeErrorLog("⚠️ Сервер вернул HTTP " .. tostring(status) .. " на запрос " .. url)
             return
         end
 
-        -- Пытаемся прочитать тело ответа
         local body = ""
-        local readSuccess, readErr = pcall(function()
-            for chunk in response do
-                if chunk then
-                    body = body .. chunk
-                end
-            end
-        end)
-
-        if not readSuccess then
-            writeErrorLog("⚠️ Ошибка чтения ответа: " .. tostring(readErr))
-            return
+        for chunk in response do
+            body = body .. chunk
         end
 
-        -- Проверяем, есть ли тело ответа
-        if #body < 5 then
-            writeDebugLog("⚠️ Пустой или слишком короткий ответ, длина: " .. #body)
-            return
-        end
-
-        -- Проверяем, не является ли ответ HTML ошибкой (например, от ngrok)
-        if body:match("^%s*<") or body:match("^%s*<!DOCTYPE") then
-            writeErrorLog("⚠️ Получен HTML вместо JSON: " .. body:sub(1, 200))
-            return
-        end
-
+        writeDebugLog("📥 Сырой ответ от сервера: " .. body)
         writeDebugLog("📥 Получено " .. #body .. " байт")
 
-        -- Парсим JSON
+        if #body < 10 then
+            writeDebugLog("⚠️ Ответ слишком короткий")
+            return
+        end
+
         local data = parseJSON(body)
-        if not data then
-            writeErrorLog("❌ Ошибка парсинга JSON от /api/commands")
-            writeDebugLog("Сырой ответ: " .. body:sub(1, 400))
+        if data then
+            writeDebugLog("✅ Распарсено: " .. serialization.serialize(data))
+        else
+            writeDebugLog("❌ data = nil после парсинга!")
+            writeErrorLog("❌ Ошибка парсинга JSON: " .. string.sub(body, 1, 300))
             return
         end
 
@@ -2436,29 +2336,23 @@ local function checkWebCommands()
 
             -- ==================== РЕЖИМ ОБСЛУЖИВАНИЯ ====================
             elseif cmd.command == "toggle_pause" then
-                if d.paused ~= nil then
-                    shopPaused = d.paused
-                    writeDebugLog("📥 Установлен режим обслуживания: " .. tostring(shopPaused) .. " (из данных)")
-                else
-                    shopPaused = not shopPaused
-                    writeDebugLog("📥 Переключён режим обслуживания: " .. tostring(shopPaused))
-                end
-                
+                shopPaused = not shopPaused
                 addLog(shopPaused and "⏸️ Магазин переведён в режим обслуживания" or "🟢 Магазин открыт")
                 
+                -- Отправляем уведомление на веб-сервер
                 sendToWeb("/api/new_log", toJson({
                     time = getRealTimeHM(),
                     level = "INFO",
                     text = shopPaused and "⏸️ Магазин переведён в режим обслуживания" or "🟢 Магазин открыт"
                 }))
                 
+                -- Рассылаем уведомление терминалам
                 local msg = serialization.serialize({op = "shop_paused", paused = shopPaused})
                 for addr in pairs(markets or {}) do
                     pcall(modem.send, addr, 0xffef, msg)
                 end
                 
-                sendStats()
-                
+                -- Обновляем экран в зависимости от текущего состояния
                 if currentScreen == "welcome" then
                     drawWelcomeScreen()
                 elseif currentScreen == "auth" then
@@ -2468,155 +2362,21 @@ local function checkWebCommands()
                 elseif currentScreen == "shop" then
                     drawShopMenu()
                 elseif currentScreen == "shop_buy" or currentScreen == "shop_sell" then
+                    -- Если игрок в магазине, возвращаем его в главное меню
                     currentScreen = "menu"
                     drawMainMenu()
                 end
                 
                 sendResult(true, shopPaused and "Магазин на паузе" or "Магазин активен")
 
-            -- ==================== ОБНОВЛЕНИЕ МАРКЕТА ====================
             elseif cmd.command == "update_market" then
                 broadcastUpdate()
                 sendResult(true, "Обновление разослано")
 
-            -- ==================== ЗАВЕРШЕНИЕ ТЕРМИНАЛОВ ====================
             elseif cmd.command == "kill_market" then
                 broadcastKill()
                 sendResult(true, "Терминалы будут завершены")
 
-            -- ==================== ПОЛУЧЕНИЕ ТОВАРОВ ====================
-            elseif cmd.command == "get_buy_items" then
-                writeDebugLog("📥 get_buy_items получен")
-                local buyItems = {}
-                if fs.exists("/home/buy_items.lua") then
-                    local ok, data = pcall(dofile, "/home/buy_items.lua")
-                    if ok and type(data) == "table" then 
-                        buyItems = data 
-                    end
-                end
-                sendResult(true, "buy_items отправлены")
-                sendToWeb("/api/update", toJson({buy_items = buyItems}))
-                
-            elseif cmd.command == "get_shop_items" then
-                writeDebugLog("📥 get_shop_items получен")
-                local shopItems = {}
-                if fs.exists("/home/shop_items.lua") then
-                    local ok, data = pcall(dofile, "/home/shop_items.lua")
-                    if ok and type(data) == "table" then 
-                        shopItems = data.sellItems or {}
-                    end
-                end
-                sendResult(true, "shop_items отправлены")
-                sendToWeb("/api/update", toJson({sell_items = shopItems}))
-
-            -- ==================== БАН ИГРОКА ====================
-            elseif cmd.command == "toggle_ban" then
-                local playerName = d.name
-                if not playerName then
-                    sendResult(false, "Нет имени игрока")
-                    goto continue
-                end
-                
-                local playersData = {}
-                if fs.exists(DB_PATH) then
-                    local ok, data = pcall(dofile, DB_PATH)
-                    if ok and type(data) == "table" then
-                        playersData = data
-                    end
-                end
-                
-                if playersData[playerName] then
-                    playersData[playerName].banned = not playersData[playerName].banned
-                    local file = io.open(DB_PATH, "w")
-                    if file then
-                        file:write("return " .. serialization.serialize(playersData))
-                        file:close()
-                        players = playersData
-                        sendResult(true, playersData[playerName].banned and "Игрок забанен" or "Игрок разбанен")
-                    else
-                        sendResult(false, "Ошибка записи")
-                    end
-                else
-                    sendResult(false, "Игрок не найден")
-                end
-
-            -- ==================== СБРОС ИГРОКА ====================
-            elseif cmd.command == "reset_player" then
-                local playerName = d.name
-                if not playerName then
-                    sendResult(false, "Нет имени игрока")
-                    goto continue
-                end
-                
-                local playersData = {}
-                if fs.exists(DB_PATH) then
-                    local ok, data = pcall(dofile, DB_PATH)
-                    if ok and type(data) == "table" then
-                        playersData = data
-                    end
-                end
-                
-                if playersData[playerName] then
-                    playersData[playerName].balance = 0
-                    playersData[playerName].emaBalance = 0
-                    playersData[playerName].transactions = 0
-                    playersData[playerName].transactionsList = {}
-                    local file = io.open(DB_PATH, "w")
-                    if file then
-                        file:write("return " .. serialization.serialize(playersData))
-                        file:close()
-                        players = playersData
-                        sendResult(true, "Игрок сброшен")
-                    else
-                        sendResult(false, "Ошибка записи")
-                    end
-                else
-                    sendResult(false, "Игрок не найден")
-                end
-
-            -- ==================== ДОБАВЛЕНИЕ/УДАЛЕНИЕ АДМИНА ====================
-            elseif cmd.command == "add_admin" then
-                local playerName = d.name
-                if not playerName then
-                    sendResult(false, "Нет имени игрока")
-                    goto continue
-                end
-                
-                if addAdmin(playerName) then
-                    sendResult(true, "Админ добавлен")
-                else
-                    sendResult(false, "Ошибка добавления админа")
-                end
-
-            elseif cmd.command == "remove_admin" then
-                local playerName = d.name
-                if not playerName then
-                    sendResult(false, "Нет имени игрока")
-                    goto continue
-                end
-                
-                if removeAdmin(playerName) then
-                    sendResult(true, "Админ удалён")
-                else
-                    sendResult(false, "Ошибка удаления админа")
-                end
-
-            -- ==================== REBOOT ====================
-            elseif cmd.command == "reboot" then
-                writeDebugLog("🔄 Получена команда REBOOT")
-                performReboot()  -- Вызываем функцию полного сброса
-                sendResult(true, "Reboot выполнен")
-                
-                -- Обновляем экран
-                if currentScreen == "menu" then
-                    drawMainMenu()
-                elseif currentScreen == "welcome" then
-                    drawWelcomeScreen()
-                elseif currentScreen == "shop" then
-                    drawShopMenu()
-                end
-
-            -- ==================== НЕИЗВЕСТНАЯ КОМАНДА ====================
             else
                 sendResult(false, "Неизвестная команда: " .. tostring(cmd.command))
             end
@@ -2627,19 +2387,11 @@ local function checkWebCommands()
 
     if not success then
         writeErrorLog("❌ Критическая ошибка в checkWebCommands: " .. tostring(err))
-        print("❌ checkWebCommands error: " .. tostring(err))
     end
 end
 
-local function safeCheckWebCommands()
-    local ok, err = pcall(checkWebCommands)
-    if not ok then
-        writeErrorLog("❌ Ошибка в checkWebCommands: " .. tostring(err))
-    end
-end
-
--- Запускаем с увеличенным интервалом и обработкой ошибок
-event.timer(3, safeCheckWebCommands, math.huge)
+-- Запуск опроса команд каждые 2 секунды
+event.timer(2, checkWebCommands, math.huge)
 
 -- ============================================================
 -- ОСТАЛЬНЫЕ UI ФУНКЦИИ
@@ -4248,145 +4000,116 @@ local function main()
             end
 
         elseif e == "player_on" or e == "pim" or e == "pim_player_enter" then
-            local playerName = ev[2] or "Игрок"
-            writeDebugLog("player_on: " .. playerName)
-            
-            -- ===== ПРОВЕРКА РЕЖИМА ОБСЛУЖИВАНИЯ =====
-            if shopPaused then
-                writeDebugLog("Режим обслуживания активен, вход запрещён для: " .. playerName)
-                
-                -- Показываем сообщение о режиме обслуживания
-                gpu.setBackground(colors.bg_main)
-                gpu.fill(1, 1, 80, 25, " ")
-                drawBigTitle()
-                gpu.setForeground(colors.error)
-                drawCenteredText(17, "РЕЖИМ ОБСЛУЖИВАНИЯ", colors.error)
-                drawCenteredText(18, "Магазин временно закрыт", colors.error)
-                drawCenteredText(19, "Пожалуйста, зайдите позже", colors.text_main)
-                gpu.setForeground(colors.text_main)
-                drawCenteredText(22, "--===============|VIP SHOP|===============--", colors.text_main)
-                drawTempMessage()
-                
-                -- Ждём пока игрок уйдёт с PIM или режим отключат
-                while shopPaused do
-                    local ev2 = {event.pull(1)}
-                    if ev2[1] == "player_off" or ev2[1] == "pim_player_leave" then
-                        writeDebugLog("👤 Игрок ушёл с PIM: " .. playerName)
-                        drawWelcomeScreen()
-                        break
-                    end
-                end
-                goto continue
-            end
-            -- ===== КОНЕЦ ПРОВЕРКИ =====
-            
-            if not pimOwner then
-                pimOwner = playerName
-            end
-            currentPlayer = playerName:match("^%s*(.-)%s*$") or playerName
-            
-            if alreadyAuthorized then
-                if currentScreen == "auth" or currentScreen == "account_loading" then
-                    currentScreen = "menu"
-                    drawMainMenu()
-                end
-            elseif currentToken then
-                alreadyAuthorized = true
-                if currentScreen == "auth" or currentScreen == "account_loading" then
-                    currentScreen = "menu"
-                    drawMainMenu()
-                end
-            else
-                writeDebugLog("Новый вход: " .. playerName)
-                coinBalance = 0.0
-                emaBalance = 0.0
-                playerAgreed = false
-                currentScreen = "auth"
-                authStartTime = os.clock()
-                drawAuthScreen()
-                
-                local player = players[currentPlayer]
-                if not player then
-                    player = { 
-                        balance = 0, 
-                        emaBalance = 0, 
-                        transactions = 0, 
-                        banned = false, 
-                        agreed = false, 
-                        hasFeedback = false,
-                        transactionsList = {},
-                        regDate = getRealTimeString()
-                    }
-                    players[currentPlayer] = player
-                    saveDB()
-                    addLog("✅ Новый игрок: " .. currentPlayer)
-                    writeDebugLog("Создан новый игрок: " .. currentPlayer)
-                    -- НОВЫЙ ЛОГ: Регистрация
-                    sendToWeb("/api/new_log", toJson({
-                        time = getRealTimeHM(),
-                        level = "SUCCESS",
-                        text = "Новый игрок: " .. currentPlayer
-                    }))
-                end
-                
-                if player.banned then
-                    drawCenteredText(20, "Вы забанены!", colors.error)
-                    os.sleep(2)
-                    currentPlayer = nil
-                    currentScreen = "welcome"
-                    drawWelcomeScreen()
-                else
-                    currentToken = tostring(math.floor(math.random() * 900000000 + 100000000))
-                    coinBalance = player.balance or 0
-                    emaBalance = player.emaBalance or 0
-                    playerTransactions = player.transactions or 0
-                    playerAgreed = player.agreed or false
-                    playerRegDate = player.regDate or getRealTimeString()
-                    alreadyAuthorized = true
-                    writeDebugLog("Вход выполнен: " .. currentPlayer .. ", баланс: " .. coinBalance .. ", agreed: " .. tostring(playerAgreed))
-                    
-                    if selector then
-                        addLog("🖥 Селектор доступен")
-                    end
-                    
-                    currentScreen = "menu"
-                    drawMainMenu()
-                    addLog("👤 Вход: " .. currentPlayer)
-                    -- НОВЫЙ ЛОГ: Вход
-                    sendToWeb("/api/new_log", toJson({
-                        time = getRealTimeHM(),
-                        level = "INFO",
-                        text = "Вход: " .. currentPlayer
-                    }))
-                end
-            end
+        local playerName = ev[2] or "Игрок"
+        writeDebugLog("player_on: " .. playerName)
         
-        elseif e == "player_off" or e == "pim_player_leave" then
-            local playerName = ev[2] or "Игрок"
-            writeDebugLog("player_off: " .. playerName)
-            -- НОВЫЙ ЛОГ: Выход
-            addLog("👤 Выход: " .. playerName)
-            sendToWeb("/api/new_log", toJson({
-                time = getRealTimeHM(),
-                level = "INFO",
-                text = "Выход: " .. playerName
-            }))
-            
-            if playerName == pimOwner then
-                pimOwner = nil
-            end
-            currentPlayer = nil
-            currentToken = nil
-            alreadyAuthorized = false
-            currentScreen = "welcome"
-            selectedItem = nil
-            hoveredIndex = 0
-            selectedIndex = 0
-            pcall(updateSelectorDisplay, nil)
-            pcall(selector.setSlot, 0, nil)
-            pcall(selector.setSlot, 1, nil)
-            drawWelcomeScreen()
+        if not pimOwner then
+            pimOwner = playerName
         end
+        currentPlayer = playerName:match("^%s*(.-)%s*$") or playerName
+        
+        if alreadyAuthorized then
+            if currentScreen == "auth" or currentScreen == "account_loading" then
+                currentScreen = "menu"
+                drawMainMenu()
+            end
+        elseif currentToken then
+            alreadyAuthorized = true
+            if currentScreen == "auth" or currentScreen == "account_loading" then
+                currentScreen = "menu"
+                drawMainMenu()
+            end
+        else
+            writeDebugLog("Новый вход: " .. playerName)
+            coinBalance = 0.0
+            emaBalance = 0.0
+            playerAgreed = false
+            currentScreen = "auth"
+            authStartTime = os.clock()
+            drawAuthScreen()
+            
+            local player = players[currentPlayer]
+            if not player then
+                player = { 
+                    balance = 0, 
+                    emaBalance = 0, 
+                    transactions = 0, 
+                    banned = false, 
+                    agreed = false, 
+                    hasFeedback = false,
+                    transactionsList = {},
+                    regDate = getRealTimeString()
+                }
+                players[currentPlayer] = player
+                saveDB()
+                addLog("✅ Новый игрок: " .. currentPlayer)
+                writeDebugLog("Создан новый игрок: " .. currentPlayer)
+                -- НОВЫЙ ЛОГ: Регистрация
+                sendToWeb("/api/new_log", toJson({
+                    time = getRealTimeHM(),
+                    level = "SUCCESS",
+                    text = "Новый игрок: " .. currentPlayer
+                }))
+            end
+            
+            if player.banned then
+                drawCenteredText(20, "Вы забанены!", colors.error)
+                os.sleep(2)
+                currentPlayer = nil
+                currentScreen = "welcome"
+                drawWelcomeScreen()
+            else
+                currentToken = tostring(math.floor(math.random() * 900000000 + 100000000))
+                coinBalance = player.balance or 0
+                emaBalance = player.emaBalance or 0
+                playerTransactions = player.transactions or 0
+                playerAgreed = player.agreed or false
+                playerRegDate = player.regDate or getRealTimeString()
+                alreadyAuthorized = true
+                writeDebugLog("Вход выполнен: " .. currentPlayer .. ", баланс: " .. coinBalance .. ", agreed: " .. tostring(playerAgreed))
+                
+                if selector then
+                    addLog("🖥 Селектор доступен")
+                end
+                
+                currentScreen = "menu"
+                drawMainMenu()
+                addLog("👤 Вход: " .. currentPlayer)
+                -- НОВЫЙ ЛОГ: Вход
+                sendToWeb("/api/new_log", toJson({
+                    time = getRealTimeHM(),
+                    level = "INFO",
+                    text = "Вход: " .. currentPlayer
+                }))
+            end
+        end
+
+        elseif e == "player_off" or e == "pim_player_leave" then
+        local playerName = ev[2] or "Игрок"
+        writeDebugLog("player_off: " .. playerName)
+        -- НОВЫЙ ЛОГ: Выход
+        addLog("👤 Выход: " .. playerName)
+        sendToWeb("/api/new_log", toJson({
+            time = getRealTimeHM(),
+            level = "INFO",
+            text = "Выход: " .. playerName
+        }))
+        
+        if playerName == pimOwner then
+            pimOwner = nil
+        end
+        currentPlayer = nil
+        currentToken = nil
+        alreadyAuthorized = false
+        currentScreen = "welcome"
+        selectedItem = nil
+        hoveredIndex = 0
+        selectedIndex = 0
+        pcall(updateSelectorDisplay, nil)
+        pcall(selector.setSlot, 0, nil)
+        pcall(selector.setSlot, 1, nil)
+        drawWelcomeScreen()
+    end
 
         ::continue::
     end

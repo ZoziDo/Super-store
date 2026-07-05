@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ1234566
+-- ВРЕМЯ1
 -- ============================================================
 
 local tmpfs = component.proxy(computer.tmpAddress())
@@ -519,58 +519,6 @@ local function addAdmin(playerName)
     return false
 end
 
--- ============================================================
--- СУПЕР-ЛОГИРОВАНИЕ ДЛЯ REBOOT
--- ============================================================
-
-local function logState(tag)
-    local playerCount = 0
-    for _ in pairs(players) do playerCount = playerCount + 1 end
-    
-    local msg = string.format(
-        "[%s] Игроков: %d | Транзакций: %d | Баланс: %.2f | buy_items: %d | sell_items: %d | admins: %d",
-        tag or "STATE",
-        playerCount,
-        #(transactions or {}),
-        (globalStats and globalStats.totalBalance) or 0,
-        #(buyItemsData or {}),
-        #(sellItems or {}),
-        #(admins or {})
-    )
-    
-    print("🔴🔴🔴 " .. msg .. " 🔴🔴🔴")
-    writeDebugLog("🔴 " .. msg)
-    
-    if playerCount > 0 then
-        local names = {}
-        local i = 0
-        for name, _ in pairs(players) do
-            i = i + 1
-            table.insert(names, name)
-            if i >= 3 then break end
-        end
-        print("🔴 Игроки: " .. table.concat(names, ", "))
-        writeDebugLog("🔴 Игроки: " .. table.concat(names, ", "))
-    end
-    
-    local files = {DB_PATH, STATS_PATH, "/home/buy_items.lua", "/home/shop_items.lua"}
-    for _, path in ipairs(files) do
-        if fs.exists(path) then
-            local file = io.open(path, "r")
-            if file then
-                local content = file:read("*a")
-                file:close()
-                local size = #content
-                local short = content:sub(1, 100):gsub("\n", " "):gsub("\r", "")
-                print("🔴 Файл " .. path .. " размер: " .. size .. " байт, начало: " .. short)
-            end
-        else
-            print("🔴 Файл НЕ СУЩЕСТВУЕТ: " .. path)
-        end
-    end
-    print("🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴")
-end
-
 local function removeAdmin(playerName)
     if not playerName or playerName == "" then return false end
     if #admins <= 1 then return false end
@@ -589,22 +537,11 @@ local function removeAdmin(playerName)
 end
 
 -- ============================================================
--- REBOOT - ПОЛНЫЙ СБРОС ДАННЫХ (С МАКСИМАЛЬНЫМ ЛОГИРОВАНИЕМ)
+-- REBOOT - ПОЛНЫЙ СБРОС ДАННЫХ
 -- ============================================================
 
 local function performReboot()
-    print("")
-    print("████████████████████████████████████████████████████████████████")
-    print("███                    НАЧАЛО REBOOT                        ███")
-    print("████████████████████████████████████████████████████████████████")
-    print("")
-    
-    print("📊 СОСТОЯНИЕ ДО REBOOT:")
-    logState("ДО_REBOOT")
-    
-    print("")
-    print("🧹 ШАГ 1: Очистка глобальных переменных...")
-    
+    -- Очищаем глобальные данные
     players = {}
     transactions = {}
     globalStats = { totalReports = 0, totalBuys = 0, totalSells = 0, totalRevenue = 0, totalBalance = 0 }
@@ -624,53 +561,28 @@ local function performReboot()
     playerAgreed = false
     alreadyAuthorized = false
     
-    print("✅ Глобальные переменные очищены")
-    logState("ПОСЛЕ_ОЧИСТКИ_ПЕРЕМЕННЫХ")
-    
-    print("")
-    print("🧹 ШАГ 2: Очистка файлов...")
-    
+    -- Очищаем файлы
     local filesToClear = {
-        {path = DB_PATH, content = "return {}", name = "players.db"},
-        {path = STATS_PATH, content = "return { totalReports = 0, totalBuys = 0, totalSells = 0, totalRevenue = 0, totalBalance = 0 }", name = "global_stats.db"},
-        {path = FEEDBACKS_PATH, content = "return {}", name = "feedbacks.db"},
-        {path = REPORTS_PATH, content = "", name = "reports.log"},
-        {path = "/home/buy_items.lua", content = "return {}", name = "buy_items.lua"},
-        {path = "/home/shop_items.lua", content = "return { sellItems = {}, vanillaItems = {} }", name = "shop_items.lua"}
+        {path = DB_PATH, content = "return {}"},
+        {path = STATS_PATH, content = "return { totalReports = 0, totalBuys = 0, totalSells = 0, totalRevenue = 0, totalBalance = 0 }"},
+        {path = FEEDBACKS_PATH, content = "return {}"},
+        {path = REPORTS_PATH, content = ""},
+        {path = "/home/buy_items.lua", content = "return {}"},
+        {path = "/home/shop_items.lua", content = "return { sellItems = {}, vanillaItems = {} }"}
     }
     
     for _, fileInfo in ipairs(filesToClear) do
         local path = fileInfo.path
-        print("📁 Обработка: " .. path)
-        
         if fs.exists(path) then
-            print("   ✅ Файл существует")
-            local oldFile = io.open(path, "r")
-            if oldFile then
-                local oldContent = oldFile:read("*a")
-                oldFile:close()
-                print("   📄 Старое содержимое (" .. #oldContent .. " байт): " .. oldContent:sub(1, 50):gsub("\n", " "))
+            local file = io.open(path, "w")
+            if file then
+                file:write(fileInfo.content)
+                file:close()
             end
-        else
-            print("   ⚠️ Файл не существует, будем создавать")
-        end
-        
-        local file = io.open(path, "w")
-        if file then
-            file:write(fileInfo.content)
-            file:close()
-            print("   ✅ Записан новый контент (" .. #fileInfo.content .. " байт)")
-        else
-            print("   ❌ НЕ УДАЛОСЬ ОТКРЫТЬ ФАЙЛ!")
         end
     end
     
-    print("✅ Файлы очищены")
-    logState("ПОСЛЕ_ОЧИСТКИ_ФАЙЛОВ")
-    
-    print("")
-    print("🔄 ШАГ 3: Перезагрузка данных из файлов...")
-    
+    -- Перезагружаем админов
     if fs.exists(ADMINS_PATH) then
         local file = io.open(ADMINS_PATH, "r")
         if file then
@@ -680,34 +592,27 @@ local function performReboot()
                 local ok, data = pcall(serialization.unserialize, raw)
                 if ok and type(data) == "table" then 
                     admins = data 
-                    print("✅ Загружены админы: " .. #admins)
-                else
-                    print("❌ Ошибка загрузки админов")
                 end
             end
         end
     end
     
+    -- Перезагружаем игроков (пусто)
     if fs.exists(DB_PATH) then
         local file = io.open(DB_PATH, "r")
         if file then
             local raw = file:read("*a")
             file:close()
-            print("📄 Содержимое DB_PATH: " .. (raw or "пусто"))
             if raw and #raw > 0 then
                 local ok, data = pcall(serialization.unserialize, raw)
                 if ok and type(data) == "table" then 
                     players = data 
-                    print("✅ Загружены игроки: " .. #players)
-                else
-                    print("❌ Ошибка парсинга players.db")
                 end
-            else
-                print("⚠️ DB_PATH пуст")
             end
         end
     end
     
+    -- Перезагружаем статистику (пустая)
     if fs.exists(STATS_PATH) then
         local file = io.open(STATS_PATH, "r")
         if file then
@@ -721,12 +626,12 @@ local function performReboot()
                     globalStats.totalSells = data.totalSells or 0
                     globalStats.totalRevenue = data.totalRevenue or 0
                     globalStats.totalBalance = data.totalBalance or 0
-                    print("✅ Загружена статистика, баланс: " .. globalStats.totalBalance)
                 end
             end
         end
     end
     
+    -- Перезагружаем товары (пустые)
     if fs.exists("/home/buy_items.lua") then
         local ok, data = pcall(dofile, "/home/buy_items.lua")
         if ok and type(data) == "table" then 
@@ -737,7 +642,6 @@ local function performReboot()
                 local key = item.internalName .. ":" .. dmg
                 buyItemMap[key] = item
             end
-            print("✅ Загружены buy_items: " .. #buyItemsData)
         end
     end
     
@@ -745,17 +649,10 @@ local function performReboot()
         local ok, data = pcall(dofile, "/home/shop_items.lua")
         if ok and type(data) == "table" and data.sellItems then
             sellItems = data.sellItems or {}
-            print("✅ Загружены sell_items: " .. #sellItems)
         end
     end
     
-    print("")
-    print("📊 СОСТОЯНИЕ ПОСЛЕ REBOOT:")
-    logState("ПОСЛЕ_REBOOT")
-    
-    print("")
-    print("📤 ШАГ 4: Отправка пустых данных на сервер...")
-    
+    -- Отправляем пустую статистику
     local emptyPayload = {
         players = {},
         admins = admins or {"ZoziDo"},
@@ -774,23 +671,12 @@ local function performReboot()
         sell_items = {}
     }
     
-    print("📤 Отправляем: игроков=0, buy_items=0, sell_items=0, транзакций=0")
     sendToWeb("/api/update", toJson(emptyPayload))
-    print("✅ Пустые данные отправлены")
+    addLog("🔄 REBOOT: Все данные сброшены")
     
-    print("")
-    print("🔄 ШАГ 5: Обновление экрана...")
+    -- Обновляем экран
     currentScreen = "welcome"
     drawWelcomeScreen()
-    print("✅ Экран обновлён")
-    
-    print("")
-    print("████████████████████████████████████████████████████████████████")
-    print("███                    REBOOT ЗАВЕРШЁН                       ███")
-    print("████████████████████████████████████████████████████████████████")
-    print("")
-    
-    addLog("🔄 REBOOT: Все данные полностью сброшены")
 end
 
 local function addTransaction(type, playerName, item, qty, value_coin, value_ema)
@@ -869,27 +755,10 @@ local function broadcastKill()
 end
 
 -- ============================================================
--- ОТПРАВКА СТАТИСТИКИ (С РАСШИРЕННЫМ ЛОГИРОВАНИЕМ)
--- ============================================================
-
--- ============================================================
 -- ОТПРАВКА СТАТИСТИКИ
 -- ============================================================
 
 local function sendStats()
-    -- Логируем что отправляем
-    local pc = 0
-    for _ in pairs(players) do pc = pc + 1 end
-    print("📤 sendStats: Игроков=" .. pc .. ", buy_items=" .. #buyItemsData .. ", sell_items=" .. #sellItems)
-    
-    -- Защита от отправки старых данных сразу после reboot
-    if pc == 0 and #transactions == 0 then
-        print("📤 sendStats: ПРОПУСК - данные пустые")
-        return
-    end
-
-    writeDebugLog("📊 sendStats() начат")
-    
     local playerList = {}
     local totalBalance = 0
     local allPlayerTransactions = {}
@@ -968,11 +837,7 @@ local function sendStats()
         local ok, data = pcall(dofile, "/home/buy_items.lua")
         if ok and type(data) == "table" then 
             buyItems = data 
-        else
-            writeErrorLog("❌ Ошибка загрузки buy_items.lua")
         end
-    else
-        writeErrorLog("⚠️ Файл /home/buy_items.lua не найден")
     end
     
     local sellItems = {}
@@ -980,11 +845,7 @@ local function sendStats()
         local ok, data = pcall(dofile, "/home/shop_items.lua")
         if ok and type(data) == "table" and data.sellItems then
             sellItems = data.sellItems
-        else
-            writeErrorLog("❌ Ошибка загрузки shop_items.lua")
         end
-    else
-        writeErrorLog("⚠️ Файл /home/shop_items.lua не найден")
     end
     
     local payload = {
@@ -2401,87 +2262,29 @@ local function applyIncrementalChanges(itemsFile, changes, itemType)
     return true
 end
 
--- ============================================================
--- ОБРАБОТКА КОМАНД (С РАСШИРЕННЫМ ЛОГИРОВАНИЕМ)
--- ============================================================
-
--- ============================================================
--- ОБРАБОТКА КОМАНД (С МАКСИМАЛЬНЫМ ЛОГИРОВАНИЕМ)
--- ============================================================
-
 local function checkWebCommands()
-    print("")
-    print("🔍🔍🔍 checkWebCommands() ЗАПУЩЕНА В " .. getRealTimeHM() .. " 🔍🔍🔍")
-    print("")
-
     local success, err = pcall(function()
         local url = WEB_URL .. "/api/commands"
-        print("📡 URL ЗАПРОСА: " .. url)
-        print("📡 ВРЕМЯ: " .. getRealTimeHM())
-        print("")
 
-        -- Пробуем сделать запрос
-        print("📡 ОТПРАВЛЯЮ ЗАПРОС...")
-        local response = nil
-        local reqSuccess, reqErr = pcall(function()
-            response = internet.request(url, nil, {
+        -- Пробуем сделать запрос с обработкой ошибок
+        local response, errMsg = pcall(function()
+            return internet.request(url, nil, {
                 ["Content-Type"] = "application/json",
                 ["Connection"] = "close"
             })
         end)
 
-        print("📡 РЕЗУЛЬТАТ ЗАПРОСА:")
-        print("   reqSuccess: " .. tostring(reqSuccess))
-        print("   reqErr: " .. tostring(reqErr))
-        print("   response тип: " .. type(response))
-        print("   response значение: " .. tostring(response))
-
-        if not reqSuccess then
-            print("❌❌❌ ОШИБКА ЗАПРОСА: " .. tostring(reqErr))
-            writeErrorLog("❌ Ошибка запроса: " .. tostring(reqErr))
+        if not response then
+            writeDebugLog("⚠️ Нет ответа от сервера (pcall failed): " .. tostring(errMsg))
             return
         end
 
         if not response or type(response) ~= "table" then
-            print("❌❌❌ НЕВЕРНЫЙ ТИП ОТВЕТА: " .. type(response))
-            print("❌❌❌ ОТВЕТ: " .. tostring(response))
-            writeErrorLog("❌ Неверный тип ответа: " .. type(response))
-            
-            -- Пробуем альтернативный URL
-            print("")
-            print("🔄 ПРОБУЮ АЛЬТЕРНАТИВНЫЙ URL...")
-            local altUrl = "http://localhost:8888/api/commands"
-            print("📡 ALT URL: " .. altUrl)
-            
-            local altResponse = nil
-            local altSuccess, altErr = pcall(function()
-                altResponse = internet.request(altUrl, nil, {
-                    ["Content-Type"] = "application/json",
-                    ["Connection"] = "close"
-                })
-            end)
-            
-            print("   altSuccess: " .. tostring(altSuccess))
-            print("   altErr: " .. tostring(altErr))
-            print("   altResponse тип: " .. type(altResponse))
-            
-            if altSuccess and type(altResponse) == "table" then
-                print("✅ ALT URL РАБОТАЕТ!")
-                response = altResponse
-                -- Сохраняем рабочий URL
-                WEB_URL = "http://localhost:8888"
-                print("✅ WEB_URL изменён на: " .. WEB_URL)
-            else
-                print("❌ ALT URL ТОЖЕ НЕ РАБОТАЕТ")
-                return
-            end
-        else
-            print("✅ ОТВЕТ ПОЛУЧЕН, ТИП: table")
+            writeDebugLog("⚠️ Неверный тип ответа от сервера: " .. type(response))
+            return
         end
 
-        -- Читаем тело ответа
-        print("")
-        print("📥 ЧИТАЮ ТЕЛО ОТВЕТА...")
+        -- Пытаемся прочитать тело ответа
         local body = ""
         local readSuccess, readErr = pcall(function()
             for chunk in response do
@@ -2492,56 +2295,35 @@ local function checkWebCommands()
         end)
 
         if not readSuccess then
-            print("❌❌❌ ОШИБКА ЧТЕНИЯ: " .. tostring(readErr))
-            writeErrorLog("❌ Ошибка чтения: " .. tostring(readErr))
+            writeErrorLog("⚠️ Ошибка чтения ответа: " .. tostring(readErr))
             return
         end
-
-        print("📥 ДЛИНА ТЕЛА: " .. #body .. " байт")
-        print("📥 ТЕЛО (первые 200 символов): " .. body:sub(1, 200))
 
         if #body < 5 then
-            print("❌❌❌ ТЕЛО СЛИШКОМ КОРОТКОЕ")
+            writeDebugLog("⚠️ Пустой или слишком короткий ответ, длина: " .. #body)
             return
         end
 
-        -- Проверяем HTML
         if body:match("^%s*<") or body:match("^%s*<!DOCTYPE") then
-            print("❌❌❌ ПОЛУЧЕН HTML ВМЕСТО JSON")
-            print("📥 HTML: " .. body:sub(1, 500))
-            writeErrorLog("❌ Получен HTML: " .. body:sub(1, 200))
+            writeErrorLog("⚠️ Получен HTML вместо JSON: " .. body:sub(1, 200))
             return
         end
 
-        -- Парсим JSON
-        print("")
-        print("📥 ПАРСИМ JSON...")
         local data = parseJSON(body)
         if not data then
-            print("❌❌❌ ОШИБКА ПАРСИНГА JSON")
-            print("📥 Сырой ответ: " .. body:sub(1, 400))
-            writeErrorLog("❌ Ошибка парсинга JSON")
+            writeErrorLog("❌ Ошибка парсинга JSON от /api/commands")
             return
         end
-        print("✅ JSON РАСПАРСЕН")
 
         if not data.commands or #data.commands == 0 then
-            print("⚠️ НЕТ КОМАНД В ОТВЕТЕ")
             return
         end
-
-        print("📨 НАЙДЕНО КОМАНД: " .. #data.commands)
-        for i, cmd in ipairs(data.commands) do
-            print("   " .. i .. ". " .. (cmd.command or "unknown"))
-        end
-        print("")
 
         for _, cmd in ipairs(data.commands) do
             local d = cmd.data or cmd
             local requestId = cmd.requestId or os.time()
 
             local function sendResult(success, msg)
-                print("📤 [" .. (cmd.command or "unknown") .. "] " .. (success and "✅" or "❌") .. " " .. (msg or ""))
                 sendToWeb("/api/command_result", toJson({
                     requestId = requestId,
                     success = success,
@@ -2550,34 +2332,23 @@ local function checkWebCommands()
                 }))
             end
 
-            print("🔧 ВЫПОЛНЯЮ КОМАНДУ: " .. (cmd.command or "unknown"))
-
             -- ==================== ОБНОВЛЕНИЕ ИГРОКА ====================
             if cmd.command == "update_player" or cmd.command == "set_balance" then
                 local playerName = d.name or d.player
                 if not playerName then
-                    print("❌ Нет имени игрока в команде!")
                     sendResult(false, "Нет имени игрока")
                     goto continue
                 end
-
-                print("📥 ОБНОВЛЕНИЕ ИГРОКА: " .. playerName)
-                print("   balance: " .. tostring(d.balance))
-                print("   coin: " .. tostring(d.coin))
-                print("   emaBalance: " .. tostring(d.emaBalance))
-                print("   ema: " .. tostring(d.ema))
 
                 local playersData = {}
                 if fs.exists(DB_PATH) then
                     local ok, data = pcall(dofile, DB_PATH)
                     if ok and type(data) == "table" then
                         playersData = data
-                        print("📦 Загружено игроков: " .. #playersData)
                     end
                 end
 
                 if not playersData[playerName] then
-                    print("➕ Создаём нового игрока: " .. playerName)
                     playersData[playerName] = {
                         balance = 0,
                         emaBalance = 0,
@@ -2605,7 +2376,7 @@ local function checkWebCommands()
                     file:write("return " .. serialization.serialize(playersData))
                     file:close()
                     players = playersData
-                    print("✅ Игрок обновлён")
+
                     if currentPlayer == playerName then
                         coinBalance = playersData[playerName].balance or 0
                         emaBalance = playersData[playerName].emaBalance or 0
@@ -2620,12 +2391,10 @@ local function checkWebCommands()
 
             -- ==================== ИНКРЕМЕНТАЛЬНОЕ ОБНОВЛЕНИЕ ТОВАРОВ ====================
             elseif cmd.command == "save_buy_items_incremental" then
-                print("📥 save_buy_items_incremental")
                 local ok = applyIncrementalChanges("/home/buy_items.lua", d.changes, "buy_items")
                 sendResult(ok, ok and "Товары покупки обновлены" or "Ошибка")
 
             elseif cmd.command == "save_shop_items_incremental" then
-                print("📥 save_shop_items_incremental")
                 local ok = applyIncrementalChanges("/home/shop_items.lua", d.changes, "shop_items")
                 sendResult(ok, ok and "Магазин обновлён" or "Ошибка")
 
@@ -2636,7 +2405,6 @@ local function checkWebCommands()
                 else
                     shopPaused = not shopPaused
                 end
-                print("⏸️ Режим обслуживания: " .. tostring(shopPaused))
                 
                 addLog(shopPaused and "⏸️ Магазин переведён в режим обслуживания" or "🟢 Магазин открыт")
                 sendToWeb("/api/new_log", toJson({
@@ -2675,7 +2443,6 @@ local function checkWebCommands()
 
             -- ==================== ПОЛУЧЕНИЕ ТОВАРОВ ====================
             elseif cmd.command == "get_buy_items" then
-                print("📥 get_buy_items")
                 local buyItems = {}
                 if fs.exists("/home/buy_items.lua") then
                     local ok, data = pcall(dofile, "/home/buy_items.lua")
@@ -2685,7 +2452,6 @@ local function checkWebCommands()
                 sendToWeb("/api/update", toJson({buy_items = buyItems}))
                 
             elseif cmd.command == "get_shop_items" then
-                print("📥 get_shop_items")
                 local shopItems = {}
                 if fs.exists("/home/shop_items.lua") then
                     local ok, data = pcall(dofile, "/home/shop_items.lua")
@@ -2782,24 +2548,9 @@ local function checkWebCommands()
                     sendResult(false, "Ошибка удаления админа")
                 end
 
-            -- ==================== REBOOT (ПОЛНАЯ ОЧИСТКА) ====================
+            -- ==================== REBOOT ====================
             elseif cmd.command == "reboot" then
-                print("")
-                print("🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥")
-                print("🔥🔥🔥     ПОЛУЧЕНА КОМАНДА REBOOT     🔥🔥🔥")
-                print("🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥")
-                print("")
-                
-                print("📊 СОСТОЯНИЕ ДО REBOOT (в обработчике):")
-                local pc = 0
-                for _ in pairs(players) do pc = pc + 1 end
-                print("   Игроков: " .. pc)
-                print("   Транзакций: " .. #transactions)
-                print("   buy_items: " .. #buyItemsData)
-                print("   sell_items: " .. #sellItems)
-                
-                -- ===== ПОЛНАЯ ОЧИСТКА ВСЕХ ДАННЫХ В OC =====
-                print("🧹 ОЧИЩАЮ ВСЕ ДАННЫЕ...")
+                -- Полная очистка всех данных
                 players = {}
                 transactions = {}
                 globalStats = { totalReports = 0, totalBuys = 0, totalSells = 0, totalRevenue = 0, totalBalance = 0 }
@@ -2809,7 +2560,6 @@ local function checkWebCommands()
                 shopItems = {}
                 filteredItems = {}
                 
-                -- Очищаем переменные игрока
                 currentPlayer = nil
                 currentToken = nil
                 pimOwner = nil
@@ -2820,10 +2570,7 @@ local function checkWebCommands()
                 playerAgreed = false
                 alreadyAuthorized = false
                 
-                print("✅ ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ОЧИЩЕНЫ")
-                
-                -- Очищаем файлы на диске
-                print("🧹 ОЧИЩАЮ ФАЙЛЫ...")
+                -- Очищаем файлы
                 local filesToClear = {
                     DB_PATH,
                     STATS_PATH,
@@ -2851,14 +2598,24 @@ local function checkWebCommands()
                                 file:write("return { sellItems = {}, vanillaItems = {} }")
                             end
                             file:close()
-                            print("   ✅ Очищен: " .. path)
                         end
                     end
                 end
-                print("✅ ФАЙЛЫ ОЧИЩЕНЫ")
                 
-                -- Принудительно отправляем пустую статистику на сервер
-                print("📤 ОТПРАВЛЯЮ ПУСТУЮ СТАТИСТИКУ...")
+                -- Перезагружаем админов
+                if fs.exists(ADMINS_PATH) then
+                    local file = io.open(ADMINS_PATH, "r")
+                    if file then
+                        local raw = file:read("*a")
+                        file:close()
+                        if raw and #raw > 0 then
+                            local ok, data = pcall(serialization.unserialize, raw)
+                            if ok and type(data) == "table" then admins = data end
+                        end
+                    end
+                end
+                
+                -- Отправляем пустую статистику
                 local emptyPayload = {
                     players = {},
                     admins = admins or {"ZoziDo"},
@@ -2878,30 +2635,15 @@ local function checkWebCommands()
                 }
                 
                 sendToWeb("/api/update", toJson(emptyPayload))
-                print("✅ ПУСТАЯ СТАТИСТИКА ОТПРАВЛЕНА")
-                
-                print("📊 СОСТОЯНИЕ ПОСЛЕ REBOOT (в обработчике):")
-                pc = 0
-                for _ in pairs(players) do pc = pc + 1 end
-                print("   Игроков: " .. pc)
-                print("   Транзакций: " .. #transactions)
-                print("   buy_items: " .. #buyItemsData)
-                print("   sell_items: " .. #sellItems)
-                print("")
-                print("🔥🔥🔥 REBOOT ЗАВЕРШЁН 🔥🔥🔥")
-                print("")
+                sendStats()
                 
                 sendResult(true, "Reboot выполнен")
                 currentScreen = "welcome"
                 drawWelcomeScreen()
 
-            -- ==================== ПРИНУДИТЕЛЬНОЕ ОБНОВЛЕНИЕ ====================
+            -- ==================== UPDATE ====================
             elseif cmd.command == "update" then
-                print("")
-                print("📥📥📥 ПОЛУЧЕНА КОМАНДА UPDATE 📥📥📥")
-                print("")
-                
-                -- Очищаем все данные
+                -- Полная очистка всех данных
                 players = {}
                 transactions = {}
                 globalStats = { totalReports = 0, totalBuys = 0, totalSells = 0, totalRevenue = 0, totalBalance = 0 }
@@ -2921,8 +2663,6 @@ local function checkWebCommands()
                 playerAgreed = false
                 alreadyAuthorized = false
                 
-                print("✅ ВСЕ ДАННЫЕ ОЧИЩЕНЫ (UPDATE)")
-                
                 local emptyPayload = {
                     players = {},
                     admins = admins or {"ZoziDo"},
@@ -2942,8 +2682,6 @@ local function checkWebCommands()
                 }
                 
                 sendToWeb("/api/update", toJson(emptyPayload))
-                print("📤 ПУСТАЯ СТАТИСТИКА ОТПРАВЛЕНА")
-                
                 sendResult(true, "Update выполнен")
                 currentScreen = "welcome"
                 drawWelcomeScreen()
@@ -2958,12 +2696,8 @@ local function checkWebCommands()
     end)
 
     if not success then
-        print("❌❌❌ КРИТИЧЕСКАЯ ОШИБКА В checkWebCommands: " .. tostring(err))
-        writeErrorLog("❌ Критическая ошибка: " .. tostring(err))
+        writeErrorLog("❌ Критическая ошибка в checkWebCommands: " .. tostring(err))
     end
-    print("")
-    print("🔍🔍🔍 checkWebCommands() ЗАВЕРШЕНА 🔍🔍🔍")
-    print("")
 end
 
 local function safeCheckWebCommands()

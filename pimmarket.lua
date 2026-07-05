@@ -38,6 +38,63 @@ end
 
 local WEB_URL = "https://upfront-dinginess-impulsive.ngrok-free.dev"
 
+local discordSettings = {}
+
+local function sendDiscordWebhook(webhook_url, message)
+    if not webhook_url or webhook_url == "" then 
+        return 
+    end
+    pcall(function()
+        local payload = '{"content": "' .. message:gsub('"', '\\"') .. '"}'
+        internet.request(webhook_url, payload, {
+            ["Content-Type"] = "application/json",
+            ["Connection"] = "close"
+        })
+    end)
+end
+
+local function loadDiscordSettings()
+    pcall(function()
+        print("📥 Загрузка Discord настроек...")
+        local response = internet.request(WEB_URL .. "/api/discord_settings")
+        if response then
+            local body = ""
+            for chunk in response do
+                body = body .. chunk
+            end
+            print("📥 Ответ: " .. body)
+            
+            -- Простой парсинг через поиск
+            local function extractString(str, key)
+                local pattern = '"' .. key .. '":%s*"([^"]+)"'
+                local startPos, endPos, value = string.find(str, pattern)
+                if value then
+                    return value
+                end
+                return nil
+            end
+            
+            local settings = {}
+            settings.register = extractString(body, "register")
+            settings.login = extractString(body, "login")
+            settings.logout = extractString(body, "logout")
+            settings.sell = extractString(body, "sell")
+            settings.buy = extractString(body, "buy")
+            
+            if settings.register or settings.buy or settings.sell then
+                discordSettings = settings
+                print("✅ Discord настройки загружены (упрощённый парсер)!")
+                print("📋 register: " .. tostring(settings.register ~= nil))
+                print("📋 buy: " .. tostring(settings.buy ~= nil))
+            else
+                print("❌ Не удалось извлечь настройки из ответа")
+            end
+        else
+            print("❌ Нет ответа от сервера")
+        end
+    end)
+end
+
 local function toJson(val)
     if type(val) == "string" then
         return '"' .. val:gsub('"', '\\"') .. '"'
@@ -4050,39 +4107,7 @@ end
 -- ЗАПУСК
 -- ============================================================
 
-local discordSettings = {}
-
-local function sendDiscordWebhook(webhook_url, message)
-    if not webhook_url or webhook_url == "" then 
-        return 
-    end
-    pcall(function()
-        local payload = '{"content": "' .. message:gsub('"', '\\"') .. '"}'
-        internet.request(webhook_url, payload, {
-            ["Content-Type"] = "application/json",
-            ["Connection"] = "close"
-        })
-    end)
-end
-
-local function loadDiscordSettings()
-    pcall(function()
-        local response = internet.request(WEB_URL .. "/api/discord_settings")
-        if response then
-            local body = ""
-            for chunk in response do
-                body = body .. chunk
-            end
-            local ok, data = pcall(parseJSON, body)
-            if ok and data and data.status == "ok" and data.settings then
-                discordSettings = data.settings
-                print("✅ Discord настройки загружены!")
-            end
-        end
-    end)
-end
-
--- Загружаем настройки
+-- Загружаем настройки Discord
 loadDiscordSettings()
 event.timer(60, loadDiscordSettings, math.huge)
 

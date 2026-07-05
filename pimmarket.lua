@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ12345
+-- ВРЕМЯ123456
 -- ============================================================
 
 local tmpfs = component.proxy(computer.tmpAddress())
@@ -3271,29 +3271,48 @@ local function performBuy()
     os.sleep(0.4)
 
     -- ============================================================
-    -- ⭐ ЭКСПОРТ ПРЕДМЕТА (С FINGERPRINT)
+    -- ⭐ ЭКСПОРТ ПРЕДМЕТА (СПЕЦИАЛЬНО ДЛЯ GraviSuite)
     -- ============================================================
     
-    -- Получаем название и damage
     local itemName = item.internalName
     local itemDamage = item.damage or 0
     
-    -- Если нет двоеточия - добавляем minecraft:
     if not itemName:find(":") then
         itemName = "minecraft:" .. itemName
     end
 
-    writeDebugLog("🔍 Пытаемся выдать: " .. itemName .. " (damage: " .. itemDamage .. ") x" .. qty)
+    writeDebugLog("🔍 Ищем в сети: " .. itemName .. " (damage: " .. itemDamage .. ")")
 
-    -- ⭐ ПРАВИЛЬНЫЙ FINGERPRINT КАК ТАБЛИЦА
-    local fingerprint = {
-        id = itemName,
-        dmg = itemDamage
-    }
+    -- Находим предмет в сети
+    local networkItems = me.getItemsInNetwork()
+    local foundItem = nil
+    local totalQty = 0
+    for _, meItem in ipairs(networkItems) do
+        if meItem.name == itemName and (meItem.damage or 0) == itemDamage then
+            totalQty = totalQty + (meItem.size or 0)
+            if not foundItem then
+                foundItem = meItem
+            end
+        end
+    end
 
-    -- Получаем максимальный размер стака для этого предмета
+    if not foundItem then
+        writeDebugLog("❌ Предмет не найден в сети!")
+        drawCenteredText(20, "Предмет не найден в сети!", colors.error)
+        os.sleep(0.8)
+        loadBuyItems()
+        drawBuyStatic()
+        drawBuyItemsList()
+        drawBuyButtons()
+        currentScreen = "shop_buy"
+        return
+    end
+
+    writeDebugLog("✅ Найдено в сети: " .. foundItem.name .. " x" .. totalQty)
+
+    -- Получаем максимальный размер стака
     local maxStackSize = 64
-    local ok, detail = pcall(me.getItemDetail, me, itemName, itemDamage)
+    local ok, detail = pcall(me.getItemDetail, me, foundItem.name, foundItem.damage or 0)
     if ok and detail and detail.maxSize then
         maxStackSize = detail.maxSize
         writeDebugLog("📦 Максимальный стак: " .. maxStackSize)
@@ -3306,7 +3325,13 @@ local function performBuy()
     while remaining > 0 do
         local toTake = math.min(remaining, maxStackSize)
         
-        -- ⭐ ПЕРЕДАЁМ FINGERPRINT КАК ТАБЛИЦУ
+        -- ⭐ ЭКСПОРТ БЕЗ DAMAGE (только по имени)
+        local fingerprint = {
+            id = foundItem.name
+        }
+        
+        writeDebugLog("🔍 Экспорт: " .. fingerprint.id .. " (без damage) x" .. toTake)
+        
         local success, result = pcall(function()
             return me.exportItem(fingerprint, PULL_DIRECTION, toTake)
         end)
@@ -3344,12 +3369,10 @@ local function performBuy()
     -- ============================================================
 
     if extracted == 0 then
-        -- Проверим реальное наличие в ME-сети ещё раз
         local actualQtyNow = getActualItemQuantity(item.internalName, itemDamage)
         writeDebugLog("🔍 Повторная проверка наличия: " .. actualQtyNow .. " шт.")
         
         if actualQtyNow <= 0 then
-            -- Товара нет в сети
             drawCenteredText(20, "Товар закончился! Обновление списка...", colors.error)
             os.sleep(0.8)
             loadBuyItems()
@@ -3359,7 +3382,6 @@ local function performBuy()
             currentScreen = "shop_buy"
             return
         else
-            -- Товар есть, но выдать не удалось
             writeDebugLog("❌ Не удалось выдать предмет, хотя он есть в сети (" .. actualQtyNow .. " шт.)")
             showInventoryFullPopup = true
             drawPurchaseScreen()
@@ -3430,7 +3452,6 @@ local function performBuy()
     end
     drawCenteredText(20, "Куплено " .. extracted .. " шт. за " .. priceStr, colors.success)
 
-    -- НОВЫЙ ЛОГ: Покупка
     addLog("🛒 Покупка: " .. currentPlayer .. " " .. item.displayName .. " x" .. extracted .. " за " .. priceStr)
     sendToWeb("/api/new_log", toJson({
         time = getRealTimeHM(),

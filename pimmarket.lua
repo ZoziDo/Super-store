@@ -115,6 +115,20 @@ local function addLog(text)
 end
 
 -- ============================================================
+-- ОТПРАВКА ОШИБОК НА ВЕБ
+-- ============================================================
+
+local function sendErrorToWeb(error_msg, level)
+    level = level or "ERROR"
+    local timestamp = getRealTimeHM()
+    sendToWeb("/api/error_log", toJson({
+        error = error_msg,
+        level = level,
+        time = timestamp
+    }))
+end
+
+-- ============================================================
 -- ДЕТАЛЬНОЕ ЛОГИРОВАНИЕ ОШИБОК
 -- ============================================================
 
@@ -128,6 +142,7 @@ local function writeErrorLog(msg)
         file:close()
     end
     addLogEntry(msg, "ERROR")
+    sendErrorToWeb(msg, "ERROR")
 end
 
 local function writeDebugLog(msg)

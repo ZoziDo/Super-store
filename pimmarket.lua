@@ -4073,12 +4073,12 @@ local function main()
             
             -- ===== ПРОВЕРКА РЕЖИМА ОБСЛУЖИВАНИЯ =====
             if shopPaused then
-                writeDebugLog("⏸️ Режим обслуживания активен, вход запрещён для: " .. playerName)
+                writeDebugLog("Режим обслуживания активен, вход запрещён для: " .. playerName)
                 gpu.setBackground(colors.bg_main)
                 gpu.fill(1, 1, 80, 25, " ")
                 drawBigTitle()
                 gpu.setForeground(colors.error)
-                drawCenteredText(17, "⏸️ РЕЖИМ ОБСЛУЖИВАНИЯ", colors.error)
+                drawCenteredText(17, "РЕЖИМ ОБСЛУЖИВАНИЯ", colors.error)
                 drawCenteredText(18, "Магазин временно закрыт", colors.error)
                 drawCenteredText(19, "Пожалуйста, зайдите позже", colors.text_main)
                 gpu.setForeground(colors.text_main)

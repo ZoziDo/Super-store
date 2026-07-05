@@ -50,8 +50,10 @@ local discordSettings = {}
 
 local function sendDiscordWebhook(webhook_url, message)
     if not webhook_url or webhook_url == "" then 
+        print("⚠️ Discord webhook пустой")
         return 
     end
+    print("📤 Отправка в Discord: " .. message:sub(1, 50) .. "...")
     pcall(function()
         local payload = '{"content": "' .. message:gsub('"', '\\"') .. '"}'
         internet.request(webhook_url, payload, {

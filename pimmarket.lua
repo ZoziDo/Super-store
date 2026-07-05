@@ -13,11 +13,27 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ДЕТАЛЬНОЕ ЛОГИРОВАНИЕ ОШИБОК
+-- ВРЕМЯ (ДОЛЖНО БЫТЬ ПЕРВЫМ, ПОТОМУ ЧТО addLogEntry ЕГО ИСПОЛЬЗУЕТ)
 -- ============================================================
 
+local tmpfs = component.proxy(computer.tmpAddress())
+local function getRealTimestamp()
+    local handle = tmpfs.open("/time", "w")
+    tmpfs.write(handle, "time")
+    tmpfs.close(handle)
+    return tmpfs.lastModified("/time") / 1000 + TIMEZONE_OFFSET
+end
+
+local function getRealTimeString()
+    return os.date("%d.%m.%Y %H:%M:%S", getRealTimestamp())
+end
+
+local function getRealTimeHM()
+    return os.date("%H:%M:%S", getRealTimestamp())
+end
+
 -- ============================================================
--- ОТПРАВКА ЛОГОВ НА ВЕБ (ДОЛЖНА БЫТЬ РАНЬШЕ writeErrorLog)
+-- ОТПРАВКА ЛОГОВ НА ВЕБ (ТЕПЕРЬ getRealTimeHM УЖЕ ОБЪЯВЛЕНА)
 -- ============================================================
 
 local logQueue = {}
@@ -27,7 +43,7 @@ local function addLogEntry(text, level)
     level = level or "INFO"
     local entry = {
         text = text,
-        time = getRealTimeHM(),
+        time = getRealTimeHM(),  -- теперь здесь всё работает
         level = level
     }
     table.insert(logQueue, entry)
@@ -51,7 +67,7 @@ local function addLog(text)
 end
 
 -- ============================================================
--- ДЕТАЛЬНОЕ ЛОГИРОВАНИЕ ОШИБОК (ТЕПЕРЬ ЗДЕСЬ addLogEntry УЖЕ ОБЪЯВЛЕНА)
+-- ДЕТАЛЬНОЕ ЛОГИРОВАНИЕ ОШИБОК
 -- ============================================================
 
 local ERROR_LOG = "/home/errors.log"
@@ -63,7 +79,6 @@ local function writeErrorLog(msg)
         file:write("[" .. time .. "] " .. msg .. "\n")
         file:close()
     end
-    -- Теперь addLogEntry существует!
     addLogEntry(msg, "ERROR")
 end
 
@@ -107,26 +122,6 @@ end
 -- ============================================================
 
 local markets = {}
-
--- ============================================================
--- ВРЕМЯ
--- ============================================================
-
-local tmpfs = component.proxy(computer.tmpAddress())
-local function getRealTimestamp()
-    local handle = tmpfs.open("/time", "w")
-    tmpfs.write(handle, "time")
-    tmpfs.close(handle)
-    return tmpfs.lastModified("/time") / 1000 + TIMEZONE_OFFSET
-end
-
-local function getRealTimeString()
-    return os.date("%d.%m.%Y %H:%M:%S", getRealTimestamp())
-end
-
-local function getRealTimeHM()
-    return os.date("%H:%M:%S", getRealTimestamp())
-end
 
 -- ============================================================
 -- ВЕБ-ИНТЕГРАЦИЯ

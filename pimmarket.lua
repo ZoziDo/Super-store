@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ125
+-- ВРЕМЯ125556
 -- ============================================================
 
 local tmpfs = component.proxy(computer.tmpAddress())
@@ -658,6 +658,7 @@ local function sendStats()
     local playerList = {}
     local totalBalance = 0
     local playerCount = 0
+    local allPlayerTransactions = {}
     
     -- Подсчёт игроков (players - таблица, а не массив)
     for _ in pairs(players) do playerCount = playerCount + 1 end
@@ -673,17 +674,39 @@ local function sendStats()
             data.transactionsList = {}
         end
         
+        -- Добавляем транзакции игрока в общий список
+        if data.transactionsList then
+            for _, t in ipairs(data.transactionsList) do
+                local tCopy = {
+                    time = t.time,
+                    type = t.type,
+                    player = name,
+                    item = t.item,
+                    qty = t.qty,
+                    coin = t.coin,
+                    ema = t.ema
+                }
+                table.insert(allPlayerTransactions, tCopy)
+            end
+        end
+        
         table.insert(playerList, {
             name = name,
             balance = data.balance or 0,
             emaBalance = data.emaBalance or 0,
             transactions = data.transactions or 0,
             banned = data.banned or false,
-            transactionsList = data.transactionsList   -- <-- полный список транзакций игрока
+            transactionsList = data.transactionsList
         })
     end
     
+    -- Сортируем все транзакции по времени (сначала новые)
+    table.sort(allPlayerTransactions, function(a, b)
+        return a.time > b.time
+    end)
+    
     writeDebugLog("👥 Игроков отправлено: " .. #playerList)
+    writeDebugLog("📋 Всего транзакций отправлено: " .. #allPlayerTransactions)
     globalStats.totalBalance = totalBalance
     saveGlobalStats()
     
@@ -760,12 +783,11 @@ local function sendStats()
         paused = false,
         feedbacks = feedbacksList,
         reports = reportsList,
-        transactions = transactions,      -- глобальный список (не обязателен)
+        transactions = allPlayerTransactions,   -- <-- ИСПРАВЛЕНО: все транзакции из БД
         buy_items = buyItems,
         sell_items = sellItems
     }
     
-    -- Дополнительное логирование размера данных перед отправкой
     local jsonData = toJson(payload)
     writeDebugLog("📤 Размер JSON: " .. #jsonData .. " байт")
     writeDebugLog("📤 Отправлены данные: " .. #playerList .. " игроков, " .. #buyItems .. " товаров покупки, " .. #sellItems .. " товаров продажи")
@@ -3068,6 +3090,13 @@ local function performSell()
         coinBalance = coinBalance + value
     end
     
+    -- Сохраняем баланс игрока в БД
+    if currentPlayer and players[currentPlayer] then
+        players[currentPlayer].balance = coinBalance
+        players[currentPlayer].emaBalance = emaBalance
+        saveDB()
+    end
+    
     -- Обновляем транзакции игрока
     playerTransactions = playerTransactions + 1
     if currentPlayer and players[currentPlayer] then
@@ -3249,6 +3278,13 @@ local function performBuy()
 
     coinBalance = coinBalance - totalCoin
     emaBalance = emaBalance - totalEma
+    
+    -- Сохраняем баланс игрока в БД
+    if currentPlayer and players[currentPlayer] then
+        players[currentPlayer].balance = coinBalance
+        players[currentPlayer].emaBalance = emaBalance
+        saveDB()
+    end
     
     -- Обновляем транзакции игрока
     playerTransactions = playerTransactions + 1

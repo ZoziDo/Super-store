@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ12
+-- ВРЕМЯ123
 -- ============================================================
 
 local tmpfs = component.proxy(computer.tmpAddress())
@@ -541,14 +541,26 @@ end
 -- ============================================================
 
 local function performReboot()
-    writeDebugLog("🔄 Выполняется полный REBOOT")
+    writeDebugLog("🔄 ===== НАЧАЛО REBOOT =====")
+    print("🔄 ===== НАЧАЛО REBOOT =====")
+    
+    -- ===== ПОКАЗЫВАЕМ ТЕКУЩЕЕ СОСТОЯНИЕ =====
+    local playerCount = 0
+    for _ in pairs(players) do playerCount = playerCount + 1 end
+    writeDebugLog("📊 ДО REBOOT: Игроков в памяти: " .. playerCount)
+    writeDebugLog("📊 ДО REBOOT: Транзакций: " .. #transactions)
+    writeDebugLog("📊 ДО REBOOT: Баланс: " .. globalStats.totalBalance)
+    print("📊 ДО REBOOT: Игроков в памяти: " .. playerCount)
     
     -- ===== ОЧИЩАЕМ ГЛОБАЛЬНЫЕ ДАННЫЕ =====
+    writeDebugLog("🧹 Очищаем глобальные данные...")
     players = {}
     transactions = {}
     globalStats = { totalReports = 0, totalBuys = 0, totalSells = 0, totalRevenue = 0, totalBalance = 0 }
+    writeDebugLog("✅ Глобальные данные очищены")
     
     -- ===== ОЧИЩАЕМ ФАЙЛЫ =====
+    writeDebugLog("🧹 Очищаем файлы...")
     local filesToClear = {
         DB_PATH,
         STATS_PATH,
@@ -558,20 +570,28 @@ local function performReboot()
     
     for _, path in ipairs(filesToClear) do
         if fs.exists(path) then
+            writeDebugLog("📁 Найден файл: " .. path)
             local file = io.open(path, "w")
             if file then
                 if path == DB_PATH then
                     file:write(serialization.serialize({}))
+                    writeDebugLog("✅ Очищен DB_PATH: " .. path)
                 elseif path == STATS_PATH then
                     file:write(serialization.serialize({ totalReports = 0, totalBuys = 0, totalSells = 0, totalRevenue = 0, totalBalance = 0 }))
+                    writeDebugLog("✅ Очищен STATS_PATH: " .. path)
                 elseif path == FEEDBACKS_PATH then
                     file:write(serialization.serialize({}))
+                    writeDebugLog("✅ Очищен FEEDBACKS_PATH: " .. path)
                 elseif path == REPORTS_PATH then
                     file:write("")
+                    writeDebugLog("✅ Очищен REPORTS_PATH: " .. path)
                 end
                 file:close()
-                writeDebugLog("🧹 Очищен файл: " .. path)
+            else
+                writeErrorLog("❌ НЕ УДАЛОСЬ ОТКРЫТЬ ФАЙЛ: " .. path)
             end
+        else
+            writeDebugLog("⚠️ Файл не найден: " .. path)
         end
     end
     
@@ -579,52 +599,81 @@ local function performReboot()
     local buyItemsFile = "/home/buy_items.lua"
     local shopItemsFile = "/home/shop_items.lua"
     
+    writeDebugLog("🧹 Очищаем файлы товаров...")
+    
     if fs.exists(buyItemsFile) then
+        writeDebugLog("📁 Найден buy_items.lua")
         local file = io.open(buyItemsFile, "w")
         if file then
             file:write("return {}")
             file:close()
-            writeDebugLog("🧹 Очищен файл: " .. buyItemsFile)
+            writeDebugLog("✅ Очищен buy_items.lua")
+        else
+            writeErrorLog("❌ НЕ УДАЛОСЬ ОТКРЫТЬ buy_items.lua")
         end
+    else
+        writeDebugLog("⚠️ buy_items.lua не найден")
     end
     
     if fs.exists(shopItemsFile) then
+        writeDebugLog("📁 Найден shop_items.lua")
         local file = io.open(shopItemsFile, "w")
         if file then
             file:write("return { sellItems = {}, vanillaItems = {} }")
             file:close()
-            writeDebugLog("🧹 Очищен файл: " .. shopItemsFile)
+            writeDebugLog("✅ Очищен shop_items.lua")
+        else
+            writeErrorLog("❌ НЕ УДАЛОСЬ ОТКРЫТЬ shop_items.lua")
         end
+    else
+        writeDebugLog("⚠️ shop_items.lua не найден")
     end
     
     -- ===== ОЧИЩАЕМ ПЕРЕМЕННЫЕ ТОВАРОВ =====
+    writeDebugLog("🧹 Очищаем переменные товаров...")
     sellItems = {}
     buyItemsData = {}
     buyItemMap = {}
     shopItems = {}
+    writeDebugLog("✅ Переменные товаров очищены")
     
-    -- ===== ПЕРЕЗАГРУЖАЕМ ДАННЫЕ (ТЕПЕРЬ ОНИ ПУСТЫЕ) =====
-    -- Загружаем игроков (пусто)
+    -- ===== ПЕРЕЗАГРУЖАЕМ ДАННЫЕ =====
+    writeDebugLog("🔄 Перезагружаем данные из файлов...")
+    
+    -- Загружаем игроков
     if fs.exists(DB_PATH) then
+        writeDebugLog("📁 Загружаем DB_PATH: " .. DB_PATH)
         local file = io.open(DB_PATH, "r")
         if file then
             local raw = file:read("*a")
             file:close()
+            writeDebugLog("📄 Содержимое DB_PATH: " .. (raw or "nil"))
             if raw and #raw > 0 then
                 local ok, data = pcall(serialization.unserialize, raw)
                 if ok and data then 
                     players = data 
+                    writeDebugLog("✅ Игроки загружены: " .. #players)
+                else
+                    writeErrorLog("❌ Ошибка парсинга DB_PATH: " .. tostring(ok))
                 end
+            else
+                writeDebugLog("⚠️ DB_PATH пуст")
             end
+        else
+            writeErrorLog("❌ НЕ УДАЛОСЬ ОТКРЫТЬ DB_PATH для чтения")
         end
+    else
+        writeDebugLog("⚠️ DB_PATH не найден")
     end
     
-    -- Загружаем статистику (пустая)
+    -- Загружаем статистику
     if fs.exists(STATS_PATH) then
+        writeDebugLog("📁 Загружаем STATS_PATH: " .. STATS_PATH)
         local file = io.open(STATS_PATH, "r")
         if file then
             local raw = file:read("*a")
             file:close()
+            writeDebugLog("📄 Содержимое STATS_PATH: " .. (raw or "nil"))
             if raw and #raw > 0 then
                 local ok, data = pcall(serialization.unserialize, raw)
                 if ok and data then
@@ -633,37 +682,37 @@ local function performReboot()
                     globalStats.totalSells = data.totalSells or 0
                     globalStats.totalRevenue = data.totalRevenue or 0
                     globalStats.totalBalance = data.totalBalance or 0
+                    writeDebugLog("✅ Статистика загружена")
+                else
+                    writeErrorLog("❌ Ошибка парсинга STATS_PATH")
                 end
+            else
+                writeDebugLog("⚠️ STATS_PATH пуст")
             end
+        else
+            writeErrorLog("❌ НЕ УДАЛОСЬ ОТКРЫТЬ STATS_PATH для чтения")
         end
+    else
+        writeDebugLog("⚠️ STATS_PATH не найден")
     end
     
-    -- Загружаем товары (пустые)
-    if fs.exists(buyItemsFile) then
-        local ok, data = pcall(dofile, buyItemsFile)
-        if ok and type(data) == "table" then 
-            buyItemsData = data 
-            for _, item in ipairs(buyItemsData) do
-                local dmg = item.damage or 0
-                local key = item.internalName .. ":" .. dmg
-                buyItemMap[key] = item
-            end
-        end
-    end
-    
-    if fs.exists(shopItemsFile) then
-        local ok, data = pcall(dofile, shopItemsFile)
-        if ok and type(data) == "table" and data.sellItems then
-            sellItems = data.sellItems or {}
-        end
-    end
+    -- ===== ПОКАЗЫВАЕМ СОСТОЯНИЕ ПОСЛЕ ОЧИСТКИ =====
+    local newPlayerCount = 0
+    for _ in pairs(players) do newPlayerCount = newPlayerCount + 1 end
+    writeDebugLog("📊 ПОСЛЕ REBOOT: Игроков в памяти: " .. newPlayerCount)
+    writeDebugLog("📊 ПОСЛЕ REBOOT: Транзакций: " .. #transactions)
+    writeDebugLog("📊 ПОСЛЕ REBOOT: Баланс: " .. globalStats.totalBalance)
+    print("📊 ПОСЛЕ REBOOT: Игроков в памяти: " .. newPlayerCount)
     
     addLog("🔄 REBOOT: Все данные сброшены")
     
-    -- ===== ПРИНУДИТЕЛЬНО ОТПРАВЛЯЕМ ПУСТУЮ СТАТИСТИКУ =====
+    -- ===== ПРИНУДИТЕЛЬНО ОТПРАВЛЯЕМ СТАТИСТИКУ =====
+    writeDebugLog("📤 Отправляем пустую статистику на сервер...")
     sendStats()
+    writeDebugLog("✅ Статистика отправлена")
     
-    writeDebugLog("✅ REBOOT завершён")
+    writeDebugLog("✅ ===== REBOOT ЗАВЕРШЁН =====")
+    print("✅ ===== REBOOT ЗАВЕРШЁН =====")
 end
 
 local function addTransaction(type, playerName, item, qty, value_coin, value_ema)
@@ -753,21 +802,20 @@ local function sendStats()
     local playerCount = 0
     local allPlayerTransactions = {}
     
-    -- Подсчёт игроков (players - таблица, а не массив)
+    -- Подсчёт игроков
     for _ in pairs(players) do playerCount = playerCount + 1 end
     writeDebugLog("📊 Всего игроков в памяти: " .. playerCount)
+    print("📊 sendStats: Игроков в памяти: " .. playerCount)
     
     for name, data in pairs(players) do
         writeDebugLog("   👤 " .. name .. ": Coin=" .. tostring(data.balance or 0) .. ", EMA=" .. tostring(data.emaBalance or 0))
         local bal = (data.balance or 0) + (data.emaBalance or 0)
         totalBalance = totalBalance + bal
         
-        -- Убедимся, что transactionsList всегда есть (для старых записей)
         if not data.transactionsList then
             data.transactionsList = {}
         end
         
-        -- Добавляем транзакции игрока в общий список
         if data.transactionsList then
             for _, t in ipairs(data.transactionsList) do
                 local tCopy = {
@@ -793,13 +841,13 @@ local function sendStats()
         })
     end
     
-    -- Сортируем все транзакции по времени (сначала новые)
     table.sort(allPlayerTransactions, function(a, b)
         return a.time > b.time
     end)
     
     writeDebugLog("👥 Игроков отправлено: " .. #playerList)
     writeDebugLog("📋 Всего транзакций отправлено: " .. #allPlayerTransactions)
+    print("📤 sendStats: Отправляем " .. #playerList .. " игроков")
     globalStats.totalBalance = totalBalance
     saveGlobalStats()
     
@@ -2653,8 +2701,23 @@ local function checkWebCommands()
 
             -- ==================== REBOOT ====================
             elseif cmd.command == "reboot" then
-                writeDebugLog("🔄 Получена команда REBOOT")
-                performReboot()  -- Вызываем функцию полного сброса
+                writeDebugLog("🔄 Получена команда REBOOT от сервера")
+                print("🔄 Получена команда REBOOT от сервера")
+                
+                -- Показываем состояние до REBOOT
+                local playerCount = 0
+                for _ in pairs(players) do playerCount = playerCount + 1 end
+                writeDebugLog("📊 ДО REBOOT (в обработчике): Игроков: " .. playerCount)
+                print("📊 ДО REBOOT (в обработчике): Игроков: " .. playerCount)
+                
+                performReboot()
+                
+                -- Показываем состояние после REBOOT
+                local newPlayerCount = 0
+                for _ in pairs(players) do newPlayerCount = newPlayerCount + 1 end
+                writeDebugLog("📊 ПОСЛЕ REBOOT (в обработчике): Игроков: " .. newPlayerCount)
+                print("📊 ПОСЛЕ REBOOT (в обработчике): Игроков: " .. newPlayerCount)
+                
                 sendResult(true, "Reboot выполнен")
                 
                 -- Обновляем экран

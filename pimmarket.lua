@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ1234
+-- ВРЕМЯ12345
 -- ============================================================
 
 local tmpfs = component.proxy(computer.tmpAddress())
@@ -2771,7 +2771,7 @@ local function checkWebCommands()
                     sendResult(false, "Ошибка удаления админа")
                 end
 
-            -- ==================== REBOOT ====================
+            -- ==================== REBOOT (ПОЛНАЯ ОЧИСТКА) ====================
             elseif cmd.command == "reboot" then
                 print("")
                 print("🔥🔥🔥 ПОЛУЧЕНА КОМАНДА REBOOT ОТ СЕРВЕРА 🔥🔥🔥")
@@ -2785,7 +2785,84 @@ local function checkWebCommands()
                 print("   buy_items: " .. #buyItemsData)
                 print("   sell_items: " .. #sellItems)
                 
-                performReboot()
+                -- ===== ПОЛНАЯ ОЧИСТКА ВСЕХ ДАННЫХ В OC =====
+                players = {}
+                transactions = {}
+                globalStats = { totalReports = 0, totalBuys = 0, totalSells = 0, totalRevenue = 0, totalBalance = 0 }
+                sellItems = {}
+                buyItemsData = {}
+                buyItemMap = {}
+                shopItems = {}
+                filteredItems = {}
+                
+                -- Очищаем переменные игрока
+                currentPlayer = nil
+                currentToken = nil
+                pimOwner = nil
+                coinBalance = 0.0
+                emaBalance = 0.0
+                playerTransactions = 0
+                playerRegDate = ""
+                playerAgreed = false
+                alreadyAuthorized = false
+                
+                -- Очищаем файлы на диске
+                local filesToClear = {
+                    DB_PATH,
+                    STATS_PATH,
+                    FEEDBACKS_PATH,
+                    REPORTS_PATH,
+                    "/home/buy_items.lua",
+                    "/home/shop_items.lua"
+                }
+                
+                for _, path in ipairs(filesToClear) do
+                    if fs.exists(path) then
+                        local file = io.open(path, "w")
+                        if file then
+                            if path == DB_PATH then
+                                file:write("return {}")
+                            elseif path == STATS_PATH then
+                                file:write("return { totalReports = 0, totalBuys = 0, totalSells = 0, totalRevenue = 0, totalBalance = 0 }")
+                            elseif path == FEEDBACKS_PATH then
+                                file:write("return {}")
+                            elseif path == REPORTS_PATH then
+                                file:write("")
+                            elseif path == "/home/buy_items.lua" then
+                                file:write("return {}")
+                            elseif path == "/home/shop_items.lua" then
+                                file:write("return { sellItems = {}, vanillaItems = {} }")
+                            end
+                            file:close()
+                            print("🧹 Очищен файл: " .. path)
+                        end
+                    end
+                end
+                
+                print("✅ Все данные в OC очищены!")
+                
+                -- Принудительно отправляем пустую статистику на сервер
+                local emptyPayload = {
+                    players = {},
+                    admins = admins or {"ZoziDo"},
+                    total = 0,
+                    total_balance = 0,
+                    total_transactions = 0,
+                    total_reports = 0,
+                    total_feedbacks = 0,
+                    total_revenue = 0,
+                    online = 0,
+                    paused = false,
+                    feedbacks = {},
+                    reports = {},
+                    transactions = {},
+                    buy_items = {},
+                    sell_items = {}
+                }
+                
+                print("📤 Отправляем ПУСТУЮ статистику на сервер...")
+                sendToWeb("/api/update", toJson(emptyPayload))
+                print("✅ Пустая статистика отправлена")
                 
                 print("📊 СОСТОЯНИЕ ПОСЛЕ REBOOT (в обработчике):")
                 pc = 0
@@ -2797,13 +2874,66 @@ local function checkWebCommands()
                 
                 sendResult(true, "Reboot выполнен")
                 
-                if currentScreen == "menu" then
-                    drawMainMenu()
-                elseif currentScreen == "welcome" then
-                    drawWelcomeScreen()
-                elseif currentScreen == "shop" then
-                    drawShopMenu()
-                end
+                -- Обновляем экран
+                currentScreen = "welcome"
+                drawWelcomeScreen()
+
+            -- ==================== ПРИНУДИТЕЛЬНОЕ ОБНОВЛЕНИЕ ====================
+            elseif cmd.command == "update" then
+                print("")
+                print("📥 ПОЛУЧЕНА КОМАНДА UPDATE ОТ СЕРВЕРА")
+                print("")
+                
+                -- Очищаем все данные
+                players = {}
+                transactions = {}
+                globalStats = { totalReports = 0, totalBuys = 0, totalSells = 0, totalRevenue = 0, totalBalance = 0 }
+                sellItems = {}
+                buyItemsData = {}
+                buyItemMap = {}
+                shopItems = {}
+                filteredItems = {}
+                
+                currentPlayer = nil
+                currentToken = nil
+                pimOwner = nil
+                coinBalance = 0.0
+                emaBalance = 0.0
+                playerTransactions = 0
+                playerRegDate = ""
+                playerAgreed = false
+                alreadyAuthorized = false
+                
+                print("✅ Все данные в OC очищены (update)")
+                
+                -- Принудительно отправляем пустую статистику
+                local emptyPayload = {
+                    players = {},
+                    admins = admins or {"ZoziDo"},
+                    total = 0,
+                    total_balance = 0,
+                    total_transactions = 0,
+                    total_reports = 0,
+                    total_feedbacks = 0,
+                    total_revenue = 0,
+                    online = 0,
+                    paused = false,
+                    feedbacks = {},
+                    reports = {},
+                    transactions = {},
+                    buy_items = {},
+                    sell_items = {}
+                }
+                
+                print("📤 Отправляем ПУСТУЮ статистику на сервер...")
+                sendToWeb("/api/update", toJson(emptyPayload))
+                print("✅ Пустая статистика отправлена")
+                
+                sendResult(true, "Update выполнен")
+                
+                -- Обновляем экран
+                currentScreen = "welcome"
+                drawWelcomeScreen()
 
             -- ==================== НЕИЗВЕСТНАЯ КОМАНДА ====================
             else

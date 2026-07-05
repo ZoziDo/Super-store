@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ12555667
+-- ВРЕМЯ1
 -- ============================================================
 
 local tmpfs = component.proxy(computer.tmpAddress())
@@ -48,12 +48,16 @@ local WEB_URL = "https://upfront-dinginess-impulsive.ngrok-free.dev"
 
 local discordSettings = {}
 
+-- ============================================================
+-- DISCORD УВЕДОМЛЕНИЯ
+-- ============================================================
+
+local discordSettings = {}
+
 local function sendDiscordWebhook(webhook_url, message)
     if not webhook_url or webhook_url == "" then 
-        writeDebugLog("⚠️ Discord webhook пустой, пропускаем")
         return 
     end
-    writeDebugLog("📤 Discord: " .. message:sub(1, 60) .. "...")
     pcall(function()
         local payload = '{"content": "' .. message:gsub('"', '\\"') .. '"}'
         internet.request(webhook_url, payload, {
@@ -71,16 +75,10 @@ local function loadDiscordSettings()
             for chunk in response do
                 body = body .. chunk
             end
-            writeDebugLog("📥 Discord ответ: " .. body)
             local ok, data = pcall(parseJSON, body)
             if ok and data and data.status == "ok" and data.settings then
                 discordSettings = data.settings
-                writeDebugLog("✅ Discord настройки загружены: register=" .. tostring(discordSettings.register ~= nil) .. ", buy=" .. tostring(discordSettings.buy ~= nil))
-            else
-                writeErrorLog("❌ Ошибка парсинга Discord настроек: " .. tostring(body))
             end
-        else
-            writeErrorLog("❌ Нет ответа от сервера при загрузке Discord настроек")
         end
     end)
 end

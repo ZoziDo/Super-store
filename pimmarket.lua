@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ1
+-- ВРЕМЯ144
 -- ============================================================
 
 local tmpfs = component.proxy(computer.tmpAddress())
@@ -1294,7 +1294,7 @@ local function loadBuyItems()
         end
         ::continue::
     end
-end
+    -- ⚠️ УБРАЛ ЛИШНИЙ end! Дальше код продолжается внутри функции
 
     local newShopItems = {}
     for key, itemData in pairs(tempShopItems) do
@@ -1309,7 +1309,7 @@ end
         return sortableName(a.displayName) < sortableName(b.displayName)
     end)
     writeDebugLog("loadBuyItems: загружено " .. #shopItems .. " товаров")
-end
+end  -- <-- ТОЛЬКО ОДИН end для закрытия функции!
 
 local function loadSellItems()
     writeDebugLog("loadSellItems()")

@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ1
+-- ВРЕМЯ12
 -- ============================================================
 
 local tmpfs = component.proxy(computer.tmpAddress())
@@ -46,15 +46,30 @@ local function sendDiscordWebhook(webhook_url, message)
         return 
     end
     print("📤 Отправка в Discord: " .. message:sub(1, 50) .. "...")
-    pcall(function()
-        -- Правильный синтаксис для internet.request в OC с POST
+    
+    -- Используем pcall для перехвата ошибок
+    local success, err = pcall(function()
         local payload = '{"content": "' .. message:gsub('"', '\\"') .. '"}'
-        local headers = {
-            ["Content-Type"] = "application/json",
-            ["Connection"] = "close"
-        }
-        internet.request(webhook_url, payload, headers)
+        
+        -- Способ 1: через component.internet (более надёжный)
+        local internetComp = component.internet
+        if internetComp and internetComp.request then
+            local headers = "Content-Type: application/json\r\nConnection: close\r\n"
+            internetComp.request(webhook_url, payload, headers)
+            print("✅ Отправлено через component.internet")
+        else
+            -- Способ 2: через internet.request
+            internet.request(webhook_url, payload, {
+                ["Content-Type"] = "application/json",
+                ["Connection"] = "close"
+            })
+            print("✅ Отправлено через internet.request")
+        end
     end)
+    
+    if not success then
+        print("❌ Ошибка отправки: " .. tostring(err))
+    end
 end
 
 local function loadDiscordSettings()

@@ -743,10 +743,10 @@ local function sendStats()
         total_feedbacks = #feedbacksList,
         total_revenue = globalStats.totalRevenue or 0,
         online = 0,
-        paused = false,
+        paused = shopPaused,  -- <-- ИСПРАВЛЕНО: теперь отправляем реальное состояние
         feedbacks = feedbacksList,
         reports = reportsList,
-        transactions = allPlayerTransactions,   -- <-- ИСПРАВЛЕНО: все транзакции из БД
+        transactions = allPlayerTransactions,
         buy_items = buyItems,
         sell_items = sellItems
     }
@@ -754,9 +754,11 @@ local function sendStats()
     local jsonData = toJson(payload)
     writeDebugLog("📤 Размер JSON: " .. #jsonData .. " байт")
     writeDebugLog("📤 Отправлены данные: " .. #playerList .. " игроков, " .. #buyItems .. " товаров покупки, " .. #sellItems .. " товаров продажи")
+    writeDebugLog("📤 Режим обслуживания: " .. tostring(shopPaused))  -- <-- ДОБАВЛЕНО для отладки
     
     sendToWeb("/api/update", jsonData)
 end
+
 
 event.timer(30, sendStats, math.huge)
 

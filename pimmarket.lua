@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ123456
+-- ВРЕМЯ12345667
 -- ============================================================
 
 local tmpfs = component.proxy(computer.tmpAddress())
@@ -1114,6 +1114,24 @@ local function syncCurrentPlayer()
             playersData = data
         end
     end
+    
+    if playersData[currentPlayer] then
+        coinBalance = playersData[currentPlayer].balance or 0
+        emaBalance = playersData[currentPlayer].emaBalance or 0
+        playerTransactions = playersData[currentPlayer].transactions or 0
+        playerRegDate = playersData[currentPlayer].regDate or ""
+        playerAgreed = playersData[currentPlayer].agreed or false
+        
+        -- ОБНОВЛЯЕМ ГЛОБАЛЬНУЮ ТАБЛИЦУ
+        players = playersData
+        
+        writeDebugLog("✅ Синхронизирован: Coin=" .. coinBalance .. ", EMA=" .. emaBalance)
+        return true
+    end
+    
+    writeDebugLog("⚠️ Игрок не найден при синхронизации: " .. currentPlayer)
+    return false
+end
     
     if playersData[currentPlayer] then
         -- Сохраняем текущий флаг agreed (на случай, если в файле его нет)

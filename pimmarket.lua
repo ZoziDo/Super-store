@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ123
+-- ВРЕМЯ1234
 -- ============================================================
 
 local tmpfs = component.proxy(computer.tmpAddress())
@@ -80,6 +80,8 @@ local function sendToWeb(endpoint, jsonData)
         })
     end)
 end
+
+
 
 -- ============================================================
 -- ОТПРАВКА ЛОГОВ НА ВЕБ
@@ -687,23 +689,6 @@ local function sendStats()
         end
     end
     
-    -- Загрузка репортов
-    local reportsList = {}
-    if fs.exists(REPORTS_PATH) then
-        local file = io.open(REPORTS_PATH, "r")
-        if file then
-            for line in file:lines() do
-                local time = line:match("%[([^%]]+)%]")
-                local name = line:match("%] (%w+):")
-                local text = line:match("%] %w+: (.+)")
-                if time and name and text then
-                    table.insert(reportsList, {time = time, name = name, text = text})
-                end
-            end
-            file:close()
-        end
-    end
-    
     -- Загрузка товаров для покупки
     local buyItems = {}
     if fs.exists("/home/buy_items.lua") then
@@ -743,9 +728,9 @@ local function sendStats()
         total_feedbacks = #feedbacksList,
         total_revenue = globalStats.totalRevenue or 0,
         online = 0,
-        paused = shopPaused,  -- <-- ДОЛЖНО БЫТЬ shopPaused, НЕ false!
+        paused = shopPaused,
         feedbacks = feedbacksList,
-        reports = reportsList,
+        -- reports = reportsList,
         transactions = allPlayerTransactions,
         buy_items = buyItems,
         sell_items = sellItems

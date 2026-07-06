@@ -1,3 +1,4 @@
+Так?
 -- ============================================================
 -- ОСНОВНОЙ КОД МАГАЗИНА (PIM MARKET) – ОПТИМИЗИРОВАННАЯ ВЕРСИЯ
 -- ============================================================
@@ -17,7 +18,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ1245
+-- ВРЕМЯ1
 -- ============================================================
 
 tmpfs = component.proxy(computer.tmpAddress())
@@ -186,6 +187,7 @@ function safeCall(func, ...)
     end
     return true, ok
 end
+
 
 -- ============================================================
 -- ИГНОРИРОВАНИЕ СОБЫТИЙ
@@ -2715,15 +2717,6 @@ function performSell()
     end
     playerTransactions = playerTransactions + 1
 
-    -- ★★★ НЕМЕДЛЕННО СОХРАНЯЕМ БАЛАНС В ФАЙЛ ★★★
-    if currentPlayer and players[currentPlayer] then
-        players[currentPlayer].balance = coinBalance
-        players[currentPlayer].emaBalance = emaBalance
-        players[currentPlayer].transactions = playerTransactions
-        saveDB()  -- немедленное сохранение
-        writeDebugLog("💾 Баланс сохранён для " .. currentPlayer .. ": Coin=" .. coinBalance .. ", EMA=" .. emaBalance)
-    end
-
     addTransactionToBuffer("sell", currentPlayer, sellConfirmItem.displayName, realExtracted, value, 0)
 
     gpu.setBackground(colors.bg_main)
@@ -3078,11 +3071,6 @@ function applyIncrementalChanges(itemsFile, changes, itemType)
             buyItemMap[key] = item
         end
         writeDebugLog("📦 buyItemsData обновлена, товаров: " .. #buyItemsData)
-        
-        -- ★★★ СБРАСЫВАЕМ КЕШ ТОВАРОВ ПОКУПКИ ★★★
-        cachedBuyItems = nil
-        cacheTimestamp = 0
-        writeDebugLog("🔄 Кеш товаров покупки сброшен")
     end
 
     if currentScreen == "shop_buy" then
@@ -4155,7 +4143,6 @@ function main()
                 end
                 goto continue
             end
-        end
 
         elseif e == "player_on" or e == "pim" or e == "pim_player_enter" then
             local playerName = ev[2] or "Игрок"
@@ -4298,6 +4285,7 @@ end
 -- ============================================================
 -- ЗАПУСК
 -- ============================================================
+
 
 while true do
     local ok, err = pcall(main)

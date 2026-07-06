@@ -17,7 +17,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ
+-- ВРЕМЯ1
 -- ============================================================
 
 tmpfs = component.proxy(computer.tmpAddress())
@@ -572,7 +572,7 @@ TRANSACTION_FLUSH_INTERVAL = 10
 function addTransactionToBuffer(type, playerName, item, qty, value_coin, value_ema)
     table.insert(transactionBuffer, {
         op = type,
-        name = playerName,
+        name = playerName,  -- это текущий игрок из addTransaction
         item = item,
         qty = qty,
         value_coin = value_coin,
@@ -583,7 +583,20 @@ end
 
 function flushTransactionBuffer()
     if #transactionBuffer == 0 then return end
-    local payload = { transactions = transactionBuffer }
+    -- Пропускаем транзакции без имени
+    local validTransactions = {}
+    for _, t in ipairs(transactionBuffer) do
+        if t.name and t.name ~= "" and t.name ~= "?" then
+            table.insert(validTransactions, t)
+        else
+            writeErrorLog("⚠️ Пропущена транзакция без имени игрока: " .. tostring(t.item))
+        end
+    end
+    if #validTransactions == 0 then
+        transactionBuffer = {}
+        return
+    end
+    local payload = { transactions = validTransactions }
     sendToWeb("/api/transactions_batch", toJson(payload))
     transactionBuffer = {}
 end

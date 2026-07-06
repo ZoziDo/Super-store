@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ1
+-- ВРЕМЯ12
 -- ============================================================
 
 local tmpfs = component.proxy(computer.tmpAddress())
@@ -1126,36 +1126,6 @@ local function syncCurrentPlayer()
         players = playersData
         
         writeDebugLog("✅ Синхронизирован: Coin=" .. coinBalance .. ", EMA=" .. emaBalance)
-        return true
-    end
-    
-    writeDebugLog("⚠️ Игрок не найден при синхронизации: " .. currentPlayer)
-    return false
-end
-    
-    if playersData[currentPlayer] then
-        -- Сохраняем текущий флаг agreed (на случай, если в файле его нет)
-        local currentAgreed = playerAgreed
-        
-        -- Обновляем баланс и прочее
-        coinBalance = playersData[currentPlayer].balance or 0
-        emaBalance = playersData[currentPlayer].emaBalance or 0
-        playerTransactions = playersData[currentPlayer].transactions or 0
-        playerRegDate = playersData[currentPlayer].regDate or ""
-        
-        -- ⭐ ВАЖНО: если в файле есть agreed — берём его, иначе оставляем текущий
-        if playersData[currentPlayer].agreed ~= nil then
-            playerAgreed = playersData[currentPlayer].agreed
-        else
-            -- Если в файле нет поля agreed, записываем туда текущее значение
-            playersData[currentPlayer].agreed = currentAgreed
-            playerAgreed = currentAgreed
-        end
-        
-        -- Обновляем глобальную таблицу
-        players = playersData
-        
-        writeDebugLog("✅ Синхронизирован: Agreed=" .. tostring(playerAgreed) .. " (из файла: " .. tostring(playersData[currentPlayer].agreed) .. ")")
         return true
     end
     

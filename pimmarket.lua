@@ -17,7 +17,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ12
+-- ВРЕМЯ123
 -- ============================================================
 
 tmpfs = component.proxy(computer.tmpAddress())
@@ -3525,35 +3525,6 @@ gpu.setBackground(colors.bg_main)
 lastMouseMoveTime = 0
 MOUSE_DEBOUNCE = 0.05
 
--- ============================================================
--- ЗАПУСК С ДИНАМИЧЕСКИМ РАЗРЕШЕНИЕМ
--- ============================================================
-
--- Устанавливаем максимальное разрешение
-local maxW, maxH = gpu.maxResolution()
-gpu.setResolution(maxW, maxH)
-
-SCREEN_W, SCREEN_H = gpu.getResolution()
-
-print("🖥 Разрешение экрана: " .. SCREEN_W .. "x" .. SCREEN_H)
-
-gpu.setBackground(colors.bg_main)
-gpu.setForeground(colors.text_main)
-
--- Запуск основного цикла
-while true do
-    local ok, err = pcall(main)
-    if not ok then
-        local msg = "💥 ГЛОБАЛЬНАЯ ОШИБКА: " .. tostring(err)
-        print(msg)
-        writeErrorLog(msg)
-        local stack = debug.traceback()
-        writeErrorLog("Стек вызовов:\n" .. stack)
-        print(stack)
-        os.sleep(5)
-    end
-end
-
 function main()
     writeDebugLog("🚀 main() запущен")
     drawWelcomeScreen()
@@ -4355,9 +4326,21 @@ function main()
 end
 
 -- ============================================================
--- ЗАПУСК
+-- ЗАПУСК С ДИНАМИЧЕСКИМ РАЗРЕШЕНИЕМ
 -- ============================================================
 
+-- Устанавливаем максимальное разрешение
+local maxW, maxH = gpu.maxResolution()
+gpu.setResolution(maxW, maxH)
+
+SCREEN_W, SCREEN_H = gpu.getResolution()
+
+print("🖥 Разрешение экрана: " .. SCREEN_W .. "x" .. SCREEN_H)
+
+gpu.setBackground(colors.bg_main)
+gpu.setForeground(colors.text_main)
+
+-- Запуск основного цикла
 while true do
     local ok, err = pcall(main)
     if not ok then

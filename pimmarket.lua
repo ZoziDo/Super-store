@@ -4155,6 +4155,7 @@ function main()
                 end
                 goto continue
             end
+        end
 
         elseif e == "player_on" or e == "pim" or e == "pim_player_enter" then
             local playerName = ev[2] or "Игрок"

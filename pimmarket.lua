@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ12356
+-- ВРЕМЯ1
 -- ============================================================
 
 local tmpfs = component.proxy(computer.tmpAddress())
@@ -3182,6 +3182,7 @@ local function handleQuantityButtonClick(btnText)
 end
 
 local function performSell()
+    writeDebugLog("performSell()")
     if not playerAgreed then
         drawCenteredText(17, "Сначала примите пользовательское соглашение", colors.error)
         os.sleep(2)
@@ -3195,7 +3196,12 @@ local function performSell()
     drawCenteredText(17, "Выполняется пополнение...", colors.accent_main)
     os.sleep(0.2)
 
-    local realExtracted = extractToME(sellConfirmItem.internalName, foundAmount, sellConfirmItem.damage or 0)
+    if not sellConfirmItem then
+        writeErrorLog("❌ performSell: sellConfirmItem = nil!")
+        return
+    end
+
+    local realExtracted = extractToME(sellConfirmItem.internalName, foundAmount or 0, sellConfirmItem.damage or 0)
     if realExtracted == 0 then
         drawCenteredText(17, "Не удалось изъять предметы! Проверьте инвентарь.", colors.error)
         os.sleep(2)
@@ -3206,30 +3212,46 @@ local function performSell()
         return
     end
 
-    local value = realExtracted * sellConfirmItem.price
+    local value = realExtracted * (sellConfirmItem.price or 0)
+    local coinAmount = 0
+    local emaAmount = 0
+    
     if sellConfirmItem.internalName == "customnpcs:npcMoney" then
+        emaAmount = value
         emaBalance = emaBalance + value
     else
+        coinAmount = value
         coinBalance = coinBalance + value
     end
-    playerTransactions = playerTransactions + 1
-
-    if currentToken then
-        sendToWeb("/api/transaction", toJson({
-            op = "sell",
-            name = currentPlayer,
-            token = currentToken,
-            item = sellConfirmItem.displayName,
-            internalName = sellConfirmItem.internalName,
-            qty = realExtracted,
-            value = value
-        }))
+    
+    if currentPlayer and players[currentPlayer] then
+        players[currentPlayer].balance = coinBalance
+        players[currentPlayer].emaBalance = emaBalance
+        saveDB()
     end
+    
+    playerTransactions = playerTransactions + 1
+    if currentPlayer and players[currentPlayer] then
+        players[currentPlayer].transactions = (players[currentPlayer].transactions or 0) + 1
+        saveDB()
+    end
+    
+    addTransaction("sell", currentPlayer or "?", sellConfirmItem.displayName or "?", realExtracted, coinAmount, emaAmount)
+    addLog("💰 Продажа: " .. (currentPlayer or "?") .. " " .. (sellConfirmItem.displayName or "?") .. " x" .. realExtracted)
 
     gpu.setBackground(colors.bg_main)
     gpu.fill(2, 17, 78, 1, " ")
     local currencySymbol = (sellConfirmItem.internalName == "customnpcs:npcMoney") and "۞" or "₵"
     drawCenteredText(17, "Успешно! +" .. string.format("%.2f", value) .. " " .. currencySymbol, colors.success)
+
+    -- НОВЫЙ ЛОГ: Продажа
+    addLog("💰 Продажа: " .. currentPlayer .. " " .. sellConfirmItem.displayName .. " x" .. realExtracted .. " за " .. string.format("%.2f", value) .. currencySymbol)
+    sendToWeb("/api/new_log", toJson({
+        time = getRealTimeHM(),
+        level = "SUCCESS",
+        text = "Продажа: " .. currentPlayer .. " " .. sellConfirmItem.displayName .. " x" .. realExtracted .. " за " .. string.format("%.2f", value) .. currencySymbol
+    }))
+
     os.sleep(0.8)
 
     currentScreen = "shop_sell"
@@ -3240,6 +3262,7 @@ local function performSell()
 end
 
 local function performBuy()
+    writeDebugLog("performBuy()")
     if not playerAgreed then
         drawCenteredText(20, "Сначала примите пользовательское соглашение", colors.error)
         os.sleep(2)
@@ -3256,7 +3279,7 @@ local function performBuy()
     local me = component.me_interface
     local item = purchaseItem
 
-    local actualQty = getActualItemQuantity(item.internalName, item.damage)
+    local actualQty = getActualItemQuantity(item.internalName, item.damage or 0)
     if actualQty <= 0 then
         drawCenteredText(20, "Товар закончился! Обновление списка...", colors.error)
         os.sleep(0.8)
@@ -3268,7 +3291,7 @@ local function performBuy()
         return
     end
 
-    local qty = purchaseQuantity
+    local qty = purchaseQuantity or 1
     if qty > actualQty then
         qty = actualQty
         purchaseQuantity = qty
@@ -3367,20 +3390,15 @@ local function performBuy()
         local actuallySpentEma = extracted * (item.priceEma or 0)
         coinBalance = coinBalance - actuallySpentCoin
         emaBalance = emaBalance - actuallySpentEma
+        
         playerTransactions = playerTransactions + 1
-
-        if currentToken then
-            sendToWeb("/api/transaction", toJson({
-                op = "buy",
-                name = currentPlayer,
-                token = currentToken,
-                item = item.displayName,
-                internalName = item.internalName,
-                qty = extracted,
-                value_coin = actuallySpentCoin,
-                value_ema = actuallySpentEma
-            }))
+        if currentPlayer and players[currentPlayer] then
+            players[currentPlayer].transactions = (players[currentPlayer].transactions or 0) + 1
+            saveDB()
         end
+        
+        addTransaction("buy", currentPlayer or "?", item.displayName or "?", extracted, actuallySpentCoin, actuallySpentEma)
+        addLog("🛒 Покупка: " .. (currentPlayer or "?") .. " " .. (item.displayName or "?") .. " x" .. extracted)
 
         partialExtracted = extracted
         partialRequested = qty
@@ -3393,23 +3411,23 @@ local function performBuy()
         return
     end
 
-    -- ПОЛНАЯ ВЫДАЧА
     coinBalance = coinBalance - totalCoin
     emaBalance = emaBalance - totalEma
-    playerTransactions = playerTransactions + 1
-
-    if currentToken then
-        sendToWeb("/api/transaction", toJson({
-            op = "buy",
-            name = currentPlayer,
-            token = currentToken,
-            item = item.displayName,
-            internalName = item.internalName,
-            qty = extracted,
-            value_coin = totalCoin,
-            value_ema = totalEma
-        }))
+    
+    if currentPlayer and players[currentPlayer] then
+        players[currentPlayer].balance = coinBalance
+        players[currentPlayer].emaBalance = emaBalance
+        saveDB()
     end
+    
+    playerTransactions = playerTransactions + 1
+    if currentPlayer and players[currentPlayer] then
+        players[currentPlayer].transactions = (players[currentPlayer].transactions or 0) + 1
+        saveDB()
+    end
+    
+    addTransaction("buy", currentPlayer or "?", item.displayName or "?", extracted, totalCoin, totalEma)
+    addLog("🛒 Покупка: " .. (currentPlayer or "?") .. " " .. (item.displayName or "?") .. " x" .. extracted)
 
     gpu.setBackground(colors.bg_main)
     gpu.fill(2, 20, 78, 1, " ")
@@ -3420,6 +3438,14 @@ local function performBuy()
         priceStr = priceStr .. string.format("%.2f", totalEma) .. "۞"
     end
     drawCenteredText(20, "Куплено " .. extracted .. " шт. за " .. priceStr, colors.success)
+
+    -- НОВЫЙ ЛОГ: Покупка
+    addLog("🛒 Покупка: " .. currentPlayer .. " " .. item.displayName .. " x" .. extracted .. " за " .. priceStr)
+    sendToWeb("/api/new_log", toJson({
+        time = getRealTimeHM(),
+        level = "SUCCESS",
+        text = "Покупка: " .. currentPlayer .. " " .. item.displayName .. " x" .. extracted .. " за " .. priceStr
+    }))
 
     loadBuyItems()
     for _, newItem in ipairs(shopItems) do

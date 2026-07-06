@@ -16,12 +16,6 @@ local math = require("math")
 local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
--- Устанавливаем максимальное разрешение
-local maxW, maxH = gpu.maxResolution()
-gpu.setResolution(maxW, maxH)
-
-local w, h = gpu.getResolution()
-
 -- ============================================================
 -- ВРЕМЯ12
 -- ============================================================
@@ -236,10 +230,14 @@ colors = {
 -- UI БАЗОВЫЕ ФУНКЦИИ
 -- ============================================================
 
+-- ============================================================
+-- UI БАЗОВЫЕ ФУНКЦИИ (С ДИНАМИЧЕСКИМИ РАЗМЕРАМИ)
+-- ============================================================
+
 function clear()
     writeDebugLog("clear() вызвана")
     gpu.setBackground(colors.bg_main)
-    gpu.fill(1, 1, 80, 25, " ")
+    gpu.fill(1, 1, SCREEN_W, SCREEN_H, " ")
 end
 
 function drawCenteredText(y, text, color)
@@ -249,8 +247,54 @@ function drawCenteredText(y, text, color)
         text = ""
     end
     gpu.setForeground(color or colors.text_main)
-    local x = math.floor((80 - unicode.len(text)) / 2) + 1
+    local x = math.floor((SCREEN_W - unicode.len(text)) / 2) + 1
     gpu.set(x, y, text)
+end
+
+function drawScreenBorder()
+    writeDebugLog("drawScreenBorder()")
+    local left = 1
+    local right = SCREEN_W
+    local top = 1
+    local bottom = SCREEN_H
+    gpu.setForeground(colors.accent_secondary)
+    gpu.fill(left, top, right - left + 1, 1, "─")
+    gpu.fill(left, bottom, right - left + 1, 1, "─")
+    for y = top + 1, bottom - 1 do
+        gpu.set(left, y, "│")
+        gpu.set(right, y, "│")
+    end
+    gpu.set(left, top, "┌")
+    gpu.set(right, top, "┐")
+    gpu.set(left, bottom, "└")
+    gpu.set(right, bottom, "┘")
+end
+
+function drawTempMessage()
+    if tempMessage ~= "" and tempMessage then
+        gpu.setBackground(colors.bg_main)
+        gpu.fill(1, SCREEN_H, SCREEN_W, 1, " ")
+        gpu.setForeground(colors.success)
+        local x = math.floor((SCREEN_W - unicode.len(tempMessage)) / 2) + 1
+        gpu.set(x, SCREEN_H, tempMessage)
+    else
+        gpu.setBackground(colors.bg_main)
+        gpu.fill(1, SCREEN_H, SCREEN_W, 1, " ")
+    end
+end
+
+function drawTextMessage(msg, color)
+    writeDebugLog("drawTextMessage: " .. tostring(msg))
+    if msg and msg ~= "" then
+        gpu.setBackground(colors.bg_main)
+        gpu.fill(1, SCREEN_H, SCREEN_W, 1, " ")
+        gpu.setForeground(color or colors.success)
+        local x = math.floor((SCREEN_W - unicode.len(msg)) / 2) + 1
+        gpu.set(x, SCREEN_H, msg)
+    else
+        gpu.setBackground(colors.bg_main)
+        gpu.fill(1, SCREEN_H, SCREEN_W, 1, " ")
+    end
 end
 
 function drawButton(btn)
@@ -300,25 +344,6 @@ function drawPopupBorder(x, y, w, h, color)
     gpu.set(x + w - 1, y + h - 1, "┘")
 end
 
-function drawScreenBorder()
-    writeDebugLog("drawScreenBorder()")
-    local left = 1
-    local right = 80
-    local top = 1
-    local bottom = 24
-    gpu.setForeground(colors.accent_secondary)
-    gpu.fill(left, top, right - left + 1, 1, "─")
-    gpu.fill(left, bottom, right - left + 1, 1, "─")
-    for y = top + 1, bottom - 1 do
-        gpu.set(left, y, "│")
-        gpu.set(right, y, "│")
-    end
-    gpu.set(left, top, "┌")
-    gpu.set(right, top, "┐")
-    gpu.set(left, bottom, "└")
-    gpu.set(right, bottom, "┘")
-end
-
 function drawBigTitle()
     writeDebugLog("drawBigTitle()")
     gpu.setForeground(colors.accent_secondary)
@@ -331,7 +356,7 @@ function drawBigTitle()
         "    ╚═══╝  ╚═╝╚═╝",
     }
     local darkonOffset = 18
-    local darkonX = math.floor((80 - #darkonLines[1]) / 2) + darkonOffset
+    local darkonX = math.floor((SCREEN_W - #darkonLines[1]) / 2) + darkonOffset
     for i, line in ipairs(darkonLines) do
         gpu.set(darkonX, 4 + i, line)
     end
@@ -345,7 +370,7 @@ function drawBigTitle()
         "  ╚══════╝╚═╝  ╚═╝ ╚═════╝ ╚═╝     "
     }
     local shopOffset = 31
-    local shopX = math.floor((80 - #shopLines[1]) / 2) + shopOffset
+    local shopX = math.floor((SCREEN_W - #shopLines[1]) / 2) + shopOffset
     for i, line in ipairs(shopLines) do
         gpu.set(shopX, 10 + i, line)
     end
@@ -3499,6 +3524,35 @@ gpu.setBackground(colors.bg_main)
 
 lastMouseMoveTime = 0
 MOUSE_DEBOUNCE = 0.05
+
+-- ============================================================
+-- ЗАПУСК С ДИНАМИЧЕСКИМ РАЗРЕШЕНИЕМ
+-- ============================================================
+
+-- Устанавливаем максимальное разрешение
+local maxW, maxH = gpu.maxResolution()
+gpu.setResolution(maxW, maxH)
+
+SCREEN_W, SCREEN_H = gpu.getResolution()
+
+print("🖥 Разрешение экрана: " .. SCREEN_W .. "x" .. SCREEN_H)
+
+gpu.setBackground(colors.bg_main)
+gpu.setForeground(colors.text_main)
+
+-- Запуск основного цикла
+while true do
+    local ok, err = pcall(main)
+    if not ok then
+        local msg = "💥 ГЛОБАЛЬНАЯ ОШИБКА: " .. tostring(err)
+        print(msg)
+        writeErrorLog(msg)
+        local stack = debug.traceback()
+        writeErrorLog("Стек вызовов:\n" .. stack)
+        print(stack)
+        os.sleep(5)
+    end
+end
 
 function main()
     writeDebugLog("🚀 main() запущен")

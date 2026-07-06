@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ12
+-- ВРЕМЯ123
 -- ============================================================
 
 local tmpfs = component.proxy(computer.tmpAddress())
@@ -2172,10 +2172,6 @@ local function applyIncrementalChanges(itemsFile, changes, itemType)
     broadcastUpdate()
     return true
 end
-
--- ============================================================
--- ОБРАБОТКА КОМАНД (С РАСШИРЕННЫМ ЛОГИРОВАНИЕМ)
--- ============================================================
 
 local function checkWebCommands()
     if currentPlayer then syncCurrentPlayer() end

@@ -17,7 +17,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ1
+-- ВРЕМЯ
 -- ============================================================
 
 tmpfs = component.proxy(computer.tmpAddress())
@@ -623,8 +623,23 @@ function addTransaction(type, playerName, item, qty, value_coin, value_ema)
     })
     while #transactions > 100 do table.remove(transactions, 1) end
     
-    -- Обработка для конкретного игрока
-    if playerName and playerName ~= "?" and players[playerName] then
+    -- ★★★ ИСПРАВЛЕННАЯ ЧАСТЬ: создаём игрока, если его нет ★★★
+    if playerName and playerName ~= "?" then
+        if not players[playerName] then
+            -- Создаём игрока, если его нет
+            players[playerName] = {
+                balance = 0,
+                emaBalance = 0,
+                transactions = 0,
+                banned = false,
+                agreed = false,
+                hasFeedback = false,
+                transactionsList = {},
+                regDate = getRealTimeString()
+            }
+            writeDebugLog("➕ Создан новый игрок в addTransaction: " .. playerName)
+        end
+        
         players[playerName].transactions = (players[playerName].transactions or 0) + 1
         if not players[playerName].transactionsList then
             players[playerName].transactionsList = {}
@@ -634,9 +649,10 @@ function addTransaction(type, playerName, item, qty, value_coin, value_ema)
         writeDebugLog("📊 Транзакции игрока " .. playerName .. ": " .. players[playerName].transactions)
         writeDebugLog("📋 Список теперь содержит " .. #players[playerName].transactionsList .. " записей")
     else
-        writeErrorLog("⚠️ Игрок " .. tostring(playerName) .. " не найден в таблице players при добавлении транзакции!")
+        writeErrorLog("⚠️ Некорректное имя игрока при добавлении транзакции: " .. tostring(playerName))
     end
     
+    -- Отправка на сервер через буфер
     addTransactionToBuffer(type, playerName, item, qty, value_coin, value_ema)
 end
 

@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ1235
+-- ВРЕМЯ12356
 -- ============================================================
 
 local tmpfs = component.proxy(computer.tmpAddress())
@@ -3182,7 +3182,6 @@ local function handleQuantityButtonClick(btnText)
 end
 
 local function performSell()
-    writeDebugLog("performSell()")
     if not playerAgreed then
         drawCenteredText(17, "Сначала примите пользовательское соглашение", colors.error)
         os.sleep(2)
@@ -3196,12 +3195,7 @@ local function performSell()
     drawCenteredText(17, "Выполняется пополнение...", colors.accent_main)
     os.sleep(0.2)
 
-    if not sellConfirmItem then
-        writeErrorLog("❌ performSell: sellConfirmItem = nil!")
-        return
-    end
-
-    local realExtracted = extractToME(sellConfirmItem.internalName, foundAmount or 0, sellConfirmItem.damage or 0)
+    local realExtracted = extractToME(sellConfirmItem.internalName, foundAmount, sellConfirmItem.damage or 0)
     if realExtracted == 0 then
         drawCenteredText(17, "Не удалось изъять предметы! Проверьте инвентарь.", colors.error)
         os.sleep(2)
@@ -3212,46 +3206,30 @@ local function performSell()
         return
     end
 
-    local value = realExtracted * (sellConfirmItem.price or 0)
-    local coinAmount = 0
-    local emaAmount = 0
-    
+    local value = realExtracted * sellConfirmItem.price
     if sellConfirmItem.internalName == "customnpcs:npcMoney" then
-        emaAmount = value
         emaBalance = emaBalance + value
     else
-        coinAmount = value
         coinBalance = coinBalance + value
     end
-    
-    if currentPlayer and players[currentPlayer] then
-        players[currentPlayer].balance = coinBalance
-        players[currentPlayer].emaBalance = emaBalance
-        saveDB()
-    end
-    
     playerTransactions = playerTransactions + 1
-    if currentPlayer and players[currentPlayer] then
-        players[currentPlayer].transactions = (players[currentPlayer].transactions or 0) + 1
-        saveDB()
+
+    if currentToken then
+        sendToWeb("/api/transaction", toJson({
+            op = "sell",
+            name = currentPlayer,
+            token = currentToken,
+            item = sellConfirmItem.displayName,
+            internalName = sellConfirmItem.internalName,
+            qty = realExtracted,
+            value = value
+        }))
     end
-    
-    addTransaction("sell", currentPlayer or "?", sellConfirmItem.displayName or "?", realExtracted, coinAmount, emaAmount)
-    addLog("💰 Продажа: " .. (currentPlayer or "?") .. " " .. (sellConfirmItem.displayName or "?") .. " x" .. realExtracted)
 
     gpu.setBackground(colors.bg_main)
     gpu.fill(2, 17, 78, 1, " ")
     local currencySymbol = (sellConfirmItem.internalName == "customnpcs:npcMoney") and "۞" or "₵"
     drawCenteredText(17, "Успешно! +" .. string.format("%.2f", value) .. " " .. currencySymbol, colors.success)
-
-    -- НОВЫЙ ЛОГ: Продажа
-    addLog("💰 Продажа: " .. currentPlayer .. " " .. sellConfirmItem.displayName .. " x" .. realExtracted .. " за " .. string.format("%.2f", value) .. currencySymbol)
-    sendToWeb("/api/new_log", toJson({
-        time = getRealTimeHM(),
-        level = "SUCCESS",
-        text = "Продажа: " .. currentPlayer .. " " .. sellConfirmItem.displayName .. " x" .. realExtracted .. " за " .. string.format("%.2f", value) .. currencySymbol
-    }))
-
     os.sleep(0.8)
 
     currentScreen = "shop_sell"
@@ -3262,7 +3240,6 @@ local function performSell()
 end
 
 local function performBuy()
-    writeDebugLog("performBuy()")
     if not playerAgreed then
         drawCenteredText(20, "Сначала примите пользовательское соглашение", colors.error)
         os.sleep(2)
@@ -3279,8 +3256,7 @@ local function performBuy()
     local me = component.me_interface
     local item = purchaseItem
 
-    -- Проверяем наличие в ME-сети
-    local actualQty = getActualItemQuantity(item.internalName, item.damage or 0)
+    local actualQty = getActualItemQuantity(item.internalName, item.damage)
     if actualQty <= 0 then
         drawCenteredText(20, "Товар закончился! Обновление списка...", colors.error)
         os.sleep(0.8)
@@ -3292,7 +3268,7 @@ local function performBuy()
         return
     end
 
-    local qty = purchaseQuantity or 1
+    local qty = purchaseQuantity
     if qty > actualQty then
         qty = actualQty
         purchaseQuantity = qty
@@ -3323,167 +3299,88 @@ local function performBuy()
     drawCenteredText(20, "Выполняется покупка...", colors.accent_main)
     os.sleep(0.4)
 
-    -- ============================================================
-    -- ⭐ ЭКСПОРТ ПРЕДМЕТА (ЧЕРЕЗ PIM + pushItem)
-    -- ============================================================
-    
-    local pimAddr = getPimAddr()
-    if not pimAddr then
-        writeErrorLog("❌ PIM адрес не найден!")
-        drawCenteredText(20, "Ошибка: PIM не найден!", colors.error)
-        os.sleep(2)
-        currentScreen = "shop_buy"
-        drawBuyStatic()
-        drawBuyItemsList()
-        drawBuyButtons()
-        return
+    local id = item.internalName
+    if not id:find(":") then
+        id = "minecraft:" .. id
+    end
+    local fingerprint = { id = id, dmg = item.damage or 0 }
+
+    local maxStackSize = 64
+    local ok, detail = pcall(me.getItemDetail, me, item.internalName, item.damage)
+    if ok and detail and detail.maxSize then
+        maxStackSize = detail.maxSize
     end
 
-    local itemName = item.internalName
-    local itemDamage = item.damage or 0
-    
-    if not itemName:find(":") then
-        itemName = "minecraft:" .. itemName
-    end
-
-    writeDebugLog("🔍 Ищем в сети: " .. itemName .. " (damage: " .. itemDamage .. ")")
-
-    -- Находим слот с предметом в ME-сети через getItemsInNetwork
-    local networkItems = me.getItemsInNetwork()
-    local foundItem = nil
-    local totalQty = 0
-    
-    for _, meItem in ipairs(networkItems) do
-        if meItem.name == itemName and (meItem.damage or 0) == itemDamage then
-            totalQty = totalQty + (meItem.size or 0)
-            if not foundItem then
-                foundItem = meItem
-            end
-        end
-    end
-
-    if not foundItem then
-        writeDebugLog("❌ Предмет не найден в сети!")
-        drawCenteredText(20, "Предмет не найден в сети!", colors.error)
-        os.sleep(0.8)
-        loadBuyItems()
-        drawBuyStatic()
-        drawBuyItemsList()
-        drawBuyButtons()
-        currentScreen = "shop_buy"
-        return
-    end
-
-    writeDebugLog("✅ Найдено в сети: " .. foundItem.name .. " x" .. totalQty)
-
-    -- ⭐ ИСПОЛЬЗУЕМ me.extractItem ДЛЯ ИЗВЛЕЧЕНИЯ ИЗ ME В PIM
-    -- Сначала извлекаем из ME в инвентарь PIM
     local remaining = qty
     local extracted = 0
     local lastError = nil
 
-    -- Получаем максимальный размер стака
-    local maxStackSize = 64
-    local ok, detail = pcall(me.getItemDetail, me, itemName, itemDamage)
-    if ok and type(detail) == "table" and detail.maxSize then
-        maxStackSize = detail.maxSize
-        writeDebugLog("📦 Максимальный стак: " .. tostring(maxStackSize))
-    else
-        writeDebugLog("⚠️ Не удалось получить maxSize для " .. itemName .. ", используем 64")
-    end
-
-    -- ⭐ ИСПОЛЬЗУЕМ me.extractItem (если доступен)
-    -- ИЛИ пытаемся через exportItem с другим подходом
     while remaining > 0 do
         local toTake = math.min(remaining, maxStackSize)
-        
-        -- Пробуем exportItem с полным fingerprint, но через find
-        local exportSuccess = false
-        
-        -- ⭐ ПОПЫТКА: экспорт через find + export
-        for _, netItem in ipairs(networkItems) do
-            if netItem.name == itemName and (netItem.damage or 0) == itemDamage and (netItem.size or 0) > 0 then
-                local takeAmount = math.min(toTake, netItem.size or 0)
-                
-                -- Пробуем export через строку (без fingerprint)
-                local success, result = pcall(function()
-                    return me.exportItem(itemName, PULL_DIRECTION, takeAmount, itemDamage)
-                end)
-                
-                if success and result and type(result) == "number" and result > 0 then
-                    extracted = extracted + result
-                    remaining = remaining - result
-                    writeDebugLog("✅ Выдано через exportItem (string): " .. result)
-                    exportSuccess = true
-                    break
+        local success, result = pcall(function()
+            return me.exportItem(fingerprint, PULL_DIRECTION, toTake)
+        end)
+
+        local got = 0
+        if success then
+            if type(result) == "number" then
+                got = result
+            elseif type(result) == "boolean" and result == true then
+                got = toTake
+            elseif type(result) == "table" then
+                if result.count then
+                    got = result.count
+                elseif result.amount then
+                    got = result.amount
+                elseif result.size then
+                    got = result.size
+                else
+                    got = toTake
                 end
-                
-                -- Пробуем через fingerprint
-                local fprint = { id = itemName, dmg = itemDamage }
-                success, result = pcall(function()
-                    return me.exportItem(fprint, PULL_DIRECTION, takeAmount)
-                end)
-                
-                if success and result and type(result) == "number" and result > 0 then
-                    extracted = extracted + result
-                    remaining = remaining - result
-                    writeDebugLog("✅ Выдано через exportItem (fingerprint): " .. result)
-                    exportSuccess = true
-                    break
-                end
+            else
+                lastError = "неизвестный ответ: " .. tostring(result)
             end
+        else
+            lastError = tostring(result)
         end
-        
-        if not exportSuccess then
-            writeDebugLog("⚠️ Не удалось экспортировать предмет через ME!")
+
+        if got > 0 then
+            extracted = extracted + got
+            remaining = remaining - got
+        else
+            if lastError == nil then
+                lastError = "не удалось выдать (вернулось 0 или false)"
+            end
             break
         end
     end
 
-    -- ============================================================
-    -- ПРОВЕРКА РЕЗУЛЬТАТА
-    -- ============================================================
-
     if extracted == 0 then
-        local actualQtyNow = getActualItemQuantity(item.internalName, itemDamage)
-        writeDebugLog("🔍 Повторная проверка наличия: " .. actualQtyNow .. " шт.")
-        
-        if actualQtyNow <= 0 then
-            drawCenteredText(20, "Товар закончился! Обновление списка...", colors.error)
-            os.sleep(0.8)
-            loadBuyItems()
-            drawBuyStatic()
-            drawBuyItemsList()
-            drawBuyButtons()
-            currentScreen = "shop_buy"
-            return
-        else
-            writeDebugLog("❌ Не удалось выдать предмет, хотя он есть в сети (" .. actualQtyNow .. " шт.)")
-            showInventoryFullPopup = true
-            drawPurchaseScreen()
-            drawInventoryFullPopup()
-            return
-        end
+        showInventoryFullPopup = true
+        drawPurchaseScreen()
+        drawInventoryFullPopup()
+        return
     end
-
-    -- ============================================================
-    -- ЧАСТИЧНАЯ ВЫДАЧА
-    -- ============================================================
 
     if extracted < qty then
         local actuallySpentCoin = extracted * (item.priceCoin or 0)
         local actuallySpentEma = extracted * (item.priceEma or 0)
         coinBalance = coinBalance - actuallySpentCoin
         emaBalance = emaBalance - actuallySpentEma
-        
         playerTransactions = playerTransactions + 1
-        if currentPlayer and players[currentPlayer] then
-            players[currentPlayer].transactions = (players[currentPlayer].transactions or 0) + 1
-            saveDB()
+
+        if currentToken then
+            sendToWeb("/api/transaction", toJson({
+                op = "buy",
+                name = currentPlayer,
+                token = currentToken,
+                item = item.displayName,
+                internalName = item.internalName,
+                qty = extracted,
+                value_coin = actuallySpentCoin,
+                value_ema = actuallySpentEma
+            }))
         end
-        
-        addTransaction("buy", currentPlayer or "?", item.displayName or "?", extracted, actuallySpentCoin, actuallySpentEma)
-        addLog("🛒 Покупка (частичная): " .. (currentPlayer or "?") .. " " .. (item.displayName or "?") .. " x" .. extracted)
 
         partialExtracted = extracted
         partialRequested = qty
@@ -3496,27 +3393,23 @@ local function performBuy()
         return
     end
 
-    -- ============================================================
     -- ПОЛНАЯ ВЫДАЧА
-    -- ============================================================
-
     coinBalance = coinBalance - totalCoin
     emaBalance = emaBalance - totalEma
-    
-    if currentPlayer and players[currentPlayer] then
-        players[currentPlayer].balance = coinBalance
-        players[currentPlayer].emaBalance = emaBalance
-        saveDB()
-    end
-    
     playerTransactions = playerTransactions + 1
-    if currentPlayer and players[currentPlayer] then
-        players[currentPlayer].transactions = (players[currentPlayer].transactions or 0) + 1
-        saveDB()
+
+    if currentToken then
+        sendToWeb("/api/transaction", toJson({
+            op = "buy",
+            name = currentPlayer,
+            token = currentToken,
+            item = item.displayName,
+            internalName = item.internalName,
+            qty = extracted,
+            value_coin = totalCoin,
+            value_ema = totalEma
+        }))
     end
-    
-    addTransaction("buy", currentPlayer or "?", item.displayName or "?", extracted, totalCoin, totalEma)
-    addLog("🛒 Покупка: " .. (currentPlayer or "?") .. " " .. (item.displayName or "?") .. " x" .. extracted)
 
     gpu.setBackground(colors.bg_main)
     gpu.fill(2, 20, 78, 1, " ")
@@ -3527,13 +3420,6 @@ local function performBuy()
         priceStr = priceStr .. string.format("%.2f", totalEma) .. "۞"
     end
     drawCenteredText(20, "Куплено " .. extracted .. " шт. за " .. priceStr, colors.success)
-
-    addLog("🛒 Покупка: " .. currentPlayer .. " " .. item.displayName .. " x" .. extracted .. " за " .. priceStr)
-    sendToWeb("/api/new_log", toJson({
-        time = getRealTimeHM(),
-        level = "SUCCESS",
-        text = "Покупка: " .. currentPlayer .. " " .. item.displayName .. " x" .. extracted .. " за " .. priceStr
-    }))
 
     loadBuyItems()
     for _, newItem in ipairs(shopItems) do

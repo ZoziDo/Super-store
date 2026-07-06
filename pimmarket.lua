@@ -17,22 +17,22 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ
+-- ВРЕМЯ1
 -- ============================================================
 
-local tmpfs = component.proxy(computer.tmpAddress())
-local function getRealTimestamp()
+tmpfs = component.proxy(computer.tmpAddress())
+function getRealTimestamp()
     local handle = tmpfs.open("/time", "w")
     tmpfs.write(handle, "time")
     tmpfs.close(handle)
     return tmpfs.lastModified("/time") / 1000 + TIMEZONE_OFFSET
 end
 
-local function getRealTimeString()
+function getRealTimeString()
     return os.date("%d.%m.%Y %H:%M:%S", getRealTimestamp())
 end
 
-local function getRealTimeHM()
+function getRealTimeHM()
     return os.date("%H:%M:%S", getRealTimestamp())
 end
 
@@ -40,9 +40,9 @@ end
 -- ВЕБ-ИНТЕГРАЦИЯ
 -- ============================================================
 
-local WEB_URL = "https://upfront-dinginess-impulsive.ngrok-free.dev"
+WEB_URL = "https://upfront-dinginess-impulsive.ngrok-free.dev"
 
-local function toJson(val)
+function toJson(val)
     if type(val) == "string" then
         return '"' .. val:gsub('"', '\\"') .. '"'
     elseif type(val) == "number" or type(val) == "boolean" then
@@ -75,8 +75,7 @@ local function toJson(val)
     end
 end
 
--- ОПТИМИЗАЦИЯ: синхронная отправка (оставлена для совместимости, но используется редко)
-local function sendToWeb(endpoint, jsonData)
+function sendToWeb(endpoint, jsonData)
     pcall(function()
         internet.request(WEB_URL .. endpoint, jsonData, {
             ["Content-Type"] = "application/json",
@@ -89,9 +88,9 @@ end
 -- ОТПРАВКА ЛОГОВ НА ВЕБ (С НАКОПЛЕНИЕМ)
 -- ============================================================
 
-local logQueue = {}
+logQueue = {}
 
-local function addLogEntry(text, level)
+function addLogEntry(text, level)
     if not text then text = "?" end
     level = level or "INFO"
     local entry = {
@@ -115,9 +114,8 @@ local function addLogEntry(text, level)
     end
 end
 
--- ОПТИМИЗАЦИЯ: дополнительный таймер для принудительной отправки логов (раз в 15 сек)
-local LOG_FLUSH_INTERVAL = 15
-local function flushLogQueue()
+LOG_FLUSH_INTERVAL = 15
+function flushLogQueue()
     if #logQueue == 0 then return end
     local batch = {}
     for _, e in ipairs(logQueue) do
@@ -128,7 +126,7 @@ local function flushLogQueue()
 end
 event.timer(LOG_FLUSH_INTERVAL, flushLogQueue, math.huge)
 
-local function addLog(text)
+function addLog(text)
     addLogEntry(text, "INFO")
 end
 
@@ -136,7 +134,7 @@ end
 -- ОТПРАВКА ОШИБОК НА ВЕБ
 -- ============================================================
 
-local function sendErrorToWeb(error_msg, level)
+function sendErrorToWeb(error_msg, level)
     level = level or "ERROR"
     local timestamp = getRealTimeHM()
     sendToWeb("/api/error_log", toJson({
@@ -150,9 +148,9 @@ end
 -- ДЕТАЛЬНОЕ ЛОГИРОВАНИЕ ОШИБОК
 -- ============================================================
 
-local ERROR_LOG = "/home/errors.log"
+ERROR_LOG = "/home/errors.log"
 
-local function writeErrorLog(msg)
+function writeErrorLog(msg)
     local file = io.open(ERROR_LOG, "a")
     if file then
         local time = os.date("%Y-%m-%d %H:%M:%S")
@@ -163,7 +161,7 @@ local function writeErrorLog(msg)
     sendErrorToWeb(msg, "ERROR")
 end
 
-local function writeDebugLog(msg)
+function writeDebugLog(msg)
     local file = io.open(ERROR_LOG, "a")
     if file then
         local time = os.date("%Y-%m-%d %H:%M:%S")
@@ -172,8 +170,7 @@ local function writeDebugLog(msg)
     end
 end
 
--- Перехват ошибок
-local function safeCall(func, ...)
+function safeCall(func, ...)
     local args = {...}
     local ok, err = pcall(func, table.unpack(args))
     if not ok then
@@ -202,7 +199,7 @@ writeErrorLog("=" .. string.rep("=", 50))
 event.ignore("interrupted", function() end)
 event.ignore("terminate", function() end)
 
-local originalExit = os.exit
+originalExit = os.exit
 os.exit = function(code)
     if code == 0 then return else originalExit(code) end
 end
@@ -211,13 +208,13 @@ end
 -- ПЕРЕМЕННАЯ ДЛЯ ТЕРМИНАЛОВ
 -- ============================================================
 
-local markets = {}
+markets = {}
 
 -- ============================================================
 -- ЦВЕТА
 -- ============================================================
 
-local colors = {
+colors = {
     bg_main = 0x0A0A0F,
     bg_secondary = 0x14141F,
     bg_button = 0x1F1F2E,
@@ -238,13 +235,13 @@ local colors = {
 -- UI БАЗОВЫЕ ФУНКЦИИ
 -- ============================================================
 
-local function clear()
+function clear()
     writeDebugLog("clear() вызвана")
     gpu.setBackground(colors.bg_main)
     gpu.fill(1, 1, 80, 25, " ")
 end
 
-local function drawCenteredText(y, text, color)
+function drawCenteredText(y, text, color)
     writeDebugLog("drawCenteredText: y=" .. tostring(y) .. ", text=" .. tostring(text))
     if not text then
         writeErrorLog("❌ drawCenteredText: text = nil!")
@@ -255,7 +252,7 @@ local function drawCenteredText(y, text, color)
     gpu.set(x, y, text)
 end
 
-local function drawButton(btn)
+function drawButton(btn)
     if not btn then
         writeErrorLog("❌ drawButton: btn = nil!")
         return
@@ -271,7 +268,7 @@ local function drawButton(btn)
     gpu.setBackground(colors.bg_main)
 end
 
-local function drawFlexButton(btn)
+function drawFlexButton(btn)
     if not btn then
         writeErrorLog("❌ drawFlexButton: btn = nil!")
         return
@@ -287,7 +284,7 @@ local function drawFlexButton(btn)
     gpu.setBackground(colors.bg_main)
 end
 
-local function drawPopupBorder(x, y, w, h, color)
+function drawPopupBorder(x, y, w, h, color)
     writeDebugLog("drawPopupBorder: x=" .. tostring(x) .. ", y=" .. tostring(y) .. ", w=" .. tostring(w) .. ", h=" .. tostring(h))
     gpu.setForeground(color or colors.accent_secondary)
     gpu.fill(x, y, w, 1, "─")
@@ -302,7 +299,7 @@ local function drawPopupBorder(x, y, w, h, color)
     gpu.set(x + w - 1, y + h - 1, "┘")
 end
 
-local function drawScreenBorder()
+function drawScreenBorder()
     writeDebugLog("drawScreenBorder()")
     local left = 1
     local right = 80
@@ -321,7 +318,7 @@ local function drawScreenBorder()
     gpu.set(right, bottom, "┘")
 end
 
-local function drawBigTitle()
+function drawBigTitle()
     writeDebugLog("drawBigTitle()")
     gpu.setForeground(colors.accent_secondary)
     local darkonLines = {
@@ -353,7 +350,7 @@ local function drawBigTitle()
     end
 end
 
-local function drawTempMessage()
+function drawTempMessage()
     if tempMessage ~= "" and tempMessage then
         gpu.setBackground(colors.bg_main)
         gpu.fill(1, 25, 80, 1, " ")
@@ -366,7 +363,7 @@ local function drawTempMessage()
     end
 end
 
-local function drawTextMessage(msg, color)
+function drawTextMessage(msg, color)
     writeDebugLog("drawTextMessage: " .. tostring(msg))
     if msg and msg ~= "" then
         gpu.setBackground(colors.bg_main)
@@ -380,7 +377,7 @@ local function drawTextMessage(msg, color)
     end
 end
 
-local function drawAccountLoading()
+function drawAccountLoading()
     writeDebugLog("drawAccountLoading()")
     clear()
     drawScreenBorder()
@@ -397,9 +394,9 @@ local function drawAccountLoading()
     drawTempMessage()
 end
 
-local drawcountLoading = drawAccountLoading
+drawcountLoading = drawAccountLoading
 
-local function isButtonClicked(btn, x, y)
+function isButtonClicked(btn, x, y)
     if not btn then
         writeErrorLog("❌ isButtonClicked: btn = nil!")
         return false
@@ -411,19 +408,18 @@ end
 -- БАЗЫ ДАННЫХ
 -- ============================================================
 
-local ADMINS_PATH = "/home/admins.db"
-local DB_PATH = "/home/players.db"
-local STATS_PATH = "/home/global_stats.db"
-local FEEDBACKS_PATH = "/home/feedbacks.db"
-local REPORTS_PATH = "/home/reports.log"
+ADMINS_PATH = "/home/admins.db"
+DB_PATH = "/home/players.db"
+STATS_PATH = "/home/global_stats.db"
+FEEDBACKS_PATH = "/home/feedbacks.db"
+REPORTS_PATH = "/home/reports.log"
 
-local admins = {}
-local players = {}
-local globalStats = { totalReports = 0, totalBuys = 0, totalSells = 0, totalRevenue = 0, totalBalance = 0 }
-local transactions = {}
+admins = {}
+players = {}
+globalStats = { totalReports = 0, totalBuys = 0, totalSells = 0, totalRevenue = 0, totalBalance = 0 }
+transactions = {}
 
--- Автоматическое создание файлов
-local function ensureFileExists(path, defaultData)
+function ensureFileExists(path, defaultData)
     writeDebugLog("ensureFileExists: " .. path)
     if not fs.exists(path) then
         print("📁 Создаём файл: " .. path)
@@ -497,10 +493,10 @@ if fs.exists(STATS_PATH) then
 end
 
 -- ОПТИМИЗАЦИЯ: отложенное сохранение БД (не чаще раза в 5 секунд)
-local dbDirty = false
-local SAVE_DB_INTERVAL = 5
+dbDirty = false
+SAVE_DB_INTERVAL = 5
 
-local function saveDB()
+function saveDB()
     writeDebugLog("saveDB() – сохраняем " .. #players .. " игроков")
     for name, data in pairs(players) do
         if data.transactionsList then
@@ -512,11 +508,11 @@ local function saveDB()
     file:close()
 end
 
-local function saveDBDeferred()
+function saveDBDeferred()
     dbDirty = true
 end
 
-local function flushDB()
+function flushDB()
     if not dbDirty then return end
     saveDB()
     dbDirty = false
@@ -524,14 +520,14 @@ end
 
 event.timer(SAVE_DB_INTERVAL, flushDB, math.huge)
 
-local function saveGlobalStats()
+function saveGlobalStats()
     writeDebugLog("saveGlobalStats()")
     local file = io.open(STATS_PATH, "w")
     file:write(serialization.serialize(globalStats))
     file:close()
 end
 
-local function isAdmin(playerName)
+function isAdmin(playerName)
     if not playerName then return false end
     for _, name in ipairs(admins) do
         if name == playerName then return true end
@@ -539,7 +535,7 @@ local function isAdmin(playerName)
     return false
 end
 
-local function addAdmin(playerName)
+function addAdmin(playerName)
     if not playerName or playerName == "" then return false end
     if isAdmin(playerName) then return false end
     table.insert(admins, playerName)
@@ -552,7 +548,7 @@ local function addAdmin(playerName)
     return false
 end
 
-local function removeAdmin(playerName)
+function removeAdmin(playerName)
     if not playerName or playerName == "" then return false end
     if #admins <= 1 then return false end
     for i, name in ipairs(admins) do
@@ -570,10 +566,10 @@ local function removeAdmin(playerName)
 end
 
 -- ОПТИМИЗАЦИЯ: буфер транзакций для пакетной отправки
-local transactionBuffer = {}
-local TRANSACTION_FLUSH_INTERVAL = 10
+transactionBuffer = {}
+TRANSACTION_FLUSH_INTERVAL = 10
 
-local function addTransactionToBuffer(type, playerName, item, qty, value_coin, value_ema)
+function addTransactionToBuffer(type, playerName, item, qty, value_coin, value_ema)
     table.insert(transactionBuffer, {
         op = type,
         name = playerName,
@@ -585,7 +581,7 @@ local function addTransactionToBuffer(type, playerName, item, qty, value_coin, v
     })
 end
 
-local function flushTransactionBuffer()
+function flushTransactionBuffer()
     if #transactionBuffer == 0 then return end
     local payload = { transactions = transactionBuffer }
     sendToWeb("/api/transactions_batch", toJson(payload))
@@ -594,7 +590,7 @@ end
 
 event.timer(TRANSACTION_FLUSH_INTERVAL, flushTransactionBuffer, math.huge)
 
-local function addTransaction(type, playerName, item, qty, value_coin, value_ema)
+function addTransaction(type, playerName, item, qty, value_coin, value_ema)
     writeDebugLog("addTransaction: " .. type .. " " .. (playerName or "?"))
     
     if type == "sell" then
@@ -634,14 +630,13 @@ local function addTransaction(type, playerName, item, qty, value_coin, value_ema
             players[playerName].transactionsList = {}
         end
         table.insert(players[playerName].transactionsList, transactionRecord)
-        saveDBDeferred()   -- отложенное сохранение
+        saveDBDeferred()
         writeDebugLog("📊 Транзакции игрока " .. playerName .. ": " .. players[playerName].transactions)
         writeDebugLog("📋 Список теперь содержит " .. #players[playerName].transactionsList .. " записей")
     else
         writeErrorLog("⚠️ Игрок " .. tostring(playerName) .. " не найден в таблице players при добавлении транзакции!")
     end
     
-    -- Отправка на сервер через буфер
     addTransactionToBuffer(type, playerName, item, qty, value_coin, value_ema)
 end
 
@@ -649,7 +644,7 @@ end
 -- ФУНКЦИИ ДЛЯ ТЕРМИНАЛОВ
 -- ============================================================
 
-local function broadcastUpdate()
+function broadcastUpdate()
     writeDebugLog("📢 Рассылка обновления терминалам")
     local msg = serialization.serialize({
         op = "update_market",
@@ -660,7 +655,7 @@ local function broadcastUpdate()
     end
 end
 
-local function broadcastKill()
+function broadcastKill()
     writeDebugLog("💀 Рассылка команды завершения терминалам")
     local msg = serialization.serialize({op="kill_market"})
     for addr in pairs(markets) do
@@ -672,7 +667,7 @@ end
 -- ОТПРАВКА СТАТИСТИКИ (С РАСШИРЕННЫМ ЛОГИРОВАНИЕМ)
 -- ============================================================
 
-local function sendStats()
+function sendStats()
     writeDebugLog("📊 sendStats() начат")
     
     local playerList = {}
@@ -789,14 +784,13 @@ local function sendStats()
     sendToWeb("/api/update", jsonData)
 end
 
--- ОПТИМИЗАЦИЯ: интервал увеличен до 60 секунд (вместо 30)
 event.timer(60, sendStats, math.huge)
 
 -- ============================================================
 -- ЗАГРУЗКА ТОВАРОВ И СОГЛАШЕНИЯ
 -- ============================================================
 
-local function safeDoFile(path)
+function safeDoFile(path)
     writeDebugLog("safeDoFile: " .. path)
     if not fs.exists(path) then
         writeErrorLog("⚠️ Файл не найден: " .. path)
@@ -810,12 +804,12 @@ local function safeDoFile(path)
     return result
 end
 
-local shopData = safeDoFile("/home/shop_items.lua")
-local sellItems = shopData.sellItems or {}
-local vanillaItems = shopData.vanillaItems or {}
+shopData = safeDoFile("/home/shop_items.lua")
+sellItems = shopData.sellItems or {}
+vanillaItems = shopData.vanillaItems or {}
 
-local buyItemsData = safeDoFile("/home/buy_items.lua")
-local buyItemMap = {}
+buyItemsData = safeDoFile("/home/buy_items.lua")
+buyItemMap = {}
 for _, item in ipairs(buyItemsData) do
     local dmg = item.damage or 0
     local key = item.internalName .. ":" .. dmg
@@ -826,7 +820,7 @@ end
 -- PIM И МОДЕМ
 -- ============================================================
 
-local modem = component.modem
+modem = component.modem
 modem.open(0xffef)
 modem.open(0xfffe)
 
@@ -840,23 +834,23 @@ event.listen("modem_message", function(_, _, from, port, _, _, data)
     end
 end)
 
-local function getPimAddr()
+function getPimAddr()
     for addr in component.list("pim") do
         return addr
     end
     return nil
 end
 
-local PUSH_DIRECTION = "down"
-local PULL_DIRECTION = "up"
+PUSH_DIRECTION = "down"
+PULL_DIRECTION = "up"
 
-local function normalizeName(name)
+function normalizeName(name)
     if not name then return "" end
     local lastColon = name:match(".*:([^:]+)$")
     return lastColon or name
 end
 
-local function namesMatch(name1, name2)
+function namesMatch(name1, name2)
     if not name1 or not name2 then return false end
     if name1 == name2 then return true end
     local short1 = normalizeName(name1)
@@ -864,7 +858,7 @@ local function namesMatch(name1, name2)
     return short1 == short2
 end
 
-local selector = nil
+selector = nil
 for addr in component.list("openperipheral_selector") do
     selector = component.proxy(addr)
     break
@@ -880,75 +874,75 @@ end
 -- СОСТОЯНИЕ МАГАЗИНА
 -- ============================================================
 
-local currentPlayer, currentToken = nil, nil
-local pimOwner = nil
-local coinBalance = 0.0
-local emaBalance = 0.0
-local playerTransactions = 0
-local playerRegDate = ""
-local playerAgreed = false
-local currentScreen = "welcome"
-local authStartTime = 0
-local AUTH_TIMEOUT = 3
-local alreadyAuthorized = false
+currentPlayer, currentToken = nil, nil
+pimOwner = nil
+coinBalance = 0.0
+emaBalance = 0.0
+playerTransactions = 0
+playerRegDate = ""
+playerAgreed = false
+currentScreen = "welcome"
+authStartTime = 0
+AUTH_TIMEOUT = 3
+alreadyAuthorized = false
 
-local shopItems = {}
-local shopSearch = ""
-local searchActive = false
-local searchInput = ""
-local currentShopMode = "buy"
-local shopPaused = false
+shopItems = {}
+shopSearch = ""
+searchActive = false
+searchInput = ""
+currentShopMode = "buy"
+shopPaused = false
 
-local blacklist = {
+blacklist = {
     ["customnpcs:npcMoney"] = true,
 }
 
-local listScroll = 1
-local visibleRows = 15
-local selectedIndex = 0
-local hoveredIndex = 0
-local filteredItems = {}
-local selectedItem = nil
-local horizontalScroll = 1
-local maxItemWidth = 0
-local purchaseQuantity = 1
-local purchaseItem = nil
-local sellConfirmItem = nil
-local foundAmount = 0
-local showSellPopup = false
+listScroll = 1
+visibleRows = 15
+selectedIndex = 0
+hoveredIndex = 0
+filteredItems = {}
+selectedItem = nil
+horizontalScroll = 1
+maxItemWidth = 0
+purchaseQuantity = 1
+purchaseItem = nil
+sellConfirmItem = nil
+foundAmount = 0
+showSellPopup = false
 
-local showPartialPopup = false
-local partialExtracted = 0
-local partialRequested = 0
-local partialRefundCoin = 0
-local partialRefundEma = 0
-local partialItem = nil
+showPartialPopup = false
+partialExtracted = 0
+partialRequested = 0
+partialRefundCoin = 0
+partialRefundEma = 0
+partialItem = nil
 
-local showInsufficientPopup = false
-local insufficientBalanceCoin = 0
-local insufficientBalanceEma = 0
+showInsufficientPopup = false
+insufficientBalanceCoin = 0
+insufficientBalanceEma = 0
 
-local showInventoryFullPopup = false
+showInventoryFullPopup = false
 
-local reportInput = ""
-local lastReportTime = nil
-local showShopDenied = false
+reportInput = ""
+lastReportTime = nil
+showShopDenied = false
 
-local tempMessage = ""
-local tempMessageTimer = nil
+tempMessage = ""
+tempMessageTimer = nil
 
-local feedbacks = {}
-local feedbacksPage = 1
-local feedbacksTotalPages = 1
-local feedbackInput = ""
-local feedbackEditMode = false
-local playerHasFeedback = false
+feedbacks = {}
+feedbacksPage = 1
+feedbacksTotalPages = 1
+feedbackInput = ""
+feedbackEditMode = false
+playerHasFeedback = false
 
 -- ============================================================
--- НАДЁЖНЫЙ JSON ПАРСЕР (ФИНАЛЬНАЯ ВЕРСИЯ)
+-- НАДЁЖНЫЙ JSON ПАРСЕР
 -- ============================================================
 
-local function parseJSON(json_str)
+function parseJSON(json_str)
     if not json_str or json_str == "" then 
         writeDebugLog("parseJSON: пустая строка")
         return nil 
@@ -1093,21 +1087,16 @@ end
 -- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
 -- ============================================================
 
-local function isPimOwner(playerName)
+function isPimOwner(playerName)
     if not playerName or not pimOwner then return false end
     return playerName == pimOwner
 end
 
--- ============================================================
--- СИНХРОНИЗАЦИЯ ТЕКУЩЕГО ИГРОКА (ОПТИМИЗИРОВАНА)
--- ============================================================
-
-local function syncCurrentPlayer()
+function syncCurrentPlayer()
     if not currentPlayer then return end
     
     writeDebugLog("🔄 Синхронизация игрока: " .. currentPlayer)
     
-    -- Используем кеш в памяти (players), а не читаем файл
     if players[currentPlayer] then
         coinBalance = players[currentPlayer].balance or 0
         emaBalance = players[currentPlayer].emaBalance or 0
@@ -1123,7 +1112,7 @@ local function syncCurrentPlayer()
     return false
 end
 
-local function updateSelectorDisplay(item)
+function updateSelectorDisplay(item)
     if not selector then return end
     if not item then
         pcall(selector.setSlot, 0, nil)
@@ -1142,7 +1131,7 @@ local function updateSelectorDisplay(item)
     pcall(selector.setSlot, 1, stack)
 end
 
-local function sortableName(name)
+function sortableName(name)
     if not name then return "" end
     local lower = string.lower(name)
     local result = lower:gsub("(%d+)", function(d)
@@ -1151,7 +1140,7 @@ local function sortableName(name)
     return result
 end
 
-local function toLowerCase(str)
+function toLowerCase(str)
     if not str then return "" end
     str = string.lower(str)
     str = str:gsub("А", "а"):gsub("Б", "б"):gsub("В", "в"):gsub("Г", "г"):gsub("Д", "д")
@@ -1164,7 +1153,7 @@ local function toLowerCase(str)
     return str
 end
 
-local function canSendReport()
+function canSendReport()
     if not lastReportTime then return true end
     local now = getRealTimestamp()
     local reportDate = os.date("*t", lastReportTime)
@@ -1175,7 +1164,7 @@ local function canSendReport()
     return false
 end
 
-local function getActualItemQuantity(internalName, damage)
+function getActualItemQuantity(internalName, damage)
     if not component.isAvailable("me_interface") then return 0 end
     local me = component.me_interface
     local items = me.getItemsInNetwork()
@@ -1188,7 +1177,7 @@ local function getActualItemQuantity(internalName, damage)
     return total
 end
 
-local function showTempMessage(msg, duration)
+function showTempMessage(msg, duration)
     writeDebugLog("showTempMessage: " .. tostring(msg))
     tempMessage = msg or ""
     if tempMessageTimer then
@@ -1220,11 +1209,11 @@ end
 -- ЗАГРУЗКА ТОВАРОВ (С КЕШИРОВАНИЕМ)
 -- ============================================================
 
-local cachedBuyItems = nil
-local cacheTimestamp = 0
-local CACHE_TTL = 30
+cachedBuyItems = nil
+cacheTimestamp = 0
+CACHE_TTL = 30
 
-local function loadBuyItems(forceRefresh)
+function loadBuyItems(forceRefresh)
     writeDebugLog("loadBuyItems()" .. (forceRefresh and " (принудительное обновление)" or ""))
     if not forceRefresh and cachedBuyItems and (os.clock() - cacheTimestamp) < CACHE_TTL then
         shopItems = cachedBuyItems
@@ -1293,12 +1282,11 @@ local function loadBuyItems(forceRefresh)
     end)
     writeDebugLog("loadBuyItems: загружено " .. #shopItems .. " товаров")
     
-    -- Обновляем кеш
     cachedBuyItems = shopItems
     cacheTimestamp = os.clock()
 end
 
-local function loadSellItems()
+function loadSellItems()
     writeDebugLog("loadSellItems()")
     shopItems = {}
     for _, item in ipairs(sellItems) do
@@ -1320,7 +1308,7 @@ end
 -- СКАН И ИЗЪЯТИЕ
 -- ============================================================
 
-local function scanPlayerInventory(targetName, targetDamage)
+function scanPlayerInventory(targetName, targetDamage)
     writeDebugLog("scanPlayerInventory: " .. tostring(targetName))
     local pimAddr = getPimAddr()
     if not pimAddr then 
@@ -1347,7 +1335,7 @@ local function scanPlayerInventory(targetName, targetDamage)
     return total
 end
 
-local function extractToME(targetName, amount, targetDamage)
+function extractToME(targetName, amount, targetDamage)
     writeDebugLog("extractToME: " .. tostring(targetName) .. " x" .. tostring(amount))
     local pimAddr = getPimAddr()
     if not pimAddr or amount <= 0 then return 0 end
@@ -1382,7 +1370,7 @@ end
 -- UI МАГАЗИНА
 -- ============================================================
 
-local function drawBalanceLine(x, y)
+function drawBalanceLine(x, y)
     writeDebugLog("drawBalanceLine: x=" .. tostring(x) .. ", y=" .. tostring(y))
     
     local coin = coinBalance or 0.0
@@ -1409,7 +1397,7 @@ local function drawBalanceLine(x, y)
     gpu.set(x + unicode.len("Баланс: ") + unicode.len(coinStr) + unicode.len(" | "), y, emaStr)
 end
 
-local function redrawSearchField()
+function redrawSearchField()
     writeDebugLog("redrawSearchField()")
     local searchX = 42
     local searchText = ""
@@ -1434,7 +1422,7 @@ local function redrawSearchField()
     gpu.setBackground(colors.accent_secondary)
 end
 
-local function drawBuyStatic()
+function drawBuyStatic()
     writeDebugLog("drawBuyStatic()")
     clear()
     drawScreenBorder()
@@ -1466,7 +1454,7 @@ local function drawBuyStatic()
     drawTempMessage()
 end
 
-local function drawSingleRow(y, item, isHovered, isSelected, itemIndex)
+function drawSingleRow(y, item, isHovered, isSelected, itemIndex)
     writeDebugLog("drawSingleRow: y=" .. tostring(y) .. ", itemIndex=" .. tostring(itemIndex))
     
     if not item then
@@ -1572,7 +1560,7 @@ local function drawSingleRow(y, item, isHovered, isSelected, itemIndex)
     gpu.setBackground(colors.bg_main)
 end
 
-local function drawScrollBar()
+function drawScrollBar()
     local total = #filteredItems
     local barX = 78
     local barY = 7
@@ -1591,7 +1579,7 @@ local function drawScrollBar()
     gpu.setBackground(colors.bg_main)
 end
 
-local function getFilteredItems()
+function getFilteredItems()
     writeDebugLog("getFilteredItems()")
     local filtered = {}
     local searchLower = toLowerCase(shopSearch or "")
@@ -1635,7 +1623,7 @@ local function getFilteredItems()
     return filtered
 end
 
-local function drawBuyItemsList()
+function drawBuyItemsList()
     writeDebugLog("drawBuyItemsList()")
     filteredItems = getFilteredItems()
     local maxScroll = math.max(1, #filteredItems - visibleRows + 1)
@@ -1668,7 +1656,7 @@ local function drawBuyItemsList()
     end
 end
 
-local function smoothScroll(steps)
+function smoothScroll(steps)
     writeDebugLog("smoothScroll: " .. tostring(steps))
     local filtered = filteredItems
     local total = #filtered
@@ -1702,7 +1690,7 @@ local function smoothScroll(steps)
     drawScrollBar()
 end
 
-local function drawBuyButtons()
+function drawBuyButtons()
     writeDebugLog("drawBuyButtons()")
     local backButton = {
         text = "[ НАЗАД ]",
@@ -1741,17 +1729,17 @@ end
 -- ЭКРАНЫ
 -- ============================================================
 
-local menuButtons = {
+menuButtons = {
     shop    = {x=32, xs=20, y=9,  ys=3, text="🛒 Магазин",     tx=6, ty=1, bg=colors.bg_button, fg=colors.accent_main},
     account = {x=32, xs=20, y=17, ys=3, text="👤 Аккаунт",      tx=6, ty=1, bg=colors.bg_button, fg=colors.accent_main}
 }
 
-local shopMenuButtons = {
+shopMenuButtons = {
     buy    = {x=32, xs=20, y=9,  ys=3, text="🛍 Покупка",     tx=6, ty=1, bg=colors.bg_button, fg=colors.accent_main},
     sell   = {x=32, xs=20, y=17, ys=3, text="💰 Пополнение",  tx=5, ty=1, bg=colors.bg_button, fg=colors.accent_main},
 }
 
-local function drawWelcomeScreen()
+function drawWelcomeScreen()
     writeDebugLog("drawWelcomeScreen()")
     gpu.setBackground(colors.bg_main)
     gpu.fill(1, 1, 80, 25, " ")
@@ -1774,7 +1762,7 @@ local function drawWelcomeScreen()
     drawTempMessage()
 end
 
-local function drawAuthScreen()
+function drawAuthScreen()
     writeDebugLog("drawAuthScreen()")
     gpu.setBackground(colors.bg_main)
     gpu.fill(1, 1, 80, 25, " ")
@@ -1798,7 +1786,7 @@ local function drawAuthScreen()
     drawTempMessage()
 end
 
-local function drawMainMenu()
+function drawMainMenu()
     writeDebugLog("drawMainMenu()")
     clear()
     drawScreenBorder()
@@ -1849,7 +1837,7 @@ local function drawMainMenu()
     drawTempMessage()
 end
 
-local function drawShopMenu()
+function drawShopMenu()
     writeDebugLog("drawShopMenu()")
     clear()
     drawScreenBorder()
@@ -1884,7 +1872,7 @@ local function drawShopMenu()
     drawTempMessage()
 end
 
-local function drawAccount(data)
+function drawAccount(data)
     writeDebugLog("drawAccount()")
     clear()
     drawScreenBorder()
@@ -1945,7 +1933,7 @@ local function drawAccount(data)
     drawTempMessage()
 end
 
-local function drawReportScreen()
+function drawReportScreen()
     writeDebugLog("drawReportScreen()")
     currentScreen = "report"
     clear()
@@ -2003,7 +1991,7 @@ end
 -- ПОП-АПЫ
 -- ============================================================
 
-local function drawSellPopup()
+function drawSellPopup()
     writeDebugLog("drawSellPopup()")
     if not sellConfirmItem then
         writeErrorLog("❌ drawSellPopup: sellConfirmItem = nil!")
@@ -2055,7 +2043,7 @@ local function drawSellPopup()
     drawTempMessage()
 end
 
-local function drawSellScanScreen()
+function drawSellScanScreen()
     writeDebugLog("drawSellScanScreen()")
     if not sellConfirmItem then
         writeErrorLog("❌ drawSellScanScreen: sellConfirmItem = nil!")
@@ -2111,7 +2099,7 @@ local function drawSellScanScreen()
     drawTempMessage()
 end
 
-local function drawPurchaseScreen()
+function drawPurchaseScreen()
     writeDebugLog("drawPurchaseScreen()")
     currentScreen = "purchase"
     clear()
@@ -2203,7 +2191,7 @@ local function drawPurchaseScreen()
     drawTempMessage()
 end
 
-local function drawFeedbacksList()
+function drawFeedbacksList()
     writeDebugLog("drawFeedbacksList()")
     local feedbacks = {}
     if fs.exists(FEEDBACKS_PATH) then
@@ -2290,7 +2278,7 @@ local function drawFeedbacksList()
     drawTempMessage()
 end
 
-local function drawFeedbackInputScreen()
+function drawFeedbackInputScreen()
     writeDebugLog("drawFeedbackInputScreen()")
     if playerHasFeedback then
         showTempMessage("Вы уже оставляли отзыв!", 2)
@@ -2334,7 +2322,7 @@ local function drawFeedbackInputScreen()
     drawTempMessage()
 end
 
-local function drawInsufficientPopup()
+function drawInsufficientPopup()
     writeDebugLog("drawInsufficientPopup()")
     local popupWidth = 52
     local popupHeight = 11
@@ -2386,7 +2374,7 @@ local function drawInsufficientPopup()
     drawTempMessage()
 end
 
-local function drawPartialPopup()
+function drawPartialPopup()
     writeDebugLog("drawPartialPopup()")
     local popupWidth = 52
     local popupHeight = 9
@@ -2447,7 +2435,7 @@ local function drawPartialPopup()
     drawTempMessage()
 end
 
-local function drawInventoryFullPopup()
+function drawInventoryFullPopup()
     writeDebugLog("drawInventoryFullPopup()")
     local popupWidth = 52
     local popupHeight = 9
@@ -2492,7 +2480,7 @@ end
 -- НАВИГАЦИЯ
 -- ============================================================
 
-local function goBackToMenu()
+function goBackToMenu()
     writeDebugLog("goBackToMenu()")
     showShopDenied = false
     currentScreen = "menu"
@@ -2502,13 +2490,13 @@ local function goBackToMenu()
     pcall(selector.setSlot, 1, nil)
 end
 
-local function goToShop()
+function goToShop()
     writeDebugLog("goToShop()")
     currentScreen = "shop"
     drawShopMenu()
 end
 
-local function goToBuy()
+function goToBuy()
     writeDebugLog("goToBuy()")
     if not playerAgreed then
         drawCenteredText(12, "Вы не приняли пользовательское соглашение!", colors.error)
@@ -2527,13 +2515,13 @@ local function goToBuy()
     shopSearch = ""
     searchActive = false
     searchInput = ""
-    loadBuyItems()  -- использует кеш
+    loadBuyItems()
     drawBuyStatic()
     drawBuyItemsList()
     drawBuyButtons()
 end
 
-local function goToSell()
+function goToSell()
     writeDebugLog("goToSell()")
     if not playerAgreed then
         drawCenteredText(12, "Вы не приняли пользовательское соглашение!", colors.error)
@@ -2560,7 +2548,7 @@ local function goToSell()
     drawBuyButtons()
 end
 
-local function goToSellConfirm(item)
+function goToSellConfirm(item)
     writeDebugLog("goToSellConfirm()")
     if not item then
         writeErrorLog("❌ goToSellConfirm: item = nil!")
@@ -2572,7 +2560,7 @@ local function goToSellConfirm(item)
     drawSellScanScreen()
 end
 
-local function goToPurchase(item)
+function goToPurchase(item)
     writeDebugLog("goToPurchase()")
     if not item then
         writeErrorLog("❌ goToPurchase: item = nil!")
@@ -2583,14 +2571,14 @@ local function goToPurchase(item)
     drawPurchaseScreen()
 end
 
-local function goToReport()
+function goToReport()
     writeDebugLog("goToReport()")
     currentScreen = "report"
     reportInput = ""
     drawReportScreen()
 end
 
-local function goToHelp()
+function goToHelp()
     writeDebugLog("goToHelp()")
     currentScreen = "agreement"
     if type(drawAgreementScreen) == "function" then
@@ -2625,7 +2613,7 @@ local function goToHelp()
     end
 end
 
-local function goToAccount()
+function goToAccount()
     writeDebugLog("goToAccount()")
     if not currentToken then
         drawCenteredText(12, "Ошибка: нет авторизации", colors.error)
@@ -2646,7 +2634,7 @@ local function goToAccount()
     end
 end
 
-local function handleQuantityButtonClick(btnText)
+function handleQuantityButtonClick(btnText)
     writeDebugLog("handleQuantityButtonClick: " .. tostring(btnText))
     if btnText == "C" then
         purchaseQuantity = 0
@@ -2670,7 +2658,7 @@ end
 -- ВЫПОЛНЕНИЕ ПОКУПКИ И ПРОДАЖИ (ОПТИМИЗИРОВАНЫ)
 -- ============================================================
 
-local function performSell()
+function performSell()
     if not playerAgreed then
         drawCenteredText(17, "Сначала примите пользовательское соглашение", colors.error)
         os.sleep(2)
@@ -2703,7 +2691,6 @@ local function performSell()
     end
     playerTransactions = playerTransactions + 1
 
-    -- ОТПРАВКА ЧЕРЕЗ БУФЕР (вместо прямого sendToWeb)
     addTransactionToBuffer("sell", currentPlayer, sellConfirmItem.displayName, realExtracted, value, 0)
 
     gpu.setBackground(colors.bg_main)
@@ -2719,7 +2706,7 @@ local function performSell()
     drawBuyButtons()
 end
 
-local function performBuy()
+function performBuy()
     if not playerAgreed then
         drawCenteredText(20, "Сначала примите пользовательское соглашение", colors.error)
         os.sleep(2)
@@ -2740,7 +2727,7 @@ local function performBuy()
     if actualQty <= 0 then
         drawCenteredText(20, "Товар закончился! Обновление списка...", colors.error)
         os.sleep(0.8)
-        loadBuyItems(true)  -- принудительное обновление
+        loadBuyItems(true)
         drawBuyStatic()
         drawBuyItemsList()
         drawBuyButtons()
@@ -2849,7 +2836,6 @@ local function performBuy()
         emaBalance = emaBalance - actuallySpentEma
         playerTransactions = playerTransactions + 1
 
-        -- ОТПРАВКА ЧЕРЕЗ БУФЕР
         addTransactionToBuffer("buy", currentPlayer, item.displayName, extracted, actuallySpentCoin, actuallySpentEma)
 
         partialExtracted = extracted
@@ -2868,7 +2854,6 @@ local function performBuy()
     emaBalance = emaBalance - totalEma
     playerTransactions = playerTransactions + 1
 
-    -- ОТПРАВКА ЧЕРЕЗ БУФЕР
     addTransactionToBuffer("buy", currentPlayer, item.displayName, extracted, totalCoin, totalEma)
 
     gpu.setBackground(colors.bg_main)
@@ -2881,7 +2866,7 @@ local function performBuy()
     end
     drawCenteredText(20, "Куплено " .. extracted .. " шт. за " .. priceStr, colors.success)
 
-    loadBuyItems(true)  -- принудительное обновление
+    loadBuyItems(true)
     for _, newItem in ipairs(shopItems) do
         if newItem.internalName == item.internalName and newItem.damage == item.damage then
             purchaseItem = newItem
@@ -2899,7 +2884,7 @@ end
 -- ИНКРЕМЕНТАЛЬНОЕ ПРИМЕНЕНИЕ ИЗМЕНЕНИЙ
 -- ============================================================
 
-local function applyIncrementalChanges(itemsFile, changes, itemType)
+function applyIncrementalChanges(itemsFile, changes, itemType)
     writeDebugLog("📦 Применение инкрементальных изменений к " .. itemType)
     writeDebugLog("📦 Файл: " .. itemsFile)
     writeDebugLog("📦 Количество изменений: " .. (#changes or 0))
@@ -3044,7 +3029,7 @@ local function applyIncrementalChanges(itemsFile, changes, itemType)
     end
 
     if currentScreen == "shop_buy" then
-        loadBuyItems(true)   -- принудительное обновление
+        loadBuyItems(true)
         drawBuyStatic()
         drawBuyItemsList()
         drawBuyButtons()
@@ -3063,8 +3048,7 @@ end
 -- ОБРАБОТКА КОМАНД С САЙТА (ОПТИМИЗИРОВАНА)
 -- ============================================================
 
--- ОПТИМИЗАЦИЯ: увеличен интервал до 10 секунд
-local function checkWebCommands()
+function checkWebCommands()
     if currentPlayer then syncCurrentPlayer() end
     writeDebugLog("🔍 checkWebCommands() запущена в " .. getRealTimeHM())
 
@@ -3392,14 +3376,13 @@ local function checkWebCommands()
     end
 end
 
--- ОПТИМИЗАЦИЯ: интервал увеличен до 10 секунд
 event.timer(10, checkWebCommands, math.huge)
 
 -- ============================================================
 -- СОГЛАШЕНИЕ (заглушка, если файл не загружен)
 -- ============================================================
 
-local drawAgreementScreen
+drawAgreementScreen = nil
 if fs.exists("/home/agreement.lua") then
     local ok, func = pcall(dofile, "/home/agreement.lua")
     if ok and type(func) == "function" then
@@ -3451,11 +3434,10 @@ end
 gpu.setResolution(80, 25)
 gpu.setBackground(colors.bg_main)
 
--- ОПТИМИЗАЦИЯ: debounce для mouse_move
-local lastMouseMoveTime = 0
-local MOUSE_DEBOUNCE = 0.05   -- 50 мс
+lastMouseMoveTime = 0
+MOUSE_DEBOUNCE = 0.05
 
-local function main()
+function main()
     writeDebugLog("🚀 main() запущен")
     drawWelcomeScreen()
 
@@ -4001,7 +3983,6 @@ local function main()
                 end
             end
 
-        -- ОПТИМИЗАЦИЯ: debounce для mouse_move
         elseif e == "mouse_move" and (currentScreen == "shop_buy" or currentScreen == "shop_sell") then
             if not pimOwner then
                 goto continue

@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ123
+-- ВРЕМЯ1235
 -- ============================================================
 
 local tmpfs = component.proxy(computer.tmpAddress())
@@ -3385,9 +3385,11 @@ local function performBuy()
     -- Получаем максимальный размер стака
     local maxStackSize = 64
     local ok, detail = pcall(me.getItemDetail, me, itemName, itemDamage)
-    if ok and detail and detail.maxSize then
+    if ok and type(detail) == "table" and detail.maxSize then
         maxStackSize = detail.maxSize
-        writeDebugLog("📦 Максимальный стак: " .. maxStackSize)
+        writeDebugLog("📦 Максимальный стак: " .. tostring(maxStackSize))
+    else
+        writeDebugLog("⚠️ Не удалось получить maxSize для " .. itemName .. ", используем 64")
     end
 
     -- ⭐ ИСПОЛЬЗУЕМ me.extractItem (если доступен)
@@ -3408,7 +3410,7 @@ local function performBuy()
                     return me.exportItem(itemName, PULL_DIRECTION, takeAmount, itemDamage)
                 end)
                 
-                if success and result and result > 0 then
+                if success and result and type(result) == "number" and result > 0 then
                     extracted = extracted + result
                     remaining = remaining - result
                     writeDebugLog("✅ Выдано через exportItem (string): " .. result)
@@ -3422,7 +3424,7 @@ local function performBuy()
                     return me.exportItem(fprint, PULL_DIRECTION, takeAmount)
                 end)
                 
-                if success and result and result > 0 then
+                if success and result and type(result) == "number" and result > 0 then
                     extracted = extracted + result
                     remaining = remaining - result
                     writeDebugLog("✅ Выдано через exportItem (fingerprint): " .. result)

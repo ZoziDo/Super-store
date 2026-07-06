@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ12
+-- ВРЕМЯ123
 -- ============================================================
 
 local tmpfs = component.proxy(computer.tmpAddress())
@@ -3821,28 +3821,34 @@ local function main()
                     goto continue
                 end
                 if canSendReport() then
-                    local sendBtn = {x=33, y=14, xs=17, ys=1}
-                    if isButtonClicked(sendBtn, x, y) and reportInput and reportInput ~= "" then
-                        local file = io.open(REPORTS_PATH, "a")
-                        if file then
-                            file:write("[" .. getRealTimeString() .. "] " .. (currentPlayer or "?") .. ": " .. reportInput .. "\n")
-                            file:close()
-                            addLog("📩 Репорт от " .. (currentPlayer or "?"))
-                            sendToWeb("/api/new_report", toJson({
-                                time = getRealTimeString(),
-                                name = currentPlayer or "?",
-                                text = reportInput
-                            }))
-                        end
-                        lastReportTime = getRealTimestamp()
-                        globalStats.totalReports = (globalStats.totalReports or 0) + 1
-                        saveGlobalStats()
-                        drawCenteredText(18, "Сообщение успешно отправлено! Ожидайте ответа.", colors.success)
-                        os.sleep(0.8)
-                        goBackToMenu()
-                        goto continue
+                local sendBtn = {x=33, y=14, xs=17, ys=1}
+                if isButtonClicked(sendBtn, x, y) and reportInput and reportInput ~= "" then
+                    -- ⭐ ОТПРАВЛЯЕМ НА СЕРВЕР (ОСНОВНОЙ СПОСОБ)
+                    sendToWeb("/api/new_report", toJson({
+                        time = getRealTimeString(),
+                        name = currentPlayer or "?",
+                        text = reportInput
+                    }))
+                    
+                    -- ⭐ ДУБЛИРУЕМ В ЛОКАЛЬНЫЙ ФАЙЛ (для истории, если сервер недоступен)
+                    local file = io.open(REPORTS_PATH, "a")
+                    if file then
+                        file:write("[" .. getRealTimeString() .. "] " .. (currentPlayer or "?") .. ": " .. reportInput .. "\n")
+                        file:close()
                     end
+                    
+                    addLog("📩 Репорт от " .. (currentPlayer or "?"))
+                    lastReportTime = getRealTimestamp()
+                    globalStats.totalReports = (globalStats.totalReports or 0) + 1
+                    saveGlobalStats()
+                    
+                    drawCenteredText(18, "Сообщение успешно отправлено! Ожидайте ответа.", colors.success)
+                    os.sleep(0.8)
+                    goBackToMenu()
+                    goto continue
                 end
+            end
+
 
             elseif currentScreen == "feedbacks" then
                 local backBtn = {x=5, y=24, xs=11, ys=1}

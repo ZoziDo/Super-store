@@ -17,7 +17,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ1
+-- ВРЕМЯ
 -- ============================================================
 
 tmpfs = component.proxy(computer.tmpAddress())
@@ -2720,6 +2720,15 @@ function performSell()
     end
     playerTransactions = playerTransactions + 1
 
+    -- ★★★ НЕМЕДЛЕННО СОХРАНЯЕМ БАЛАНС В ФАЙЛ ★★★
+    if currentPlayer and players[currentPlayer] then
+        players[currentPlayer].balance = coinBalance
+        players[currentPlayer].emaBalance = emaBalance
+        players[currentPlayer].transactions = playerTransactions
+        saveDB()  -- немедленное сохранение
+        writeDebugLog("💾 Баланс сохранён для " .. currentPlayer .. ": Coin=" .. coinBalance .. ", EMA=" .. emaBalance)
+    end
+
     addTransactionToBuffer("sell", currentPlayer, sellConfirmItem.displayName, realExtracted, value, 0)
 
     gpu.setBackground(colors.bg_main)
@@ -2858,12 +2867,22 @@ function performBuy()
         return
     end
 
+    -- ★★★ ЧАСТИЧНАЯ ВЫДАЧА ★★★
     if extracted < qty then
         local actuallySpentCoin = extracted * (item.priceCoin or 0)
         local actuallySpentEma = extracted * (item.priceEma or 0)
         coinBalance = coinBalance - actuallySpentCoin
         emaBalance = emaBalance - actuallySpentEma
         playerTransactions = playerTransactions + 1
+
+        -- ★★★ НЕМЕДЛЕННО СОХРАНЯЕМ БАЛАНС ★★★
+        if currentPlayer and players[currentPlayer] then
+            players[currentPlayer].balance = coinBalance
+            players[currentPlayer].emaBalance = emaBalance
+            players[currentPlayer].transactions = playerTransactions
+            saveDB()
+            writeDebugLog("💾 Баланс сохранён (част.) для " .. currentPlayer .. ": Coin=" .. coinBalance .. ", EMA=" .. emaBalance)
+        end
 
         addTransactionToBuffer("buy", currentPlayer, item.displayName, extracted, actuallySpentCoin, actuallySpentEma)
 
@@ -2878,10 +2897,19 @@ function performBuy()
         return
     end
 
-    -- ПОЛНАЯ ВЫДАЧА
+    -- ★★★ ПОЛНАЯ ВЫДАЧА ★★★
     coinBalance = coinBalance - totalCoin
     emaBalance = emaBalance - totalEma
     playerTransactions = playerTransactions + 1
+
+    -- ★★★ НЕМЕДЛЕННО СОХРАНЯЕМ БАЛАНС ★★★
+    if currentPlayer and players[currentPlayer] then
+        players[currentPlayer].balance = coinBalance
+        players[currentPlayer].emaBalance = emaBalance
+        players[currentPlayer].transactions = playerTransactions
+        saveDB()
+        writeDebugLog("💾 Баланс сохранён (полн.) для " .. currentPlayer .. ": Coin=" .. coinBalance .. ", EMA=" .. emaBalance)
+    end
 
     addTransactionToBuffer("buy", currentPlayer, item.displayName, extracted, totalCoin, totalEma)
 

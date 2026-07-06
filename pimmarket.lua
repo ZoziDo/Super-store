@@ -16,6 +16,12 @@ local math = require("math")
 local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
+-- Устанавливаем максимальное разрешение
+local maxW, maxH = gpu.maxResolution()
+gpu.setResolution(maxW, maxH)
+
+local w, h = gpu.getResolution()
+
 -- ============================================================
 -- ВРЕМЯ12
 -- ============================================================

@@ -1,3 +1,7 @@
+-- ============================================================
+-- ОСНОВНОЙ КОД МАГАЗИНА (PIM MARKET) – ОПТИМИЗИРОВАННАЯ ВЕРСИЯ
+-- ============================================================
+
 local component = require("component")
 local event = require("event")
 local gpu = component.gpu
@@ -13,7 +17,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ1
+-- ВРЕМЯ
 -- ============================================================
 
 local tmpfs = component.proxy(computer.tmpAddress())
@@ -37,7 +41,6 @@ end
 -- ============================================================
 
 local WEB_URL = "https://upfront-dinginess-impulsive.ngrok-free.dev"
-
 
 local function toJson(val)
     if type(val) == "string" then
@@ -72,6 +75,7 @@ local function toJson(val)
     end
 end
 
+-- ОПТИМИЗАЦИЯ: синхронная отправка (оставлена для совместимости, но используется редко)
 local function sendToWeb(endpoint, jsonData)
     pcall(function()
         internet.request(WEB_URL .. endpoint, jsonData, {
@@ -81,10 +85,8 @@ local function sendToWeb(endpoint, jsonData)
     end)
 end
 
-
-
 -- ============================================================
--- ОТПРАВКА ЛОГОВ НА ВЕБ
+-- ОТПРАВКА ЛОГОВ НА ВЕБ (С НАКОПЛЕНИЕМ)
 -- ============================================================
 
 local logQueue = {}
@@ -112,6 +114,19 @@ local function addLogEntry(text, level)
         logQueue = {}
     end
 end
+
+-- ОПТИМИЗАЦИЯ: дополнительный таймер для принудительной отправки логов (раз в 15 сек)
+local LOG_FLUSH_INTERVAL = 15
+local function flushLogQueue()
+    if #logQueue == 0 then return end
+    local batch = {}
+    for _, e in ipairs(logQueue) do
+        table.insert(batch, { time = e.time, text = e.text, level = e.level })
+    end
+    sendToWeb("/api/logs_batch", toJson({ logs = batch }))
+    logQueue = {}
+end
+event.timer(LOG_FLUSH_INTERVAL, flushLogQueue, math.huge)
 
 local function addLog(text)
     addLogEntry(text, "INFO")
@@ -177,7 +192,7 @@ end
 
 -- Записываем старт
 writeErrorLog("=" .. string.rep("=", 50))
-writeErrorLog("🚀 ЗАПУСК PIM MARKET")
+writeErrorLog("🚀 ЗАПУСК PIM MARKET (ОПТИМИЗИРОВАННАЯ ВЕРСИЯ)")
 writeErrorLog("=" .. string.rep("=", 50))
 
 -- ============================================================
@@ -481,6 +496,10 @@ if fs.exists(STATS_PATH) then
     end
 end
 
+-- ОПТИМИЗАЦИЯ: отложенное сохранение БД (не чаще раза в 5 секунд)
+local dbDirty = false
+local SAVE_DB_INTERVAL = 5
+
 local function saveDB()
     writeDebugLog("saveDB() – сохраняем " .. #players .. " игроков")
     for name, data in pairs(players) do
@@ -492,6 +511,18 @@ local function saveDB()
     file:write(serialization.serialize(players))
     file:close()
 end
+
+local function saveDBDeferred()
+    dbDirty = true
+end
+
+local function flushDB()
+    if not dbDirty then return end
+    saveDB()
+    dbDirty = false
+end
+
+event.timer(SAVE_DB_INTERVAL, flushDB, math.huge)
 
 local function saveGlobalStats()
     writeDebugLog("saveGlobalStats()")
@@ -538,6 +569,31 @@ local function removeAdmin(playerName)
     return false
 end
 
+-- ОПТИМИЗАЦИЯ: буфер транзакций для пакетной отправки
+local transactionBuffer = {}
+local TRANSACTION_FLUSH_INTERVAL = 10
+
+local function addTransactionToBuffer(type, playerName, item, qty, value_coin, value_ema)
+    table.insert(transactionBuffer, {
+        op = type,
+        name = playerName,
+        item = item,
+        qty = qty,
+        value_coin = value_coin,
+        value_ema = value_ema,
+        token = currentToken
+    })
+end
+
+local function flushTransactionBuffer()
+    if #transactionBuffer == 0 then return end
+    local payload = { transactions = transactionBuffer }
+    sendToWeb("/api/transactions_batch", toJson(payload))
+    transactionBuffer = {}
+end
+
+event.timer(TRANSACTION_FLUSH_INTERVAL, flushTransactionBuffer, math.huge)
+
 local function addTransaction(type, playerName, item, qty, value_coin, value_ema)
     writeDebugLog("addTransaction: " .. type .. " " .. (playerName or "?"))
     
@@ -573,21 +629,20 @@ local function addTransaction(type, playerName, item, qty, value_coin, value_ema
     
     -- Обработка для конкретного игрока
     if playerName and playerName ~= "?" and players[playerName] then
-        -- Убедимся, что есть счётчик и список
         players[playerName].transactions = (players[playerName].transactions or 0) + 1
         if not players[playerName].transactionsList then
             players[playerName].transactionsList = {}
         end
-        -- Добавляем запись в список (НЕ перезаписываем!)
         table.insert(players[playerName].transactionsList, transactionRecord)
-        
-        -- Сохраняем БД сразу, чтобы транзакция не потерялась
-        saveDB()
+        saveDBDeferred()   -- отложенное сохранение
         writeDebugLog("📊 Транзакции игрока " .. playerName .. ": " .. players[playerName].transactions)
         writeDebugLog("📋 Список теперь содержит " .. #players[playerName].transactionsList .. " записей")
     else
         writeErrorLog("⚠️ Игрок " .. tostring(playerName) .. " не найден в таблице players при добавлении транзакции!")
     end
+    
+    -- Отправка на сервер через буфер
+    addTransactionToBuffer(type, playerName, item, qty, value_coin, value_ema)
 end
 
 -- ============================================================
@@ -625,7 +680,6 @@ local function sendStats()
     local playerCount = 0
     local allPlayerTransactions = {}
     
-    -- Подсчёт игроков (players - таблица, а не массив)
     for _ in pairs(players) do playerCount = playerCount + 1 end
     writeDebugLog("📊 Всего игроков в памяти: " .. playerCount)
     
@@ -634,12 +688,10 @@ local function sendStats()
         local bal = (data.balance or 0) + (data.emaBalance or 0)
         totalBalance = totalBalance + bal
         
-        -- Убедимся, что transactionsList всегда есть (для старых записей)
         if not data.transactionsList then
             data.transactionsList = {}
         end
         
-        -- Добавляем транзакции игрока в общий список
         if data.transactionsList then
             for _, t in ipairs(data.transactionsList) do
                 local tCopy = {
@@ -665,7 +717,6 @@ local function sendStats()
         })
     end
     
-    -- Сортируем все транзакции по времени (сначала новые)
     table.sort(allPlayerTransactions, function(a, b)
         return a.time > b.time
     end)
@@ -675,7 +726,6 @@ local function sendStats()
     globalStats.totalBalance = totalBalance
     saveGlobalStats()
     
-    -- Загрузка отзывов
     local feedbacksList = {}
     if fs.exists(FEEDBACKS_PATH) then
         local file = io.open(FEEDBACKS_PATH, "r")
@@ -689,7 +739,6 @@ local function sendStats()
         end
     end
     
-    -- Загрузка товаров для покупки
     local buyItems = {}
     if fs.exists("/home/buy_items.lua") then
         local ok, data = pcall(dofile, "/home/buy_items.lua")
@@ -703,7 +752,6 @@ local function sendStats()
         writeErrorLog("⚠️ Файл /home/buy_items.lua не найден")
     end
     
-    -- Загрузка товаров для продажи
     local sellItems = {}
     if fs.exists("/home/shop_items.lua") then
         local ok, data = pcall(dofile, "/home/shop_items.lua")
@@ -717,7 +765,6 @@ local function sendStats()
         writeErrorLog("⚠️ Файл /home/shop_items.lua не найден")
     end
     
-    -- Отправка на сервер
     local payload = {
         players = playerList,
         admins = admins,
@@ -730,7 +777,6 @@ local function sendStats()
         online = 0,
         paused = shopPaused,
         feedbacks = feedbacksList,
-        -- reports = reportsList,
         transactions = allPlayerTransactions,
         buy_items = buyItems,
         sell_items = sellItems
@@ -743,7 +789,8 @@ local function sendStats()
     sendToWeb("/api/update", jsonData)
 end
 
-event.timer(30, sendStats, math.huge)
+-- ОПТИМИЗАЦИЯ: интервал увеличен до 60 секунд (вместо 30)
+event.timer(60, sendStats, math.huge)
 
 -- ============================================================
 -- ЗАГРУЗКА ТОВАРОВ И СОГЛАШЕНИЯ
@@ -773,51 +820,6 @@ for _, item in ipairs(buyItemsData) do
     local dmg = item.damage or 0
     local key = item.internalName .. ":" .. dmg
     buyItemMap[key] = item
-end
-
-local drawAgreementScreen
-if fs.exists("/home/agreement.lua") then
-    local ok, func = pcall(dofile, "/home/agreement.lua")
-    if ok and type(func) == "function" then
-        drawAgreementScreen = func
-        writeDebugLog("✅ agreement.lua загружен")
-    else
-        writeErrorLog("❌ Ошибка загрузки agreement.lua")
-    end
-end
-if not drawAgreementScreen then
-    drawAgreementScreen = function()
-        writeDebugLog("drawAgreementScreen (заглушка)")
-        clear()
-        drawScreenBorder()
-        drawCenteredText(6, "ПОЛЬЗОВАТЕЛЬСКОЕ СОГЛАШЕНИЕ", colors.accent_secondary)
-        drawCenteredText(8, "Файл agreement.lua не найден!", colors.error)
-        drawCenteredText(9, "Создайте его в папке /home/", colors.text_main)
-        drawCenteredText(11, "Нажмите [НАЗАД] для возврата", colors.text_main)
-        
-        local backButton = {
-            text = "[ НАЗАД ]",
-            x = 37, y = 24,
-            xs = unicode.len("[ НАЗАД ]") + 2,
-            ys = 1,
-            bg = colors.bg_button,
-            fg = colors.accent_secondary
-        }
-        drawFlexButton(backButton)
-        drawTempMessage()
-        
-        while currentScreen == "agreement" do
-            local ev = {event.pull(0.5)}
-            if ev[1] == "touch" then
-                local x = tonumber(ev[3]) or 0
-                local y = tonumber(ev[4]) or 0
-                if isButtonClicked(backButton, x, y) then
-                    goBackToMenu()
-                    break
-                end
-            end
-        end
-    end
 end
 
 -- ============================================================
@@ -956,7 +958,6 @@ local function parseJSON(json_str)
     local pos = 1
     local len = #str
 
-    -- Forward declaration для взаимных ссылок
     local parseValue, parseArray, parseObject
 
     local function skipSpace()
@@ -1098,7 +1099,7 @@ local function isPimOwner(playerName)
 end
 
 -- ============================================================
--- СИНХРОНИЗАЦИЯ ТЕКУЩЕГО ИГРОКА С ФАЙЛОМ
+-- СИНХРОНИЗАЦИЯ ТЕКУЩЕГО ИГРОКА (ОПТИМИЗИРОВАНА)
 -- ============================================================
 
 local function syncCurrentPlayer()
@@ -1106,24 +1107,13 @@ local function syncCurrentPlayer()
     
     writeDebugLog("🔄 Синхронизация игрока: " .. currentPlayer)
     
-    -- Загружаем свежие данные
-    local playersData = {}
-    if fs.exists(DB_PATH) then
-        local ok, data = pcall(dofile, DB_PATH)
-        if ok and type(data) == "table" then
-            playersData = data
-        end
-    end
-    
-    if playersData[currentPlayer] then
-        coinBalance = playersData[currentPlayer].balance or 0
-        emaBalance = playersData[currentPlayer].emaBalance or 0
-        playerTransactions = playersData[currentPlayer].transactions or 0
-        playerRegDate = playersData[currentPlayer].regDate or ""
-        playerAgreed = playersData[currentPlayer].agreed or false
-        
-        -- ОБНОВЛЯЕМ ГЛОБАЛЬНУЮ ТАБЛИЦУ
-        players = playersData
+    -- Используем кеш в памяти (players), а не читаем файл
+    if players[currentPlayer] then
+        coinBalance = players[currentPlayer].balance or 0
+        emaBalance = players[currentPlayer].emaBalance or 0
+        playerTransactions = players[currentPlayer].transactions or 0
+        playerRegDate = players[currentPlayer].regDate or ""
+        playerAgreed = players[currentPlayer].agreed or false
         
         writeDebugLog("✅ Синхронизирован: Coin=" .. coinBalance .. ", EMA=" .. emaBalance)
         return true
@@ -1227,11 +1217,21 @@ local function showTempMessage(msg, duration)
 end
 
 -- ============================================================
--- ЗАГРУЗКА ТОВАРОВ
+-- ЗАГРУЗКА ТОВАРОВ (С КЕШИРОВАНИЕМ)
 -- ============================================================
 
-local function loadBuyItems()
-    writeDebugLog("loadBuyItems()")
+local cachedBuyItems = nil
+local cacheTimestamp = 0
+local CACHE_TTL = 30
+
+local function loadBuyItems(forceRefresh)
+    writeDebugLog("loadBuyItems()" .. (forceRefresh and " (принудительное обновление)" or ""))
+    if not forceRefresh and cachedBuyItems and (os.clock() - cacheTimestamp) < CACHE_TTL then
+        shopItems = cachedBuyItems
+        writeDebugLog("loadBuyItems: использован кеш (" .. #shopItems .. " товаров)")
+        return
+    end
+    
     if not component.isAvailable("me_interface") then 
         writeErrorLog("❌ ME интерфейс недоступен!")
         return 
@@ -1278,7 +1278,6 @@ local function loadBuyItems()
         end
         ::continue::
     end
-    -- ⚠️ УБРАЛ ЛИШНИЙ end! Дальше код продолжается внутри функции
 
     local newShopItems = {}
     for key, itemData in pairs(tempShopItems) do
@@ -1293,7 +1292,11 @@ local function loadBuyItems()
         return sortableName(a.displayName) < sortableName(b.displayName)
     end)
     writeDebugLog("loadBuyItems: загружено " .. #shopItems .. " товаров")
-end  -- <-- ТОЛЬКО ОДИН end для закрытия функции!
+    
+    -- Обновляем кеш
+    cachedBuyItems = shopItems
+    cacheTimestamp = os.clock()
+end
 
 local function loadSellItems()
     writeDebugLog("loadSellItems()")
@@ -1754,7 +1757,6 @@ local function drawWelcomeScreen()
     gpu.fill(1, 1, 80, 25, " ")
     drawBigTitle()
     
-    -- Проверяем режим обслуживания
     if shopPaused then
         gpu.setForeground(colors.error)
         drawCenteredText(18, "РЕЖИМ ОБСЛУЖИВАНИЯ", colors.error)
@@ -1778,7 +1780,6 @@ local function drawAuthScreen()
     gpu.fill(1, 1, 80, 25, " ")
     drawBigTitle()
     
-    -- Проверяем режим обслуживания
     if shopPaused then
         gpu.setForeground(colors.error)
         drawCenteredText(17, "РЕЖИМ ОБСЛУЖИВАНИЯ", colors.error)
@@ -1825,7 +1826,6 @@ local function drawMainMenu()
         gpu.setForeground(colors.tomato)
         gpu.set(balanceX + unicode.len("Баланс: ") + unicode.len(string.format("%.2f", coin) .. " Coina ₵") + unicode.len(" | "), 5, "ЭМЫ: " .. string.format("%.2f", ema) .. " ۞")
 
-        -- ⭐ ИСПОЛЬЗУЕМ playerAgreed
         if not playerAgreed then
             gpu.setForeground(colors.accent_secondary)
             if showShopDenied then
@@ -2000,522 +2000,7 @@ local function drawReportScreen()
 end
 
 -- ============================================================
--- ИНКРЕМЕНТАЛЬНОЕ ПРИМЕНЕНИЕ ИЗМЕНЕНИЙ (С РАСШИРЕННЫМ ЛОГИРОВАНИЕМ)
--- ============================================================
-
-local function applyIncrementalChanges(itemsFile, changes, itemType)
-    writeDebugLog("📦 Применение инкрементальных изменений к " .. itemType)
-    writeDebugLog("📦 Файл: " .. itemsFile)
-    writeDebugLog("📦 Количество изменений: " .. (#changes or 0))
-
-    if not changes or type(changes) ~= "table" or #changes == 0 then
-        writeDebugLog("ℹ️ Нет изменений для применения")
-        return true
-    end
-
-    -- Определяем тип файла
-    local isShopFile = string.find(itemsFile, "shop_items") ~= nil
-
-    -- Загружаем данные из файла
-    local fileData = {}
-    local sellItemsList = {}
-
-    if fs.exists(itemsFile) then
-        local ok, data = pcall(dofile, itemsFile)
-        if ok and type(data) == "table" then
-            fileData = data
-            if isShopFile and fileData.sellItems and type(fileData.sellItems) == "table" then
-                sellItemsList = fileData.sellItems
-                writeDebugLog("📦 Загружены sell_items из shop_items.lua: " .. #sellItemsList .. " товаров")
-            elseif not isShopFile then
-                sellItemsList = data
-                writeDebugLog("📦 Загружены buy_items: " .. #sellItemsList .. " товаров")
-            else
-                writeDebugLog("⚠️ В shop_items.lua нет поля sellItems, создаём новое")
-                sellItemsList = {}
-                fileData.sellItems = sellItemsList
-                fileData.vanillaItems = fileData.vanillaItems or {}
-            end
-        else
-            writeDebugLog("⚠️ Не удалось загрузить " .. itemsFile .. ", создаём новый")
-            if isShopFile then
-                fileData = { sellItems = {}, vanillaItems = {} }
-                sellItemsList = fileData.sellItems
-            else
-                sellItemsList = {}
-                fileData = sellItemsList
-            end
-        end
-    else
-        writeDebugLog("⚠️ Файл не существует: " .. itemsFile .. ", создаём новый")
-        if isShopFile then
-            fileData = { sellItems = {}, vanillaItems = {} }
-            sellItemsList = fileData.sellItems
-        else
-            sellItemsList = {}
-            fileData = sellItemsList
-        end
-    end
-
-    -- Строим карту товаров для быстрого поиска
-    local itemMap = {}
-    for i, item in ipairs(sellItemsList) do
-        local key = (item.internalName or "") .. ":" .. (item.damage or 0)
-        itemMap[key] = i
-    end
-
-    local appliedCount = 0
-
-    for _, change in ipairs(changes) do
-        if not change or not change.item then
-            writeDebugLog("⚠️ Пропускаем пустое изменение")
-            goto next
-        end
-
-        local item = change.item
-        local key = (item.internalName or "") .. ":" .. (item.damage or 0)
-        writeDebugLog("🔍 Обработка: " .. key .. ", action=" .. (change.action or "?"))
-
-        if change.action == "add" then
-            table.insert(sellItemsList, item)
-            appliedCount = appliedCount + 1
-            writeDebugLog("➕ Добавлен: " .. (item.displayName or key))
-
-        elseif change.action == "update" then
-            local idx = itemMap[key]
-            if idx then
-                -- Обновляем существующий товар
-                for k, v in pairs(item) do
-                    if k ~= "internalName" and k ~= "damage" then
-                        sellItemsList[idx][k] = v
-                    end
-                end
-                appliedCount = appliedCount + 1
-                writeDebugLog("🔄 Обновлён: " .. (item.displayName or key))
-            else
-                -- Если не нашли – добавляем как новый
-                table.insert(sellItemsList, item)
-                appliedCount = appliedCount + 1
-                writeDebugLog("➕ Добавлен как новый: " .. (item.displayName or key))
-            end
-
-        elseif change.action == "delete" then
-            local idx = itemMap[key]
-            if idx then
-                table.remove(sellItemsList, idx)
-                appliedCount = appliedCount + 1
-                writeDebugLog("❌ Удалён: " .. key)
-            else
-                writeDebugLog("⚠️ Не найден для удаления: " .. key)
-            end
-        end
-
-        ::next::
-    end
-
-    if appliedCount == 0 then
-        writeDebugLog("⚠️ Ни одно изменение не применено")
-        return true
-    end
-
-    -- Сохраняем файл
-    writeDebugLog("💾 Сохраняем файл: " .. itemsFile)
-    local file = io.open(itemsFile, "w")
-    if not file then
-        writeErrorLog("❌ Не удалось открыть файл для записи: " .. itemsFile)
-        return false
-    end
-
-    local serialized
-    if isShopFile then
-        -- Для shop_items.lua сохраняем всю структуру
-        serialized = serialization.serialize(fileData)
-    else
-        -- Для buy_items.lua сохраняем только список
-        serialized = serialization.serialize(sellItemsList)
-    end
-
-    file:write("return " .. serialized)
-    file:close()
-    writeDebugLog("✅ Сохранено " .. appliedCount .. " изменений в " .. itemsFile)
-
-    -- Обновляем глобальные переменные
-    if isShopFile then
-        sellItems = sellItemsList
-        shopData.sellItems = sellItemsList
-        shopData.vanillaItems = fileData.vanillaItems or {}
-        writeDebugLog("📦 sellItems обновлён, товаров: " .. #sellItems)
-    else
-        buyItemsData = sellItemsList
-        buyItemMap = {}
-        for _, item in ipairs(buyItemsData) do
-            local dmg = item.damage or 0
-            local key = item.internalName .. ":" .. dmg
-            buyItemMap[key] = item
-        end
-        writeDebugLog("📦 buyItemsData обновлена, товаров: " .. #buyItemsData)
-    end
-
-    -- Перерисовка UI (если нужно)
-    if currentScreen == "shop_buy" then
-        loadBuyItems()
-        drawBuyStatic()
-        drawBuyItemsList()
-        drawBuyButtons()
-    elseif currentScreen == "shop_sell" then
-        loadSellItems()
-        drawBuyStatic()
-        drawBuyItemsList()
-        drawBuyButtons()
-    end
-
-    broadcastUpdate()
-    return true
-end
-
-local function checkWebCommands()
-    if currentPlayer then syncCurrentPlayer() end
-    writeDebugLog("🔍 checkWebCommands() запущена в " .. getRealTimeHM())
-
-    local success, err = pcall(function()
-        local url = WEB_URL .. "/api/commands"
-        writeDebugLog("📡 Запрос к: " .. url)
-
-        local response = internet.request(url)
-        if not response then
-            writeDebugLog("⚠️ Нет ответа от сервера")
-            return
-        end
-
-        -- Проверяем статус ответа
-        local status = response.getStatus and response:getStatus() or response.code or response.status
-        if status then
-            if status == 200 or status == 204 then
-                writeDebugLog("✅ Статус ответа: " .. tostring(status))
-            else
-                writeErrorLog("⚠️ Сервер вернул HTTP " .. tostring(status) .. " на запрос " .. url)
-                return
-            end
-        else
-            writeDebugLog("⚠️ Не удалось получить статус ответа, продолжаем...")
-        end
-
-        -- Если статус 204, то тела нет
-        if status == 204 then
-            writeDebugLog("⚠️ Сервер вернул 204 No Content, пропускаем")
-            return
-        end
-
-        local body = ""
-        for chunk in response do
-            body = body .. chunk
-        end
-
-        writeDebugLog("📥 Получено " .. #body .. " байт")
-
-        if #body < 10 then
-            writeDebugLog("⚠️ Ответ слишком короткий, пропускаем")
-            return
-        end
-
-        local data = parseJSON(body)
-        if data then
-            writeDebugLog("✅ Распарсено: " .. serialization.serialize(data))
-        else
-            writeDebugLog("❌ data = nil после парсинга!")
-            writeErrorLog("❌ Ошибка парсинга JSON: " .. string.sub(body, 1, 300))
-            return
-        end
-
-        if not data.commands or #data.commands == 0 then
-            writeDebugLog("⚠️ Нет команд в ответе")
-            return
-        end
-
-        writeDebugLog("📨 Найдено команд: " .. #data.commands)
-
-        for _, cmd in ipairs(data.commands) do
-            local d = cmd.data or cmd
-            local requestId = cmd.requestId or os.time()
-        
-            local function sendResult(success, msg)
-                writeDebugLog("📤 [" .. (cmd.command or "unknown") .. "] " .. (success and "✅" or "❌") .. " " .. (msg or ""))
-                sendToWeb("/api/command_result", toJson({
-                    requestId = requestId,
-                    success = success,
-                    message = msg or "",
-                    command = cmd.command
-                }))
-            end
-        
-            writeDebugLog("🔧 Выполняем команду: " .. (cmd.command or "unknown"))
-            writeDebugLog("📨 Данные команды: " .. serialization.serialize(d))
-        
-            -- ==================== ОБНОВЛЕНИЕ ИГРОКА ====================
-            if cmd.command == "update_player" or cmd.command == "set_balance" then
-                local playerName = d.name or d.player
-                if not playerName then
-                    writeDebugLog("❌ Нет имени игрока в команде!")
-                    sendResult(false, "Нет имени игрока")
-                    goto continue
-                end
-            
-                writeDebugLog("📥 ОБНОВЛЕНИЕ ИГРОКА: " .. playerName)
-                
-                local playersData = {}
-                if fs.exists(DB_PATH) then
-                    local ok, data = pcall(dofile, DB_PATH)
-                    if ok and type(data) == "table" then
-                        playersData = data
-                    end
-                end
-                
-                -- Проверяем, есть ли игрок уже в глобальной таблице players (в памяти)
-                local existingPlayer = players[playerName]
-                
-                if not playersData[playerName] then
-                    writeDebugLog("➕ Создаём нового игрока в playersData: " .. playerName)
-                    -- Используем данные из существующего игрока в памяти, если есть
-                    playersData[playerName] = {
-                        balance = existingPlayer and existingPlayer.balance or 0,
-                        emaBalance = existingPlayer and existingPlayer.emaBalance or 0,
-                        transactions = existingPlayer and existingPlayer.transactions or 0,
-                        banned = existingPlayer and existingPlayer.banned or false,
-                        agreed = existingPlayer and existingPlayer.agreed or false,
-                        hasFeedback = existingPlayer and existingPlayer.hasFeedback or false,
-                        regDate = existingPlayer and existingPlayer.regDate or os.date("%d.%m.%Y %H:%M:%S", getRealTimestamp()),
-                        transactionsList = existingPlayer and existingPlayer.transactionsList or {}
-                    }
-                end
-                
-                -- Сохраняем старые флаги (из playersData, но если их нет - используем из существующего)
-                local oldAgreed = playersData[playerName].agreed or (existingPlayer and existingPlayer.agreed) or false
-                local oldHasFeedback = playersData[playerName].hasFeedback or (existingPlayer and existingPlayer.hasFeedback) or false
-                local oldBanned = playersData[playerName].banned or (existingPlayer and existingPlayer.banned) or false
-                local oldTransactions = playersData[playerName].transactions or (existingPlayer and existingPlayer.transactions) or 0
-                local oldTransactionsList = playersData[playerName].transactionsList or (existingPlayer and existingPlayer.transactionsList) or {}
-                local oldRegDate = playersData[playerName].regDate or (existingPlayer and existingPlayer.regDate) or os.date("%d.%m.%Y %H:%M:%S", getRealTimestamp())
-                
-                writeDebugLog("📌 Старые флаги: agreed=" .. tostring(oldAgreed) .. ", hasFeedback=" .. tostring(oldHasFeedback))
-                
-                -- Обновляем баланс
-                if d.balance ~= nil then
-                    playersData[playerName].balance = tonumber(d.balance) or 0
-                    writeDebugLog("💰 Coin обновлён: " .. tostring(playersData[playerName].balance))
-                end
-                if d.coin ~= nil then
-                    playersData[playerName].balance = tonumber(d.coin) or 0
-                    writeDebugLog("💰 Coin (из coin): " .. tostring(playersData[playerName].balance))
-                end
-                if d.emaBalance ~= nil then
-                    playersData[playerName].emaBalance = tonumber(d.emaBalance) or 0
-                    writeDebugLog("💰 EMA обновлён: " .. tostring(playersData[playerName].emaBalance))
-                end
-                if d.ema ~= nil then
-                    playersData[playerName].emaBalance = tonumber(d.ema) or 0
-                    writeDebugLog("💰 EMA (из ema): " .. tostring(playersData[playerName].emaBalance))
-                end
-                
-                -- Восстанавливаем флаги (они не должны меняться)
-                playersData[playerName].agreed = oldAgreed
-                playersData[playerName].hasFeedback = oldHasFeedback
-                playersData[playerName].banned = oldBanned
-                playersData[playerName].transactions = oldTransactions
-                playersData[playerName].transactionsList = oldTransactionsList
-                playersData[playerName].regDate = oldRegDate
-                
-                writeDebugLog("📌 Восстановлены флаги: agreed=" .. tostring(oldAgreed) .. ", hasFeedback=" .. tostring(oldHasFeedback))
-                
-                -- Сохраняем в файл
-                local file = io.open(DB_PATH, "w")
-                if file then
-                    file:write(serialization.serialize(playersData))
-                    file:close()
-                    writeDebugLog("✅ Файл players.db сохранён")
-                else
-                    writeErrorLog("❌ Не удалось сохранить players.db")
-                    sendResult(false, "Ошибка записи в файл")
-                    goto continue
-                end
-                
-                players = playersData
-                
-                if currentPlayer == playerName then
-                    coinBalance = playersData[playerName].balance or 0
-                    emaBalance = playersData[playerName].emaBalance or 0
-                    playerTransactions = playersData[playerName].transactions or 0
-                    playerAgreed = playersData[playerName].agreed or false
-                    playerRegDate = playersData[playerName].regDate or ""
-                    
-                    writeDebugLog("✅ Текущий игрок обновлён: Coin=" .. coinBalance .. ", EMA=" .. emaBalance .. ", Agreed=" .. tostring(playerAgreed))
-                    
-                    if currentScreen == "menu" then
-                        drawMainMenu()
-                    elseif currentScreen == "account" then
-                        drawAccount({balance = coinBalance, emaBalance = emaBalance, transactions = playerTransactions, regDate = playerRegDate, agreed = playerAgreed})
-                    elseif currentScreen == "shop_buy" or currentScreen == "shop_sell" then
-                        drawBuyStatic()
-                        drawBuyItemsList()
-                        drawBuyButtons()
-                    end
-                end
-                
-                sendResult(true, "Игрок обновлён успешно")
-                writeDebugLog("✅ Команда update_player выполнена")
-            
-                
-            -- ==================== ИНКРЕМЕНТАЛЬНОЕ ОБНОВЛЕНИЕ ТОВАРОВ ====================
-            elseif cmd.command == "save_buy_items_incremental" then
-                writeDebugLog("📥 save_buy_items_incremental получен")
-                local changes = d.changes
-                local ok = applyIncrementalChanges("/home/buy_items.lua", changes, "buy_items")
-                sendResult(ok, ok and "Товары покупки обновлены" or "Ошибка обновления buy_items")
-        
-            elseif cmd.command == "save_shop_items_incremental" then
-                writeDebugLog("📥 save_shop_items_incremental получен")
-                local changes = d.changes
-                local ok = applyIncrementalChanges("/home/shop_items.lua", changes, "shop_items")
-                sendResult(ok, ok and "Магазин обновлён" or "Ошибка обновления shop_items")
-        
-            -- ==================== РЕЖИМ ОБСЛУЖИВАНИЯ ====================
-            elseif cmd.command == "toggle_pause" then
-                if d.paused ~= nil then
-                    shopPaused = d.paused
-                    writeDebugLog("📥 Установлен режим обслуживания: " .. tostring(shopPaused) .. " (из данных)")
-                else
-                    shopPaused = not shopPaused
-                    writeDebugLog("📥 Переключён режим обслуживания: " .. tostring(shopPaused))
-                end
-                
-                addLog(shopPaused and "⏸️ Магазин переведён в режим обслуживания" or "🟢 Магазин открыт")
-                
-                sendToWeb("/api/new_log", toJson({
-                    time = getRealTimeHM(),
-                    level = "INFO",
-                    text = shopPaused and "⏸️ Магазин переведён в режим обслуживания" or "🟢 Магазин открыт"
-                }))
-                
-                local msg = serialization.serialize({op = "shop_paused", paused = shopPaused})
-                for addr in pairs(markets or {}) do
-                    pcall(modem.send, addr, 0xffef, msg)
-                end
-                
-                sendStats()
-                
-                if currentScreen == "welcome" then
-                    drawWelcomeScreen()
-                elseif currentScreen == "auth" then
-                    drawAuthScreen()
-                elseif currentScreen == "menu" then
-                    drawMainMenu()
-                elseif currentScreen == "shop" then
-                    drawShopMenu()
-                elseif currentScreen == "shop_buy" or currentScreen == "shop_sell" then
-                    currentScreen = "menu"
-                    drawMainMenu()
-                end
-                
-                sendResult(true, shopPaused and "Магазин на паузе" or "Магазин активен")
-        
-            elseif cmd.command == "update_market" then
-                broadcastUpdate()
-                sendResult(true, "Обновление разослано")
-        
-            elseif cmd.command == "kill_market" then
-                broadcastKill()
-                sendResult(true, "Терминалы будут завершены")
-        
-            -- ==================== УДАЛЕНИЕ ОТЗЫВА ====================
-            elseif cmd.command == "delete_feedback" then
-                local index = d.index
-                writeDebugLog("🗑️ Удаление отзыва: индекс " .. tostring(index))
-                
-                local feedbacks = {}
-                if fs.exists(FEEDBACKS_PATH) then
-                    local file = io.open(FEEDBACKS_PATH, "r")
-                    if file then
-                        local data = file:read("*a")
-                        file:close()
-                        if data and #data > 0 then
-                            local ok, result = pcall(serialization.unserialize, data)
-                            if ok and type(result) == "table" then feedbacks = result end
-                        end
-                    end
-                end
-                
-                -- OC использует 1-индексацию, сайт использует 0-индексацию
-                local ocIndex = index + 1
-                if type(index) == "number" and ocIndex >= 1 and ocIndex <= #feedbacks then
-                    table.remove(feedbacks, ocIndex)
-                    local file = io.open(FEEDBACKS_PATH, "w")
-                    if file then
-                        file:write(serialization.serialize(feedbacks))
-                        file:close()
-                        writeDebugLog("✅ Отзыв удалён из OC")
-                        sendResult(true, "Отзыв удалён")
-                    else
-                        writeErrorLog("❌ Не удалось открыть файл для записи")
-                        sendResult(false, "Ошибка записи")
-                    end
-                else
-                    writeDebugLog("⚠️ Индекс не найден: " .. tostring(index) .. " (OC индекс: " .. tostring(ocIndex) .. "), всего отзывов: " .. #feedbacks)
-                    sendResult(false, "Индекс не найден")
-                end
-
-            -- ==================== ОТМЕТКА ОТЗЫВА КАК ПРОСМОТРЕННОГО ====================
-            elseif cmd.command == "feedback_viewed" then
-                local index = d.index
-                writeDebugLog("📌 Отметка отзыва как просмотренного: индекс " .. tostring(index))
-                
-                local feedbacks = {}
-                if fs.exists(FEEDBACKS_PATH) then
-                    local file = io.open(FEEDBACKS_PATH, "r")
-                    if file then
-                        local data = file:read("*a")
-                        file:close()
-                        if data and #data > 0 then
-                            local ok, result = pcall(serialization.unserialize, data)
-                            if ok and type(result) == "table" then feedbacks = result end
-                        end
-                    end
-                end
-                
-                local ocIndex = index + 1
-                if type(index) == "number" and ocIndex >= 1 and ocIndex <= #feedbacks then
-                    feedbacks[ocIndex].viewed = true
-                    local file = io.open(FEEDBACKS_PATH, "w")
-                    if file then
-                        file:write(serialization.serialize(feedbacks))
-                        file:close()
-                        writeDebugLog("✅ Отзыв отмечен как просмотренный в OC")
-                        sendResult(true, "Отзыв отмечен")
-                    else
-                        writeErrorLog("❌ Не удалось открыть файл для записи")
-                        sendResult(false, "Ошибка записи")
-                    end
-                else
-                    writeDebugLog("⚠️ Индекс не найден: " .. tostring(index) .. " (OC индекс: " .. tostring(ocIndex) .. "), всего отзывов: " .. #feedbacks)
-                    sendResult(false, "Индекс не найден")
-                end
-
-            else
-                sendResult(false, "Неизвестная команда: " .. tostring(cmd.command))
-            end
-        
-            ::continue::
-        end  
-     end)
-
-    if not success then
-        writeErrorLog("❌ Критическая ошибка в checkWebCommands: " .. tostring(err))
-    end
-end
-
--- Запуск опроса команд каждые 2 секунды
-event.timer(2, checkWebCommands, math.huge)
-
--- ============================================================
--- ОСТАЛЬНЫЕ UI ФУНКЦИИ
+-- ПОП-АПЫ
 -- ============================================================
 
 local function drawSellPopup()
@@ -3042,7 +2527,7 @@ local function goToBuy()
     shopSearch = ""
     searchActive = false
     searchInput = ""
-    loadBuyItems()
+    loadBuyItems()  -- использует кеш
     drawBuyStatic()
     drawBuyItemsList()
     drawBuyButtons()
@@ -3181,8 +2666,11 @@ local function handleQuantityButtonClick(btnText)
     drawPurchaseScreen()
 end
 
+-- ============================================================
+-- ВЫПОЛНЕНИЕ ПОКУПКИ И ПРОДАЖИ (ОПТИМИЗИРОВАНЫ)
+-- ============================================================
+
 local function performSell()
-    writeDebugLog("performSell()")
     if not playerAgreed then
         drawCenteredText(17, "Сначала примите пользовательское соглашение", colors.error)
         os.sleep(2)
@@ -3196,12 +2684,7 @@ local function performSell()
     drawCenteredText(17, "Выполняется пополнение...", colors.accent_main)
     os.sleep(0.2)
 
-    if not sellConfirmItem then
-        writeErrorLog("❌ performSell: sellConfirmItem = nil!")
-        return
-    end
-
-    local realExtracted = extractToME(sellConfirmItem.internalName, foundAmount or 0, sellConfirmItem.damage or 0)
+    local realExtracted = extractToME(sellConfirmItem.internalName, foundAmount, sellConfirmItem.damage or 0)
     if realExtracted == 0 then
         drawCenteredText(17, "Не удалось изъять предметы! Проверьте инвентарь.", colors.error)
         os.sleep(2)
@@ -3212,46 +2695,21 @@ local function performSell()
         return
     end
 
-    local value = realExtracted * (sellConfirmItem.price or 0)
-    local coinAmount = 0
-    local emaAmount = 0
-    
+    local value = realExtracted * sellConfirmItem.price
     if sellConfirmItem.internalName == "customnpcs:npcMoney" then
-        emaAmount = value
         emaBalance = emaBalance + value
     else
-        coinAmount = value
         coinBalance = coinBalance + value
     end
-    
-    if currentPlayer and players[currentPlayer] then
-        players[currentPlayer].balance = coinBalance
-        players[currentPlayer].emaBalance = emaBalance
-        saveDB()
-    end
-    
     playerTransactions = playerTransactions + 1
-    if currentPlayer and players[currentPlayer] then
-        players[currentPlayer].transactions = (players[currentPlayer].transactions or 0) + 1
-        saveDB()
-    end
-    
-    addTransaction("sell", currentPlayer or "?", sellConfirmItem.displayName or "?", realExtracted, coinAmount, emaAmount)
-    addLog("💰 Продажа: " .. (currentPlayer or "?") .. " " .. (sellConfirmItem.displayName or "?") .. " x" .. realExtracted)
+
+    -- ОТПРАВКА ЧЕРЕЗ БУФЕР (вместо прямого sendToWeb)
+    addTransactionToBuffer("sell", currentPlayer, sellConfirmItem.displayName, realExtracted, value, 0)
 
     gpu.setBackground(colors.bg_main)
     gpu.fill(2, 17, 78, 1, " ")
     local currencySymbol = (sellConfirmItem.internalName == "customnpcs:npcMoney") and "۞" or "₵"
     drawCenteredText(17, "Успешно! +" .. string.format("%.2f", value) .. " " .. currencySymbol, colors.success)
-
-    -- НОВЫЙ ЛОГ: Продажа
-    addLog("💰 Продажа: " .. currentPlayer .. " " .. sellConfirmItem.displayName .. " x" .. realExtracted .. " за " .. string.format("%.2f", value) .. currencySymbol)
-    sendToWeb("/api/new_log", toJson({
-        time = getRealTimeHM(),
-        level = "SUCCESS",
-        text = "Продажа: " .. currentPlayer .. " " .. sellConfirmItem.displayName .. " x" .. realExtracted .. " за " .. string.format("%.2f", value) .. currencySymbol
-    }))
-
     os.sleep(0.8)
 
     currentScreen = "shop_sell"
@@ -3262,7 +2720,6 @@ local function performSell()
 end
 
 local function performBuy()
-    writeDebugLog("performBuy()")
     if not playerAgreed then
         drawCenteredText(20, "Сначала примите пользовательское соглашение", colors.error)
         os.sleep(2)
@@ -3279,11 +2736,11 @@ local function performBuy()
     local me = component.me_interface
     local item = purchaseItem
 
-    local actualQty = getActualItemQuantity(item.internalName, item.damage or 0)
+    local actualQty = getActualItemQuantity(item.internalName, item.damage)
     if actualQty <= 0 then
         drawCenteredText(20, "Товар закончился! Обновление списка...", colors.error)
         os.sleep(0.8)
-        loadBuyItems()
+        loadBuyItems(true)  -- принудительное обновление
         drawBuyStatic()
         drawBuyItemsList()
         drawBuyButtons()
@@ -3291,7 +2748,7 @@ local function performBuy()
         return
     end
 
-    local qty = purchaseQuantity or 1
+    local qty = purchaseQuantity
     if qty > actualQty then
         qty = actualQty
         purchaseQuantity = qty
@@ -3390,15 +2847,10 @@ local function performBuy()
         local actuallySpentEma = extracted * (item.priceEma or 0)
         coinBalance = coinBalance - actuallySpentCoin
         emaBalance = emaBalance - actuallySpentEma
-        
         playerTransactions = playerTransactions + 1
-        if currentPlayer and players[currentPlayer] then
-            players[currentPlayer].transactions = (players[currentPlayer].transactions or 0) + 1
-            saveDB()
-        end
-        
-        addTransaction("buy", currentPlayer or "?", item.displayName or "?", extracted, actuallySpentCoin, actuallySpentEma)
-        addLog("🛒 Покупка: " .. (currentPlayer or "?") .. " " .. (item.displayName or "?") .. " x" .. extracted)
+
+        -- ОТПРАВКА ЧЕРЕЗ БУФЕР
+        addTransactionToBuffer("buy", currentPlayer, item.displayName, extracted, actuallySpentCoin, actuallySpentEma)
 
         partialExtracted = extracted
         partialRequested = qty
@@ -3411,23 +2863,13 @@ local function performBuy()
         return
     end
 
+    -- ПОЛНАЯ ВЫДАЧА
     coinBalance = coinBalance - totalCoin
     emaBalance = emaBalance - totalEma
-    
-    if currentPlayer and players[currentPlayer] then
-        players[currentPlayer].balance = coinBalance
-        players[currentPlayer].emaBalance = emaBalance
-        saveDB()
-    end
-    
     playerTransactions = playerTransactions + 1
-    if currentPlayer and players[currentPlayer] then
-        players[currentPlayer].transactions = (players[currentPlayer].transactions or 0) + 1
-        saveDB()
-    end
-    
-    addTransaction("buy", currentPlayer or "?", item.displayName or "?", extracted, totalCoin, totalEma)
-    addLog("🛒 Покупка: " .. (currentPlayer or "?") .. " " .. (item.displayName or "?") .. " x" .. extracted)
+
+    -- ОТПРАВКА ЧЕРЕЗ БУФЕР
+    addTransactionToBuffer("buy", currentPlayer, item.displayName, extracted, totalCoin, totalEma)
 
     gpu.setBackground(colors.bg_main)
     gpu.fill(2, 20, 78, 1, " ")
@@ -3439,15 +2881,7 @@ local function performBuy()
     end
     drawCenteredText(20, "Куплено " .. extracted .. " шт. за " .. priceStr, colors.success)
 
-    -- НОВЫЙ ЛОГ: Покупка
-    addLog("🛒 Покупка: " .. currentPlayer .. " " .. item.displayName .. " x" .. extracted .. " за " .. priceStr)
-    sendToWeb("/api/new_log", toJson({
-        time = getRealTimeHM(),
-        level = "SUCCESS",
-        text = "Покупка: " .. currentPlayer .. " " .. item.displayName .. " x" .. extracted .. " за " .. priceStr
-    }))
-
-    loadBuyItems()
+    loadBuyItems(true)  -- принудительное обновление
     for _, newItem in ipairs(shopItems) do
         if newItem.internalName == item.internalName and newItem.damage == item.damage then
             purchaseItem = newItem
@@ -3462,11 +2896,564 @@ local function performBuy()
 end
 
 -- ============================================================
--- ОСНОВНОЙ ЦИКЛ
+-- ИНКРЕМЕНТАЛЬНОЕ ПРИМЕНЕНИЕ ИЗМЕНЕНИЙ
+-- ============================================================
+
+local function applyIncrementalChanges(itemsFile, changes, itemType)
+    writeDebugLog("📦 Применение инкрементальных изменений к " .. itemType)
+    writeDebugLog("📦 Файл: " .. itemsFile)
+    writeDebugLog("📦 Количество изменений: " .. (#changes or 0))
+
+    if not changes or type(changes) ~= "table" or #changes == 0 then
+        writeDebugLog("ℹ️ Нет изменений для применения")
+        return true
+    end
+
+    local isShopFile = string.find(itemsFile, "shop_items") ~= nil
+
+    local fileData = {}
+    local sellItemsList = {}
+
+    if fs.exists(itemsFile) then
+        local ok, data = pcall(dofile, itemsFile)
+        if ok and type(data) == "table" then
+            fileData = data
+            if isShopFile and fileData.sellItems and type(fileData.sellItems) == "table" then
+                sellItemsList = fileData.sellItems
+                writeDebugLog("📦 Загружены sell_items из shop_items.lua: " .. #sellItemsList .. " товаров")
+            elseif not isShopFile then
+                sellItemsList = data
+                writeDebugLog("📦 Загружены buy_items: " .. #sellItemsList .. " товаров")
+            else
+                writeDebugLog("⚠️ В shop_items.lua нет поля sellItems, создаём новое")
+                sellItemsList = {}
+                fileData.sellItems = sellItemsList
+                fileData.vanillaItems = fileData.vanillaItems or {}
+            end
+        else
+            writeDebugLog("⚠️ Не удалось загрузить " .. itemsFile .. ", создаём новый")
+            if isShopFile then
+                fileData = { sellItems = {}, vanillaItems = {} }
+                sellItemsList = fileData.sellItems
+            else
+                sellItemsList = {}
+                fileData = sellItemsList
+            end
+        end
+    else
+        writeDebugLog("⚠️ Файл не существует: " .. itemsFile .. ", создаём новый")
+        if isShopFile then
+            fileData = { sellItems = {}, vanillaItems = {} }
+            sellItemsList = fileData.sellItems
+        else
+            sellItemsList = {}
+            fileData = sellItemsList
+        end
+    end
+
+    local itemMap = {}
+    for i, item in ipairs(sellItemsList) do
+        local key = (item.internalName or "") .. ":" .. (item.damage or 0)
+        itemMap[key] = i
+    end
+
+    local appliedCount = 0
+
+    for _, change in ipairs(changes) do
+        if not change or not change.item then
+            writeDebugLog("⚠️ Пропускаем пустое изменение")
+            goto next
+        end
+
+        local item = change.item
+        local key = (item.internalName or "") .. ":" .. (item.damage or 0)
+        writeDebugLog("🔍 Обработка: " .. key .. ", action=" .. (change.action or "?"))
+
+        if change.action == "add" then
+            table.insert(sellItemsList, item)
+            appliedCount = appliedCount + 1
+            writeDebugLog("➕ Добавлен: " .. (item.displayName or key))
+
+        elseif change.action == "update" then
+            local idx = itemMap[key]
+            if idx then
+                for k, v in pairs(item) do
+                    if k ~= "internalName" and k ~= "damage" then
+                        sellItemsList[idx][k] = v
+                    end
+                end
+                appliedCount = appliedCount + 1
+                writeDebugLog("🔄 Обновлён: " .. (item.displayName or key))
+            else
+                table.insert(sellItemsList, item)
+                appliedCount = appliedCount + 1
+                writeDebugLog("➕ Добавлен как новый: " .. (item.displayName or key))
+            end
+
+        elseif change.action == "delete" then
+            local idx = itemMap[key]
+            if idx then
+                table.remove(sellItemsList, idx)
+                appliedCount = appliedCount + 1
+                writeDebugLog("❌ Удалён: " .. key)
+            else
+                writeDebugLog("⚠️ Не найден для удаления: " .. key)
+            end
+        end
+
+        ::next::
+    end
+
+    if appliedCount == 0 then
+        writeDebugLog("⚠️ Ни одно изменение не применено")
+        return true
+    end
+
+    writeDebugLog("💾 Сохраняем файл: " .. itemsFile)
+    local file = io.open(itemsFile, "w")
+    if not file then
+        writeErrorLog("❌ Не удалось открыть файл для записи: " .. itemsFile)
+        return false
+    end
+
+    local serialized
+    if isShopFile then
+        serialized = serialization.serialize(fileData)
+    else
+        serialized = serialization.serialize(sellItemsList)
+    end
+
+    file:write("return " .. serialized)
+    file:close()
+    writeDebugLog("✅ Сохранено " .. appliedCount .. " изменений в " .. itemsFile)
+
+    if isShopFile then
+        sellItems = sellItemsList
+        shopData.sellItems = sellItemsList
+        shopData.vanillaItems = fileData.vanillaItems or {}
+        writeDebugLog("📦 sellItems обновлён, товаров: " .. #sellItems)
+    else
+        buyItemsData = sellItemsList
+        buyItemMap = {}
+        for _, item in ipairs(buyItemsData) do
+            local dmg = item.damage or 0
+            local key = item.internalName .. ":" .. dmg
+            buyItemMap[key] = item
+        end
+        writeDebugLog("📦 buyItemsData обновлена, товаров: " .. #buyItemsData)
+    end
+
+    if currentScreen == "shop_buy" then
+        loadBuyItems(true)   -- принудительное обновление
+        drawBuyStatic()
+        drawBuyItemsList()
+        drawBuyButtons()
+    elseif currentScreen == "shop_sell" then
+        loadSellItems()
+        drawBuyStatic()
+        drawBuyItemsList()
+        drawBuyButtons()
+    end
+
+    broadcastUpdate()
+    return true
+end
+
+-- ============================================================
+-- ОБРАБОТКА КОМАНД С САЙТА (ОПТИМИЗИРОВАНА)
+-- ============================================================
+
+-- ОПТИМИЗАЦИЯ: увеличен интервал до 10 секунд
+local function checkWebCommands()
+    if currentPlayer then syncCurrentPlayer() end
+    writeDebugLog("🔍 checkWebCommands() запущена в " .. getRealTimeHM())
+
+    local success, err = pcall(function()
+        local url = WEB_URL .. "/api/commands"
+        writeDebugLog("📡 Запрос к: " .. url)
+
+        local response = internet.request(url)
+        if not response then
+            writeDebugLog("⚠️ Нет ответа от сервера")
+            return
+        end
+
+        local status = response.getStatus and response:getStatus() or response.code or response.status
+        if status then
+            if status == 200 or status == 204 then
+                writeDebugLog("✅ Статус ответа: " .. tostring(status))
+            else
+                writeErrorLog("⚠️ Сервер вернул HTTP " .. tostring(status) .. " на запрос " .. url)
+                return
+            end
+        else
+            writeDebugLog("⚠️ Не удалось получить статус ответа, продолжаем...")
+        end
+
+        if status == 204 then
+            writeDebugLog("⚠️ Сервер вернул 204 No Content, пропускаем")
+            return
+        end
+
+        local body = ""
+        for chunk in response do
+            body = body .. chunk
+        end
+
+        writeDebugLog("📥 Получено " .. #body .. " байт")
+
+        if #body < 10 then
+            writeDebugLog("⚠️ Ответ слишком короткий, пропускаем")
+            return
+        end
+
+        local data = parseJSON(body)
+        if data then
+            writeDebugLog("✅ Распарсено: " .. serialization.serialize(data))
+        else
+            writeDebugLog("❌ data = nil после парсинга!")
+            writeErrorLog("❌ Ошибка парсинга JSON: " .. string.sub(body, 1, 300))
+            return
+        end
+
+        if not data.commands or #data.commands == 0 then
+            writeDebugLog("⚠️ Нет команд в ответе")
+            return
+        end
+
+        writeDebugLog("📨 Найдено команд: " .. #data.commands)
+
+        for _, cmd in ipairs(data.commands) do
+            local d = cmd.data or cmd
+            local requestId = cmd.requestId or os.time()
+        
+            local function sendResult(success, msg)
+                writeDebugLog("📤 [" .. (cmd.command or "unknown") .. "] " .. (success and "✅" or "❌") .. " " .. (msg or ""))
+                sendToWeb("/api/command_result", toJson({
+                    requestId = requestId,
+                    success = success,
+                    message = msg or "",
+                    command = cmd.command
+                }))
+            end
+        
+            writeDebugLog("🔧 Выполняем команду: " .. (cmd.command or "unknown"))
+            writeDebugLog("📨 Данные команды: " .. serialization.serialize(d))
+        
+            -- ==================== ОБНОВЛЕНИЕ ИГРОКА ====================
+            if cmd.command == "update_player" or cmd.command == "set_balance" then
+                local playerName = d.name or d.player
+                if not playerName then
+                    writeDebugLog("❌ Нет имени игрока в команде!")
+                    sendResult(false, "Нет имени игрока")
+                    goto continue
+                end
+            
+                writeDebugLog("📥 ОБНОВЛЕНИЕ ИГРОКА: " .. playerName)
+                
+                local playersData = {}
+                if fs.exists(DB_PATH) then
+                    local ok, data = pcall(dofile, DB_PATH)
+                    if ok and type(data) == "table" then
+                        playersData = data
+                    end
+                end
+                
+                local existingPlayer = players[playerName]
+                
+                if not playersData[playerName] then
+                    writeDebugLog("➕ Создаём нового игрока в playersData: " .. playerName)
+                    playersData[playerName] = {
+                        balance = existingPlayer and existingPlayer.balance or 0,
+                        emaBalance = existingPlayer and existingPlayer.emaBalance or 0,
+                        transactions = existingPlayer and existingPlayer.transactions or 0,
+                        banned = existingPlayer and existingPlayer.banned or false,
+                        agreed = existingPlayer and existingPlayer.agreed or false,
+                        hasFeedback = existingPlayer and existingPlayer.hasFeedback or false,
+                        regDate = existingPlayer and existingPlayer.regDate or os.date("%d.%m.%Y %H:%M:%S", getRealTimestamp()),
+                        transactionsList = existingPlayer and existingPlayer.transactionsList or {}
+                    }
+                end
+                
+                local oldAgreed = playersData[playerName].agreed or (existingPlayer and existingPlayer.agreed) or false
+                local oldHasFeedback = playersData[playerName].hasFeedback or (existingPlayer and existingPlayer.hasFeedback) or false
+                local oldBanned = playersData[playerName].banned or (existingPlayer and existingPlayer.banned) or false
+                local oldTransactions = playersData[playerName].transactions or (existingPlayer and existingPlayer.transactions) or 0
+                local oldTransactionsList = playersData[playerName].transactionsList or (existingPlayer and existingPlayer.transactionsList) or {}
+                local oldRegDate = playersData[playerName].regDate or (existingPlayer and existingPlayer.regDate) or os.date("%d.%m.%Y %H:%M:%S", getRealTimestamp())
+                
+                writeDebugLog("📌 Старые флаги: agreed=" .. tostring(oldAgreed) .. ", hasFeedback=" .. tostring(oldHasFeedback))
+                
+                if d.balance ~= nil then
+                    playersData[playerName].balance = tonumber(d.balance) or 0
+                    writeDebugLog("💰 Coin обновлён: " .. tostring(playersData[playerName].balance))
+                end
+                if d.coin ~= nil then
+                    playersData[playerName].balance = tonumber(d.coin) or 0
+                    writeDebugLog("💰 Coin (из coin): " .. tostring(playersData[playerName].balance))
+                end
+                if d.emaBalance ~= nil then
+                    playersData[playerName].emaBalance = tonumber(d.emaBalance) or 0
+                    writeDebugLog("💰 EMA обновлён: " .. tostring(playersData[playerName].emaBalance))
+                end
+                if d.ema ~= nil then
+                    playersData[playerName].emaBalance = tonumber(d.ema) or 0
+                    writeDebugLog("💰 EMA (из ema): " .. tostring(playersData[playerName].emaBalance))
+                end
+                
+                playersData[playerName].agreed = oldAgreed
+                playersData[playerName].hasFeedback = oldHasFeedback
+                playersData[playerName].banned = oldBanned
+                playersData[playerName].transactions = oldTransactions
+                playersData[playerName].transactionsList = oldTransactionsList
+                playersData[playerName].regDate = oldRegDate
+                
+                writeDebugLog("📌 Восстановлены флаги: agreed=" .. tostring(oldAgreed) .. ", hasFeedback=" .. tostring(oldHasFeedback))
+                
+                local file = io.open(DB_PATH, "w")
+                if file then
+                    file:write(serialization.serialize(playersData))
+                    file:close()
+                    writeDebugLog("✅ Файл players.db сохранён")
+                else
+                    writeErrorLog("❌ Не удалось сохранить players.db")
+                    sendResult(false, "Ошибка записи в файл")
+                    goto continue
+                end
+                
+                players = playersData
+                
+                if currentPlayer == playerName then
+                    coinBalance = playersData[playerName].balance or 0
+                    emaBalance = playersData[playerName].emaBalance or 0
+                    playerTransactions = playersData[playerName].transactions or 0
+                    playerAgreed = playersData[playerName].agreed or false
+                    playerRegDate = playersData[playerName].regDate or ""
+                    
+                    writeDebugLog("✅ Текущий игрок обновлён: Coin=" .. coinBalance .. ", EMA=" .. emaBalance .. ", Agreed=" .. tostring(playerAgreed))
+                    
+                    if currentScreen == "menu" then
+                        drawMainMenu()
+                    elseif currentScreen == "account" then
+                        drawAccount({balance = coinBalance, emaBalance = emaBalance, transactions = playerTransactions, regDate = playerRegDate, agreed = playerAgreed})
+                    elseif currentScreen == "shop_buy" or currentScreen == "shop_sell" then
+                        drawBuyStatic()
+                        drawBuyItemsList()
+                        drawBuyButtons()
+                    end
+                end
+                
+                sendResult(true, "Игрок обновлён успешно")
+                writeDebugLog("✅ Команда update_player выполнена")
+            
+            -- ==================== ИНКРЕМЕНТАЛЬНОЕ ОБНОВЛЕНИЕ ТОВАРОВ ====================
+            elseif cmd.command == "save_buy_items_incremental" then
+                writeDebugLog("📥 save_buy_items_incremental получен")
+                local changes = d.changes
+                local ok = applyIncrementalChanges("/home/buy_items.lua", changes, "buy_items")
+                sendResult(ok, ok and "Товары покупки обновлены" or "Ошибка обновления buy_items")
+        
+            elseif cmd.command == "save_shop_items_incremental" then
+                writeDebugLog("📥 save_shop_items_incremental получен")
+                local changes = d.changes
+                local ok = applyIncrementalChanges("/home/shop_items.lua", changes, "shop_items")
+                sendResult(ok, ok and "Магазин обновлён" or "Ошибка обновления shop_items")
+        
+            -- ==================== РЕЖИМ ОБСЛУЖИВАНИЯ ====================
+            elseif cmd.command == "toggle_pause" then
+                if d.paused ~= nil then
+                    shopPaused = d.paused
+                    writeDebugLog("📥 Установлен режим обслуживания: " .. tostring(shopPaused) .. " (из данных)")
+                else
+                    shopPaused = not shopPaused
+                    writeDebugLog("📥 Переключён режим обслуживания: " .. tostring(shopPaused))
+                end
+                
+                addLog(shopPaused and "⏸️ Магазин переведён в режим обслуживания" or "🟢 Магазин открыт")
+                
+                sendToWeb("/api/new_log", toJson({
+                    time = getRealTimeHM(),
+                    level = "INFO",
+                    text = shopPaused and "⏸️ Магазин переведён в режим обслуживания" or "🟢 Магазин открыт"
+                }))
+                
+                local msg = serialization.serialize({op = "shop_paused", paused = shopPaused})
+                for addr in pairs(markets or {}) do
+                    pcall(modem.send, addr, 0xffef, msg)
+                end
+                
+                sendStats()
+                
+                if currentScreen == "welcome" then
+                    drawWelcomeScreen()
+                elseif currentScreen == "auth" then
+                    drawAuthScreen()
+                elseif currentScreen == "menu" then
+                    drawMainMenu()
+                elseif currentScreen == "shop" then
+                    drawShopMenu()
+                elseif currentScreen == "shop_buy" or currentScreen == "shop_sell" then
+                    currentScreen = "menu"
+                    drawMainMenu()
+                end
+                
+                sendResult(true, shopPaused and "Магазин на паузе" or "Магазин активен")
+        
+            elseif cmd.command == "update_market" then
+                broadcastUpdate()
+                sendResult(true, "Обновление разослано")
+        
+            elseif cmd.command == "kill_market" then
+                broadcastKill()
+                sendResult(true, "Терминалы будут завершены")
+        
+            -- ==================== УДАЛЕНИЕ ОТЗЫВА ====================
+            elseif cmd.command == "delete_feedback" then
+                local index = d.index
+                writeDebugLog("🗑️ Удаление отзыва: индекс " .. tostring(index))
+                
+                local feedbacks = {}
+                if fs.exists(FEEDBACKS_PATH) then
+                    local file = io.open(FEEDBACKS_PATH, "r")
+                    if file then
+                        local data = file:read("*a")
+                        file:close()
+                        if data and #data > 0 then
+                            local ok, result = pcall(serialization.unserialize, data)
+                            if ok and type(result) == "table" then feedbacks = result end
+                        end
+                    end
+                end
+                
+                local ocIndex = index + 1
+                if type(index) == "number" and ocIndex >= 1 and ocIndex <= #feedbacks then
+                    table.remove(feedbacks, ocIndex)
+                    local file = io.open(FEEDBACKS_PATH, "w")
+                    if file then
+                        file:write(serialization.serialize(feedbacks))
+                        file:close()
+                        writeDebugLog("✅ Отзыв удалён из OC")
+                        sendResult(true, "Отзыв удалён")
+                    else
+                        writeErrorLog("❌ Не удалось открыть файл для записи")
+                        sendResult(false, "Ошибка записи")
+                    end
+                else
+                    writeDebugLog("⚠️ Индекс не найден: " .. tostring(index) .. " (OC индекс: " .. tostring(ocIndex) .. "), всего отзывов: " .. #feedbacks)
+                    sendResult(false, "Индекс не найден")
+                end
+
+            -- ==================== ОТМЕТКА ОТЗЫВА КАК ПРОСМОТРЕННОГО ====================
+            elseif cmd.command == "feedback_viewed" then
+                local index = d.index
+                writeDebugLog("📌 Отметка отзыва как просмотренного: индекс " .. tostring(index))
+                
+                local feedbacks = {}
+                if fs.exists(FEEDBACKS_PATH) then
+                    local file = io.open(FEEDBACKS_PATH, "r")
+                    if file then
+                        local data = file:read("*a")
+                        file:close()
+                        if data and #data > 0 then
+                            local ok, result = pcall(serialization.unserialize, data)
+                            if ok and type(result) == "table" then feedbacks = result end
+                        end
+                    end
+                end
+                
+                local ocIndex = index + 1
+                if type(index) == "number" and ocIndex >= 1 and ocIndex <= #feedbacks then
+                    feedbacks[ocIndex].viewed = true
+                    local file = io.open(FEEDBACKS_PATH, "w")
+                    if file then
+                        file:write(serialization.serialize(feedbacks))
+                        file:close()
+                        writeDebugLog("✅ Отзыв отмечен как просмотренный в OC")
+                        sendResult(true, "Отзыв отмечен")
+                    else
+                        writeErrorLog("❌ Не удалось открыть файл для записи")
+                        sendResult(false, "Ошибка записи")
+                    end
+                else
+                    writeDebugLog("⚠️ Индекс не найден: " .. tostring(index) .. " (OC индекс: " .. tostring(ocIndex) .. "), всего отзывов: " .. #feedbacks)
+                    sendResult(false, "Индекс не найден")
+                end
+
+            else
+                sendResult(false, "Неизвестная команда: " .. tostring(cmd.command))
+            end
+        
+            ::continue::
+        end  
+     end)
+
+    if not success then
+        writeErrorLog("❌ Критическая ошибка в checkWebCommands: " .. tostring(err))
+    end
+end
+
+-- ОПТИМИЗАЦИЯ: интервал увеличен до 10 секунд
+event.timer(10, checkWebCommands, math.huge)
+
+-- ============================================================
+-- СОГЛАШЕНИЕ (заглушка, если файл не загружен)
+-- ============================================================
+
+local drawAgreementScreen
+if fs.exists("/home/agreement.lua") then
+    local ok, func = pcall(dofile, "/home/agreement.lua")
+    if ok and type(func) == "function" then
+        drawAgreementScreen = func
+        writeDebugLog("✅ agreement.lua загружен")
+    else
+        writeErrorLog("❌ Ошибка загрузки agreement.lua")
+    end
+end
+if not drawAgreementScreen then
+    drawAgreementScreen = function()
+        writeDebugLog("drawAgreementScreen (заглушка)")
+        clear()
+        drawScreenBorder()
+        drawCenteredText(6, "ПОЛЬЗОВАТЕЛЬСКОЕ СОГЛАШЕНИЕ", colors.accent_secondary)
+        drawCenteredText(8, "Файл agreement.lua не найден!", colors.error)
+        drawCenteredText(9, "Создайте его в папке /home/", colors.text_main)
+        drawCenteredText(11, "Нажмите [НАЗАД] для возврата", colors.text_main)
+        
+        local backButton = {
+            text = "[ НАЗАД ]",
+            x = 37, y = 24,
+            xs = unicode.len("[ НАЗАД ]") + 2,
+            ys = 1,
+            bg = colors.bg_button,
+            fg = colors.accent_secondary
+        }
+        drawFlexButton(backButton)
+        drawTempMessage()
+        
+        while currentScreen == "agreement" do
+            local ev = {event.pull(0.5)}
+            if ev[1] == "touch" then
+                local x = tonumber(ev[3]) or 0
+                local y = tonumber(ev[4]) or 0
+                if isButtonClicked(backButton, x, y) then
+                    goBackToMenu()
+                    break
+                end
+            end
+        end
+    end
+end
+
+-- ============================================================
+-- ОСНОВНОЙ ЦИКЛ (С DEBOUNCE ДЛЯ MOUSE_MOVE)
 -- ============================================================
 
 gpu.setResolution(80, 25)
 gpu.setBackground(colors.bg_main)
+
+-- ОПТИМИЗАЦИЯ: debounce для mouse_move
+local lastMouseMoveTime = 0
+local MOUSE_DEBOUNCE = 0.05   -- 50 мс
 
 local function main()
     writeDebugLog("🚀 main() запущен")
@@ -3790,14 +3777,12 @@ local function main()
                 if canSendReport() then
                 local sendBtn = {x=33, y=14, xs=17, ys=1}
                 if isButtonClicked(sendBtn, x, y) and reportInput and reportInput ~= "" then
-                    -- ⭐ ОТПРАВЛЯЕМ НА СЕРВЕР (ОСНОВНОЙ СПОСОБ)
                     sendToWeb("/api/new_report", toJson({
                         time = getRealTimeString(),
                         name = currentPlayer or "?",
                         text = reportInput
                     }))
                     
-                    -- ⭐ ДУБЛИРУЕМ В ЛОКАЛЬНЫЙ ФАЙЛ (для истории, если сервер недоступен)
                     local file = io.open(REPORTS_PATH, "a")
                     if file then
                         file:write("[" .. getRealTimeString() .. "] " .. (currentPlayer or "?") .. ": " .. reportInput .. "\n")
@@ -3907,7 +3892,7 @@ local function main()
                     local player = players[currentPlayer]
                     if player then
                         player.agreed = true
-                        saveDB()
+                        saveDBDeferred()
                     end
                     showTempMessage("✅ Спасибо! Теперь вам доступен магазин.", 2)
                     goBackToMenu()
@@ -4016,10 +4001,17 @@ local function main()
                 end
             end
 
+        -- ОПТИМИЗАЦИЯ: debounce для mouse_move
         elseif e == "mouse_move" and (currentScreen == "shop_buy" or currentScreen == "shop_sell") then
             if not pimOwner then
                 goto continue
             end
+            local now = os.clock()
+            if now - lastMouseMoveTime < MOUSE_DEBOUNCE then
+                goto continue
+            end
+            lastMouseMoveTime = now
+            
             local x, y = ev[3], ev[4]
             if y >= 7 and y <= 21 and x >= 2 and x <= 77 then
                 local rel = y - 6
@@ -4130,7 +4122,6 @@ local function main()
             local playerName = ev[2] or "Игрок"
             writeDebugLog("player_on: " .. playerName)
             
-            -- ===== ПРОВЕРКА РЕЖИМА ОБСЛУЖИВАНИЯ =====
             if shopPaused then
                 writeDebugLog("Режим обслуживания активен, вход запрещён для: " .. playerName)
                 gpu.setBackground(colors.bg_main)
@@ -4154,7 +4145,6 @@ local function main()
                 end
                 goto continue
             end
-            -- ===== КОНЕЦ ПРОВЕРКИ =====
             
             if not pimOwner then
                 pimOwner = playerName
@@ -4181,10 +4171,8 @@ local function main()
                 authStartTime = os.clock()
                 drawAuthScreen()
                 
-                -- Загружаем данные игрока
                 local player = players[currentPlayer]
                 if not player then
-                    -- Создаём нового
                     player = { 
                         balance = 0, 
                         emaBalance = 0, 
@@ -4196,7 +4184,7 @@ local function main()
                         regDate = getRealTimeString()
                     }
                     players[currentPlayer] = player
-                    saveDB()
+                    saveDBDeferred()
                     addLog("✅ Новый игрок: " .. currentPlayer)
                     writeDebugLog("Создан новый игрок: " .. currentPlayer)
                     sendToWeb("/api/new_log", toJson({
@@ -4217,7 +4205,7 @@ local function main()
                     coinBalance = player.balance or 0
                     emaBalance = player.emaBalance or 0
                     playerTransactions = player.transactions or 0
-                    playerAgreed = player.agreed or false  -- ⭐ ЗАГРУЖАЕМ ФЛАГ
+                    playerAgreed = player.agreed or false
                     playerRegDate = player.regDate or getRealTimeString()
                     alreadyAuthorized = true
                     
@@ -4241,7 +4229,6 @@ local function main()
         elseif e == "player_off" or e == "pim_player_leave" then
             local playerName = ev[2] or "Игрок"
             writeDebugLog("player_off: " .. playerName)
-            -- НОВЫЙ ЛОГ: Выход
             addLog("👤 Выход: " .. playerName)
             sendToWeb("/api/new_log", toJson({
                 time = getRealTimeHM(),
@@ -4274,7 +4261,7 @@ end
 -- ============================================================
 
 writeErrorLog("=" .. string.rep("=", 50))
-writeErrorLog("🚀 ЗАПУСК ОСНОВНОГО ЦИКЛА")
+writeErrorLog("🚀 ЗАПУСК ОСНОВНОГО ЦИКЛА (ОПТИМИЗИРОВАННАЯ ВЕРСИЯ)")
 writeErrorLog("=" .. string.rep("=", 50))
 
 while true do
@@ -4289,4 +4276,3 @@ while true do
         os.sleep(5)
     end
 end
-

@@ -1,0 +1,1424 @@
+return {
+  ["6_cyeta_9"] = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "04.07.2026 11:11:02",
+    hasFeedback = false,
+    transactions = 2,
+    balance = 0.88
+  },
+  ["2pac4real"] = {
+    agreed = true,
+    emaBalance = 0,
+    banned = false,
+    regDate = "01.07.2026 23:28:10",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0
+  },
+  ["3_1415926535"] = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "02.07.2026 16:26:44",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  ABOB_BOBA = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "02.07.2026 10:48:22",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  ActAFlooD = {
+    agreed = false,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "01.07.2026 23:07:17",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  Aduv = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "02.07.2026 20:43:27",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  AlexKom = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "01.07.2026 17:21:47",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  Alpaka_Masha = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "04.07.2026 15:20:26",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  Anarchhissct = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "02.07.2026 16:24:02",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  AnubiS25rus = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "02.07.2026 17:29:33",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  ArmPhoenix = {
+    agreed = false,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "02.07.2026 14:53:01",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  Atlzzz = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "02.07.2026 16:25:24",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  AutisticGaming = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "02.07.2026 12:51:36",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  BE_KIND = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "05.07.2026 01:06:35",
+    hasFeedback = false,
+    transactions = 8,
+    balance = 0.0
+  },
+  Bmw_ = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "01.07.2026 17:14:48",
+    hasFeedback = false,
+    transactions = 7,
+    balance = 176.5
+  },
+  Boomer_c_3aBoDa = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "02.07.2026 19:23:24",
+    hasFeedback = false,
+    transactions = 1,
+    balance = 3.0
+  },
+  Boomka_ = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "03.07.2026 19:35:46",
+    hasFeedback = false,
+    transactions = 1,
+    balance = 182.4
+  },
+  Borland = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "02.07.2026 14:13:29",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  Buch138 = {
+    agreed = false,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "06.07.2026 12:19:52",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  BuilderMC = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "01.07.2026 17:37:06",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  CapitanNeoba = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "01.07.2026 23:54:06",
+    hasFeedback = false,
+    transactions = 3,
+    balance = 43.58
+  },
+  ChillGanger = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "04.07.2026 06:15:44",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  Danil254 = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "04.07.2026 23:24:49",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  Daredevil4051 = {
+    agreed = false,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "02.07.2026 22:24:24",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  Dark_Time = {
+    agreed = false,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "03.07.2026 01:06:49",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  Deus322 = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "05.07.2026 00:52:15",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  Dralala = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "03.07.2026 17:40:08",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  DroTiK_ = {
+    agreed = false,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "04.07.2026 23:27:11",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  Dundok = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "02.07.2026 12:19:57",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  Dylikk = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "02.07.2026 17:41:04",
+    hasFeedback = false,
+    transactions = 3,
+    balance = 0.0
+  },
+  EAsTWooD001 = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "06.07.2026 11:28:23",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  EZH = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "01.07.2026 17:29:06",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  Eixen = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "01.07.2026 16:29:46",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  Ex_Ars = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "02.07.2026 14:04:28",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  Fame = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "03.07.2026 19:47:31",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  Firoxi = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "02.07.2026 23:49:25",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  Focreyn = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "04.07.2026 18:07:40",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  Ghommerqw = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "01.07.2026 16:19:20",
+    hasFeedback = false,
+    transactions = 2,
+    balance = 0.0
+  },
+  Griffinov = {
+    agreed = true,
+    emaBalance = 64.0,
+    banned = false,
+    regDate = "01.07.2026 16:56:20",
+    hasFeedback = false,
+    transactions = 1,
+    balance = 0.0
+  },
+  HighMySide = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "02.07.2026 10:32:13",
+    hasFeedback = false,
+    transactions = 26,
+    balance = 30.14
+  },
+  IIShIbZiKII = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "02.07.2026 08:43:21",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  Illidan2045 = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "03.07.2026 02:25:25",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  ImortalCanoe = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "04.07.2026 21:19:27",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  Jackpurple = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "04.07.2026 06:01:08",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  JaviX13 = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "02.07.2026 11:08:06",
+    hasFeedback = false,
+    transactions = 4,
+    balance = 150.0
+  },
+  Jeka4125 = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "04.07.2026 12:04:53",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  JohnnyHazz = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "02.07.2026 12:40:21",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  KIMIK174 = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "03.07.2026 18:14:53",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  KReaTlVNuY = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "03.07.2026 23:12:39",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  KaRMa__ = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "01.07.2026 16:16:21",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  Kalleront = {
+    agreed = true,
+    emaBalance = 30.0,
+    banned = false,
+    regDate = "01.07.2026 16:44:57",
+    hasFeedback = true,
+    transactions = 23,
+    balance = 46.54
+  },
+  KarStrelok = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "02.07.2026 15:35:51",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  Kimychi = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "02.07.2026 16:30:09",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  King888 = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "02.07.2026 01:08:39",
+    hasFeedback = false,
+    transactions = 3,
+    balance = 51.87
+  },
+  Kr_O_nG = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "02.07.2026 03:08:13",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  KromkaOG = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "02.07.2026 03:03:24",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  Laus = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "02.07.2026 23:40:48",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  Legion_Ori = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "04.07.2026 17:32:16",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  Loksking022 = {
+    agreed = false,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "04.07.2026 18:48:39",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  MLGsweetie = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "02.07.2026 12:38:41",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  Makcu = {
+    agreed = false,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "03.07.2026 20:12:48",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  Mc_Teo = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "04.07.2026 20:45:35",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  Megatank21 = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "04.07.2026 04:05:04",
+    hasFeedback = false,
+    transactions = 3,
+    balance = 44.0
+  },
+  MoneyDealer = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "06.07.2026 10:02:23",
+    hasFeedback = false,
+    transactions = 2,
+    balance = 40.47
+  },
+  MrSandi = {
+    agreed = false,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "04.07.2026 15:45:29",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  NekitDOTA = {
+    agreed = false,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "04.07.2026 18:42:25",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  Nemeliss = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "04.07.2026 21:32:33",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  NLowsize = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "03.07.2026 23:30:39",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  Nubik0202 = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "02.07.2026 00:26:46",
+    hasFeedback = false,
+    transactions = 15,
+    balance = 704.06
+  },
+  Oxwill = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "04.07.2026 13:53:01",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  Pampers25 = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "02.07.2026 16:03:38",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  Perchik_M = {
+    agreed = false,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "04.07.2026 15:55:05",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  Platinadayn = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "04.07.2026 19:18:09",
+    hasFeedback = false,
+    transactions = 1,
+    balance = 5.75
+  },
+  QuashOut = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "03.07.2026 19:59:19",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  Raidy1Y = {
+    agreed = false,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "05.07.2026 01:04:38",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  Rapedbygrandpa = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "04.07.2026 21:25:49",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  RiperEROR = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "02.07.2026 23:29:44",
+    hasFeedback = false,
+    transactions = 2,
+    balance = 4.73
+  },
+  Ruvick = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "03.07.2026 00:00:12",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  Ryok = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "03.07.2026 14:46:18",
+    hasFeedback = false,
+    transactions = 6,
+    balance = 1.07
+  },
+  Sa4tune = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "01.07.2026 23:02:48",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  SaintARK = {
+    agreed = false,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "04.07.2026 01:47:27",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  SidZune = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "03.07.2026 16:04:25",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  Siegbarst = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "02.07.2026 00:37:41",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  SixNineAct = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "01.07.2026 16:48:47",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  Skitols_228 = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "04.07.2026 05:14:57",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  Skoldz = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "02.07.2026 10:55:03",
+    hasFeedback = false,
+    transactions = 3,
+    balance = 7.01
+  },
+  Smok1 = {
+    agreed = false,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "06.07.2026 10:24:17",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  Sneg77 = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "04.07.2026 18:12:14",
+    hasFeedback = false,
+    transactions = 1,
+    balance = 35.2
+  },
+  SnopyX = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "05.07.2026 00:24:52",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  StarFrag = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "02.07.2026 08:32:40",
+    hasFeedback = false,
+    transactions = 2,
+    balance = 0.0
+  },
+  Teen_Romance = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "04.07.2026 03:19:18",
+    hasFeedback = false,
+    transactions = 3,
+    balance = 36.7
+  },
+  TheHognof = {
+    agreed = true,
+    emaBalance = 3.6,
+    banned = false,
+    regDate = "04.07.2026 00:19:44",
+    hasFeedback = false,
+    transactions = 7,
+    balance = 73.27
+  },
+  TheHeppiPlay = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "01.07.2026 16:33:25",
+    hasFeedback = false,
+    transactions = 2,
+    balance = 0.8
+  },
+  TheCocoShow = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "03.07.2026 17:59:43",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  The_DedoK = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "02.07.2026 09:42:58",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  The_Corona = {
+    agreed = false,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "02.07.2026 14:26:43",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  ThisIsVladIsLove = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "03.07.2026 16:43:28",
+    hasFeedback = false,
+    transactions = 2,
+    balance = 17.95
+  },
+  Tiltonit = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "02.07.2026 02:56:50",
+    hasFeedback = false,
+    transactions = 5,
+    balance = 0.84999999999999
+  },
+  Timrom = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "02.07.2026 16:36:46",
+    hasFeedback = false,
+    transactions = 2,
+    balance = 22.58
+  },
+  Timsh = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "02.07.2026 18:49:02",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  Uffi = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "04.07.2026 20:25:07",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  Unopis = {
+    agreed = true,
+    emaBalance = 63.0,
+    banned = false,
+    regDate = "02.07.2026 10:20:47",
+    hasFeedback = false,
+    transactions = 5,
+    balance = 3.0
+  },
+  ViKeey = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "02.07.2026 10:35:18",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  Xalorayt = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "05.07.2026 02:31:59",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  Xpayne777 = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "03.07.2026 17:36:58",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  YoloRush = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "02.07.2026 03:33:28",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  Zagadochniy_Ilya = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "04.07.2026 00:01:56",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  Zalipalka = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "04.07.2026 20:47:33",
+    hasFeedback = false,
+    transactions = 3,
+    balance = 12.11
+  },
+  ZoziDo = {
+    agreed = true,
+    emaBalance = 2000,
+    banned = false,
+    regDate = "01.07.2026 15:19:18",
+    hasFeedback = false,
+    transactions = 9,
+    balance = 2006.75
+  },
+  _Chinaaf = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "03.07.2026 15:46:40",
+    hasFeedback = false,
+    transactions = 2,
+    balance = 13.15
+  },
+  _Mapka_ = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "04.07.2026 16:30:33",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  aegis2 = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "02.07.2026 21:18:39",
+    hasFeedback = false,
+    transactions = 4,
+    balance = 452.11
+  },
+  albex = {
+    agreed = false,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "04.07.2026 19:34:22",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  asved = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "02.07.2026 23:27:26",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  azsoundlab = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "04.07.2026 08:30:44",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  b3ar664 = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "04.07.2026 17:44:32",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  babak_nikita12 = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "06.07.2026 11:45:43",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  baltikatroika = {
+    agreed = false,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "03.07.2026 01:04:33",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  bazaru_net = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "04.07.2026 13:50:58",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  deathmetal = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "04.07.2026 15:42:00",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  f0rb4ik = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "01.07.2026 20:21:56",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  itsavinov = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "02.07.2026 02:00:45",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  kaslord111 = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "04.07.2026 11:47:09",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  kokokolo33 = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "01.07.2026 16:50:46",
+    hasFeedback = false,
+    transactions = 14,
+    balance = 1964.4
+  },
+  koshatus = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "02.07.2026 15:32:49",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  kuser7 = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "01.07.2026 16:52:17",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  lolkekbrat = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "02.07.2026 23:21:02",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  maximko12 = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "04.07.2026 03:15:20",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  meggapixar = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "02.07.2026 00:42:28",
+    hasFeedback = false,
+    transactions = 5,
+    balance = 1682.0
+  },
+  mzrti = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "02.07.2026 07:36:58",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  orst = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "01.07.2026 22:50:51",
+    hasFeedback = false,
+    transactions = 5,
+    balance = 87.2
+  },
+  piksel30030 = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "04.07.2026 15:27:37",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  pilaw_xd = {
+    agreed = false,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "04.07.2026 20:54:32",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  playyzinn = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "02.07.2026 09:56:32",
+    hasFeedback = false,
+    transactions = 7,
+    balance = 85.47
+  },
+  plinoffical89 = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "04.07.2026 12:57:03",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  presshata = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "01.07.2026 16:47:06",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  pushka_enota = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "02.07.2026 21:43:41",
+    hasFeedback = false,
+    transactions = 1,
+    balance = 112.64
+  },
+  qikas = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "01.07.2026 15:28:02",
+    hasFeedback = true,
+    transactions = 19,
+    balance = 1.17
+  },
+  r3dis = {
+    agreed = false,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "03.07.2026 14:53:10",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  ray_mccole = {
+    agreed = true,
+    emaBalance = 8.0,
+    banned = false,
+    regDate = "03.07.2026 15:09:19",
+    hasFeedback = false,
+    transactions = 6,
+    balance = 0.0
+  },
+  sabalko = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "01.07.2026 17:04:00",
+    hasFeedback = true,
+    transactions = 0,
+    balance = 0.0
+  },
+  shurik9608 = {
+    agreed = false,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "05.07.2026 00:21:03",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  silvertxd = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "04.07.2026 22:11:20",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  softher = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "03.07.2026 02:20:45",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  stYk = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "02.07.2026 10:11:54",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  streff1222 = {
+    agreed = true,
+    emaBalance = 3.47,
+    banned = false,
+    regDate = "02.07.2026 14:26:27",
+    hasFeedback = false,
+    transactions = 4,
+    balance = 0.94999999999999
+  },
+  superlg2 = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "01.07.2026 16:50:36",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  sxz = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "02.07.2026 01:15:07",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  usseiua = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "03.07.2026 18:45:33",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  velekterr1488 = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "03.07.2026 19:50:26",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  vktn = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "02.07.2026 01:47:11",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  w300adyga = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "02.07.2026 08:07:25",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  xxerrenn = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "05.07.2026 01:13:11",
+    hasFeedback = false,
+    transactions = 3,
+    balance = 4.56
+  },
+  yungmaple = {
+    agreed = false,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "01.07.2026 16:51:18",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  ywka4ywka = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "03.07.2026 18:26:20",
+    hasFeedback = false,
+    transactions = 3,
+    balance = 232.24
+  },
+  your_dimka = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "01.07.2026 17:22:21",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  },
+  z71 = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "04.07.2026 13:17:08",
+    hasFeedback = false,
+    transactions = 5,
+    balance = 7.77
+  },
+  zazaza = {
+    agreed = true,
+    emaBalance = 0.0,
+    banned = false,
+    regDate = "03.07.2026 19:41:55",
+    hasFeedback = false,
+    transactions = 0,
+    balance = 0.0
+  }
+}

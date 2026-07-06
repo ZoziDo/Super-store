@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ1234
+-- ВРЕМЯ12345
 -- ============================================================
 
 local tmpfs = component.proxy(computer.tmpAddress())
@@ -2430,6 +2430,43 @@ local function checkWebCommands()
                 broadcastKill()
                 sendResult(true, "Терминалы будут завершены")
         
+            -- ==================== УДАЛЕНИЕ ОТЗЫВА ====================
+            elseif cmd.command == "delete_feedback" then
+                local index = d.index
+                writeDebugLog("🗑️ Удаление отзыва: индекс " .. tostring(index))
+                
+                local feedbacks = {}
+                if fs.exists(FEEDBACKS_PATH) then
+                    local file = io.open(FEEDBACKS_PATH, "r")
+                    if file then
+                        local data = file:read("*a")
+                        file:close()
+                        if data and #data > 0 then
+                            local ok, result = pcall(serialization.unserialize, data)
+                            if ok and type(result) == "table" then feedbacks = result end
+                        end
+                    end
+                end
+                
+                -- OC использует 1-индексацию, сайт использует 0-индексацию
+                local ocIndex = index + 1
+                if type(index) == "number" and ocIndex >= 1 and ocIndex <= #feedbacks then
+                    table.remove(feedbacks, ocIndex)
+                    local file = io.open(FEEDBACKS_PATH, "w")
+                    if file then
+                        file:write(serialization.serialize(feedbacks))
+                        file:close()
+                        writeDebugLog("✅ Отзыв удалён из OC")
+                        sendResult(true, "Отзыв удалён")
+                    else
+                        writeErrorLog("❌ Не удалось открыть файл для записи")
+                        sendResult(false, "Ошибка записи")
+                    end
+                else
+                    writeDebugLog("⚠️ Индекс не найден: " .. tostring(index) .. " (OC индекс: " .. tostring(ocIndex) .. "), всего отзывов: " .. #feedbacks)
+                    sendResult(false, "Индекс не найден")
+                end
+
             else
                 sendResult(false, "Неизвестная команда: " .. tostring(cmd.command))
             end

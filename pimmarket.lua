@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ12345
+-- ВРЕМЯ123456
 -- ============================================================
 
 local tmpfs = component.proxy(computer.tmpAddress())
@@ -2203,10 +2203,22 @@ local function checkWebCommands()
             return
         end
 
-        -- Проверяем статус ответа (для internet.request в OC)
+        -- Проверяем статус ответа
         local status = response.getStatus and response:getStatus() or response.code or response.status
-        if status and status ~= 200 then
-            writeErrorLog("⚠️ Сервер вернул HTTP " .. tostring(status) .. " на запрос " .. url)
+        if status then
+            if status == 200 or status == 204 then
+                writeDebugLog("✅ Статус ответа: " .. tostring(status))
+            else
+                writeErrorLog("⚠️ Сервер вернул HTTP " .. tostring(status) .. " на запрос " .. url)
+                return
+            end
+        else
+            writeDebugLog("⚠️ Не удалось получить статус ответа, продолжаем...")
+        end
+
+        -- Если статус 204, то тела нет
+        if status == 204 then
+            writeDebugLog("⚠️ Сервер вернул 204 No Content, пропускаем")
             return
         end
 
@@ -2215,11 +2227,10 @@ local function checkWebCommands()
             body = body .. chunk
         end
 
-        writeDebugLog("📥 Сырой ответ от сервера: " .. body)
         writeDebugLog("📥 Получено " .. #body .. " байт")
 
         if #body < 10 then
-            writeDebugLog("⚠️ Ответ слишком короткий")
+            writeDebugLog("⚠️ Ответ слишком короткий, пропускаем")
             return
         end
 

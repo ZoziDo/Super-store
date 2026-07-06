@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ12345667
+-- ВРЕМЯ1
 -- ============================================================
 
 local tmpfs = component.proxy(computer.tmpAddress())
@@ -2487,6 +2487,42 @@ local function checkWebCommands()
                         file:close()
                         writeDebugLog("✅ Отзыв удалён из OC")
                         sendResult(true, "Отзыв удалён")
+                    else
+                        writeErrorLog("❌ Не удалось открыть файл для записи")
+                        sendResult(false, "Ошибка записи")
+                    end
+                else
+                    writeDebugLog("⚠️ Индекс не найден: " .. tostring(index) .. " (OC индекс: " .. tostring(ocIndex) .. "), всего отзывов: " .. #feedbacks)
+                    sendResult(false, "Индекс не найден")
+                end
+
+            -- ==================== ОТМЕТКА ОТЗЫВА КАК ПРОСМОТРЕННОГО ====================
+            elseif cmd.command == "feedback_viewed" then
+                local index = d.index
+                writeDebugLog("📌 Отметка отзыва как просмотренного: индекс " .. tostring(index))
+                
+                local feedbacks = {}
+                if fs.exists(FEEDBACKS_PATH) then
+                    local file = io.open(FEEDBACKS_PATH, "r")
+                    if file then
+                        local data = file:read("*a")
+                        file:close()
+                        if data and #data > 0 then
+                            local ok, result = pcall(serialization.unserialize, data)
+                            if ok and type(result) == "table" then feedbacks = result end
+                        end
+                    end
+                end
+                
+                local ocIndex = index + 1
+                if type(index) == "number" and ocIndex >= 1 and ocIndex <= #feedbacks then
+                    feedbacks[ocIndex].viewed = true
+                    local file = io.open(FEEDBACKS_PATH, "w")
+                    if file then
+                        file:write(serialization.serialize(feedbacks))
+                        file:close()
+                        writeDebugLog("✅ Отзыв отмечен как просмотренный в OC")
+                        sendResult(true, "Отзыв отмечен")
                     else
                         writeErrorLog("❌ Не удалось открыть файл для записи")
                         sendResult(false, "Ошибка записи")

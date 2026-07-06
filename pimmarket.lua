@@ -17,7 +17,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ
+-- ВРЕМЯ12
 -- ============================================================
 
 tmpfs = component.proxy(computer.tmpAddress())
@@ -3083,6 +3083,11 @@ function applyIncrementalChanges(itemsFile, changes, itemType)
             buyItemMap[key] = item
         end
         writeDebugLog("📦 buyItemsData обновлена, товаров: " .. #buyItemsData)
+        
+        -- ★★★ СБРАСЫВАЕМ КЕШ ТОВАРОВ ПОКУПКИ ★★★
+        cachedBuyItems = nil
+        cacheTimestamp = 0
+        writeDebugLog("🔄 Кеш товаров покупки сброшен")
     end
 
     if currentScreen == "shop_buy" then

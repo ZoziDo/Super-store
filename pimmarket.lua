@@ -4457,7 +4457,6 @@ function main()
                 playerAgreed = false
                 currentScreen = "auth"
                 authStartTime = os.clock()
-                drawAuthScreen()
                 
                 local player = players[currentPlayer]
                 if not player then

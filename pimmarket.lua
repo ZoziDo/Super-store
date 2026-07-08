@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ★★★  ЗАЩИТА ★★★12
+-- ★★★  ЗАЩИТА ★★★123
 -- ============================================================
 pcall(function()
     event.ignore("interrupted", function() end)
@@ -317,38 +317,6 @@ function drawScreenBorder()
     gpu.set(right, top, "┐")
     gpu.set(left, bottom, "└")
     gpu.set(right, bottom, "┘")
-end
-
-function drawBigTitle()
-    writeDebugLog("drawBigTitle()")
-    gpu.setForeground(colors.accent_secondary)
-    local darkonLines = {
-        "  ██╗   ██╗██╗██████╗ ",
-        "  ██║   ██║██║██╔══██╗",
-        "  ██║   ██║██║██████╔╝",
-        "  ╚██╗ ██╔╝██║██╔═══╝",
-        "   ╚████╔╝ ██║██║",
-        "    ╚═══╝  ╚═╝╚═╝",
-    }
-    local darkonOffset = 18
-    local darkonX = math.floor((80 - #darkonLines[1]) / 2) + darkonOffset
-    for i, line in ipairs(darkonLines) do
-        gpu.set(darkonX, 4 + i, line)
-    end
-
-    local shopLines = {
-        "  ███████╗██╗  ██╗ ██████╗ ██████╗ ",
-        "  ██╔════╝██║  ██║██╔═══██╗██╔══██╗",
-        "  ███████╗███████║██║   ██║██████╔╝",
-        "  ╚════██║██╔══██║██║   ██║██╔═══╝ ",
-        "  ███████║██║  ██║╚██████╔╝██║     ",
-        "  ╚══════╝╚═╝  ╚═╝ ╚═════╝ ╚═╝     "
-    }
-    local shopOffset = 31
-    local shopX = math.floor((80 - #shopLines[1]) / 2) + shopOffset
-    for i, line in ipairs(shopLines) do
-        gpu.set(shopX, 10 + i, line)
-    end
 end
 
 function drawTempMessage()
@@ -1899,10 +1867,78 @@ shopMenuButtons = {
 
 function drawWelcomeScreen()
     writeDebugLog("drawWelcomeScreen()")
+    
+    -- Очистка экрана
     gpu.setBackground(colors.bg_main)
     gpu.fill(1, 1, 80, 25, " ")
-    drawBigTitle()
     
+    -- ====================== НОВАЯ РАМКА ======================
+    local border_color = 0x4477BB      -- Голубая рамка
+    local text_color = 0x00FFCC        -- Бирюзовый текст
+    local sub_color = 0xFFFF00         -- Жёлтый подзаголовок
+    local hint_color = 0xAAAAAA        -- Серый подсказка
+    
+    -- Рамка
+    gpu.setForeground(border_color)
+    gpu.set(1, 1, "┌" .. string.rep("─", 78) .. "┐")
+    gpu.set(1, 24, "└" .. string.rep("─", 78) .. "┘")
+    for y = 2, 23 do
+        gpu.set(1, y, "│")
+        gpu.set(80, y, "│")
+    end
+    
+    -- ====================== АЛМАЗ ======================
+    local diamond = {
+        "             ▓▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▓            ",
+        "           ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▒▒▒▒▓          ",
+        "        ▓▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▓▓▓        ",
+        "      ▓▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▒▒▒▒▒▒▒▒▒▓      ",
+        "     ▒▒▒▒▒▒▒▒▒▒▒▓▓▓▓▒▒▒▒▒▒▒▒▒▒▓▓▓▓▒▒▒▒▓▓▓▒▒     ",
+        "     ▓▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▓▓▓▓▒▒▒▒▒▒▓▓      ",
+        "       ▓▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▓▓▓▓       ",
+        "        ▓▓▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▓▓▓▒▓▓▓▓         ",
+        "          ▓▒▒▒▒▒▒▒▒▓▓▓▒▒▒▒▒▓▓▓▓▓▓▓▓▓▓▓          ",
+        "            ▓▒▒▒▒▒▓▓▓▓▓▒▒▓▓▓▓▓▓▓▓▓▓▓            ",
+        "             ▓▒▒▒▒▒▓▓▓▓▒▒▓▓▓▓▓▒▓▓▓▓             ",
+        "               ▓▒▒▒▒▓▓▓▒▒▓▓▓▓▓▓▓▓               ",
+        "                 ▓▒▒▒▓▓▒▒▓▓▓▓▓▓▓                ",
+        "                  ▓▒▒▒▓▓▒▓▓▓▓▓                  ",
+        "                    ▓▒▒▒▒▓▒▓▓                   ",
+        "                      ▓▒▒▒▓▓                    ",
+        "                        ▒▓                      ",
+    }
+    
+    -- Градиент для алмаза
+    local gradient = {
+        0x112244, 0x223366, 0x335599, 0x4477BB,
+        0x5599DD, 0x77BBFF, 0x99CCFF, 0xBBDDFF
+    }
+    
+    local diamX = 17
+    local diamY = 3
+    
+    for i, line in ipairs(diamond) do
+        local color = gradient[math.min(math.floor((i-1) / 2) + 1, #gradient)]
+        gpu.setForeground(color)
+        gpu.set(diamX, diamY + i - 1, line)
+    end
+    
+    -- ====================== ТЕКСТ ======================
+    local cx = 41
+    
+    -- Основной текст
+    gpu.setForeground(text_color)
+    gpu.set(cx - 2, 21, "VIP SHOP")
+    
+    -- Подзаголовок
+    gpu.setForeground(sub_color)
+    gpu.set(cx - 6, 22, "◆ McSkill HiTech ◆")
+    
+    -- Подсказка
+    gpu.setForeground(hint_color)
+    gpu.set(cx - 10, 23, "Встаньте на ПИМ для входа")
+    
+    -- ====================== СОСТОЯНИЕ МАГАЗИНА ======================
     if shopPaused then
         gpu.setForeground(colors.error)
         drawCenteredText(18, "РЕЖИМ ОБСЛУЖИВАНИЯ", colors.error)
@@ -1914,8 +1950,6 @@ function drawWelcomeScreen()
         drawCenteredText(19, "━━━━━━━━━━━━━━━━━━━", colors.accent_main)
     end
     
-    gpu.setForeground(colors.text_main)
-    drawCenteredText(22, "--===============|VIP SHOP|===============--", colors.text_main)
     gpu.setBackground(colors.bg_main)
     drawTempMessage()
 end
@@ -1924,20 +1958,68 @@ function drawAuthScreen()
     writeDebugLog("drawAuthScreen()")
     gpu.setBackground(colors.bg_main)
     gpu.fill(1, 1, 80, 25, " ")
-    drawBigTitle()
+    
+    -- Рамка
+    gpu.setForeground(0x4477BB)
+    gpu.set(1, 1, "┌" .. string.rep("─", 78) .. "┐")
+    gpu.set(1, 24, "└" .. string.rep("─", 78) .. "┘")
+    for y = 2, 23 do
+        gpu.set(1, y, "│")
+        gpu.set(80, y, "│")
+    end
+    
+    -- ====================== АЛМАЗ ======================
+    local diamond = {
+        "             ▓▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▓            ",
+        "           ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▒▒▒▒▓          ",
+        "        ▓▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▓▓▓        ",
+        "      ▓▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▒▒▒▒▒▒▒▒▒▓      ",
+        "     ▒▒▒▒▒▒▒▒▒▒▒▓▓▓▓▒▒▒▒▒▒▒▒▒▒▓▓▓▓▒▒▒▒▓▓▓▒▒     ",
+        "     ▓▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▓▓▓▓▒▒▒▒▒▒▓▓      ",
+        "       ▓▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▓▓▓▓       ",
+        "        ▓▓▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▓▓▓▒▓▓▓▓         ",
+        "          ▓▒▒▒▒▒▒▒▒▓▓▓▒▒▒▒▒▓▓▓▓▓▓▓▓▓▓▓          ",
+        "            ▓▒▒▒▒▒▓▓▓▓▓▒▒▓▓▓▓▓▓▓▓▓▓▓            ",
+        "             ▓▒▒▒▒▒▓▓▓▓▒▒▓▓▓▓▓▒▓▓▓▓             ",
+        "               ▓▒▒▒▒▓▓▓▒▒▓▓▓▓▓▓▓▓               ",
+        "                 ▓▒▒▒▓▓▒▒▓▓▓▓▓▓▓                ",
+        "                  ▓▒▒▒▓▓▒▓▓▓▓▓                  ",
+        "                    ▓▒▒▒▒▓▒▓▓                   ",
+        "                      ▓▒▒▒▓▓                    ",
+        "                        ▒▓                      ",
+    }
+    
+    local gradient = {
+        0x112244, 0x223366, 0x335599, 0x4477BB,
+        0x5599DD, 0x77BBFF, 0x99CCFF, 0xBBDDFF
+    }
+    
+    local diamX = 17
+    local diamY = 2
+    
+    for i, line in ipairs(diamond) do
+        local color = gradient[math.min(math.floor((i-1) / 2) + 1, #gradient)]
+        gpu.setForeground(color)
+        gpu.set(diamX, diamY + i - 1, line)
+    end
+    
+    -- Текст
+    local cx = 41
+    gpu.setForeground(0x00FFCC)
+    gpu.set(cx - 2, 20, "VIP SHOP")
+    gpu.setForeground(0xFFFF00)
+    gpu.set(cx - 6, 21, "◆ McSkill HiTech ◆")
     
     if shopPaused then
         gpu.setForeground(colors.error)
         drawCenteredText(17, "РЕЖИМ ОБСЛУЖИВАНИЯ", colors.error)
         drawCenteredText(18, "Магазин временно закрыт", colors.error)
         drawCenteredText(19, "Пожалуйста, зайдите позже", colors.text_main)
-        gpu.setForeground(colors.text_main)
-        drawCenteredText(22, "--===============|VIP SHOP|===============--", colors.accent_secondary)
     else
         gpu.setForeground(colors.text_bright)
-        drawCenteredText(18, "Авторизация....", colors.text_bright)
+        drawCenteredText(17, "АВТОРИЗАЦИЯ", 0x00FFCC)
         gpu.setForeground(colors.text_main)
-        drawCenteredText(22, "--===============|VIP SHOP|===============--", colors.accent_secondary)
+        drawCenteredText(18, "Пожалуйста, подождите...", colors.text_main)
     end
     
     gpu.setBackground(colors.bg_main)

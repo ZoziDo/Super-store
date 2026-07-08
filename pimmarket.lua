@@ -3299,11 +3299,62 @@ function checkWebCommands()
             
                 writeDebugLog("📥 ОБНОВЛЕНИЕ ИГРОКА: " .. playerName)
                 
-                local playersData = {}
+                -- Загрузка игроков
                 if fs.exists(DB_PATH) then
-                    local ok, data = pcall(dofile, DB_PATH)
-                    if ok and type(data) == "table" then
-                        playersData = data
+                    local file = io.open(DB_PATH, "r")
+                    local raw = file:read("*a")
+                    file:close()
+                    if raw and #raw > 0 then
+                        local success, data = pcall(serialization.unserialize, raw)
+                        if success and data then players = data end
+                    end
+                end
+                
+                -- ★★★ ОТПРАВКА ВСЕХ ИГРОКОВ НА СЕРВЕР ПРИ СТАРТЕ ★★★
+                local total_players = 0
+                for _ in pairs(players) do total_players = total_players + 1 end
+                
+                if total_players > 0 then
+                    addLog("📤 Отправка " .. total_players .. " игроков на сервер...")
+                    
+                    if total_players < 10 then
+                        -- Если игроков мало, отправляем всех сразу
+                        for name, data in pairs(players) do
+                            local change = {
+                                id = "init_" .. name .. "_" .. os.time() .. "_" .. math.random(100000),
+                                type = "update_balance",
+                                data = {
+                                    player = name,
+                                    balance = data.balance or 0,
+                                    emaBalance = data.emaBalance or 0
+                                }
+                            }
+                            add_pending_change(change)
+                        end
+                        addLog("✅ Отправлено " .. total_players .. " игроков (все сразу)")
+                    else
+                        -- Если игроков много, отправляем пачками по 10
+                        local player_count = 0
+                        for name, data in pairs(players) do
+                            local change = {
+                                id = "init_" .. name .. "_" .. os.time() .. "_" .. math.random(100000),
+                                type = "update_balance",
+                                data = {
+                                    player = name,
+                                    balance = data.balance or 0,
+                                    emaBalance = data.emaBalance or 0
+                                }
+                            }
+                            add_pending_change(change)
+                            player_count = player_count + 1
+                            
+                            -- Отправляем пачку из 10 игроков
+                            if player_count % 10 == 0 then
+                                send_pending_changes()
+                                os.sleep(0.5)  -- пауза, чтобы сервер успел обработать
+                            end
+                        end
+                        addLog("✅ Отправлено " .. total_players .. " игроков (пачками по 10)")
                     end
                 end
                 

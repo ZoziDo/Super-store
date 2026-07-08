@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ★★★  ЗАЩИТА ★★★1234
+-- ★★★  ЗАЩИТА ★★★12345
 -- ============================================================
 pcall(function()
     event.ignore("interrupted", function() end)
@@ -467,29 +467,41 @@ function add_pending_change(change)
 end
 
 function clear_pending_changes(ids)
+    -- ★★★ ЕСЛИ ID НЕ ПЕРЕДАНЫ — ОЧИЩАЕМ ВСЁ ★★★
+    if not ids then
+        pending_buffer = {}
+        save_pending_buffer()
+        writeDebugLog("🗑️ Буфер полностью очищен")
+        return
+    end
+    
+    -- ★★★ ЕСЛИ ПЕРЕДАН ПУСТОЙ СПИСОК — ТОЖЕ ОЧИЩАЕМ ВСЁ ★★★
+    if type(ids) == "table" and #ids == 0 then
+        pending_buffer = {}
+        save_pending_buffer()
+        writeDebugLog("🗑️ Буфер полностью очищен (пустой список)")
+        return
+    end
+    
     local new_buffer = {}
     local removed_count = 0
     local ids_set = {}
-    if ids then
-        for _, id in ipairs(ids) do ids_set[id] = true end
-    end
+    for _, id in ipairs(ids) do ids_set[id] = true end
+    
     for _, change in ipairs(pending_buffer) do
-        local keep = true
-        if ids and ids_set[change.id] then
-            keep = false
+        if ids_set[change.id] then
             removed_count = removed_count + 1
-        end
-        if keep then
+        else
             table.insert(new_buffer, change)
         end
     end
+    
     pending_buffer = new_buffer
     save_pending_buffer()
     if removed_count > 0 then
         writeDebugLog("🗑️ Удалено из буфера: " .. removed_count .. " записей")
     end
 end
-
 -- ============================================================
 -- ОТПРАВКА БУФЕРА ИЗМЕНЕНИЙ НА СЕРВЕР (ДЕЛЬТА)
 -- ============================================================

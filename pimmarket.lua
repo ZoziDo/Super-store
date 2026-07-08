@@ -55,7 +55,7 @@ end
 -- ВЕБ-ИНТЕГРАЦИЯ
 -- ============================================================
 
-WEB_URL = "https://pim-market-server--pasharazgonyaev.replit.app"
+WEB_URL = "https://upfront-dinginess-impulsive.ngrok-free.dev"
 
 function toJson(val)
     if type(val) == "string" then

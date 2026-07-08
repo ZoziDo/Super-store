@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ★★★  ЗАЩИТА ★★★1
+-- ★★★  ЗАЩИТА ★★★12
 -- ============================================================
 pcall(function()
     event.ignore("interrupted", function() end)
@@ -3288,175 +3288,43 @@ function checkWebCommands()
             writeDebugLog("🔧 Выполняем команду: " .. (cmd.command or "unknown"))
             writeDebugLog("📨 Данные команды: " .. serialization.serialize(d))
         
-            -- ==================== ОБНОВЛЕНИЕ ИГРОКА ====================
+            - ==================== ОБНОВЛЕНИЕ ИГРОКА ====================
             if cmd.command == "update_player" or cmd.command == "set_balance" then
                 local playerName = d.name or d.player
                 if not playerName then
-                    writeDebugLog("❌ Нет имени игрока в команде!")
                     sendResult(false, "Нет имени игрока")
                     goto continue
                 end
-            
-                writeDebugLog("📥 ОБНОВЛЕНИЕ ИГРОКА: " .. playerName)
                 
-                -- Загрузка игроков
-                if fs.exists(DB_PATH) then
-                    local file = io.open(DB_PATH, "r")
-                    local raw = file:read("*a")
-                    file:close()
-                    if raw and #raw > 0 then
-                        local success, data = pcall(serialization.unserialize, raw)
-                        if success and data then players = data end
+                -- ★★★ ПРИМЕНЯЕМ ИЗМЕНЕНИЕ В OC ★★★
+                if players[playerName] then
+                    if d.balance then
+                        players[playerName].balance = tonumber(d.balance) or 0
                     end
-                end
-                
-                -- ★★★ ОТПРАВКА ВСЕХ ИГРОКОВ НА СЕРВЕР ПРИ СТАРТЕ ★★★
-                local total_players = 0
-                for _ in pairs(players) do total_players = total_players + 1 end
-                
-                if total_players > 0 then
-                    addLog("📤 Отправка " .. total_players .. " игроков на сервер...")
-                    
-                    if total_players < 10 then
-                        -- Если игроков мало, отправляем всех сразу
-                        for name, data in pairs(players) do
-                            local change = {
-                                id = "init_" .. name .. "_" .. os.time() .. "_" .. math.random(100000),
-                                type = "update_balance",
-                                data = {
-                                    player = name,
-                                    balance = data.balance or 0,
-                                    emaBalance = data.emaBalance or 0
-                                }
-                            }
-                            add_pending_change(change)
-                        end
-                        addLog("✅ Отправлено " .. total_players .. " игроков (все сразу)")
-                    else
-                        -- Если игроков много, отправляем пачками по 10
-                        local player_count = 0
-                        for name, data in pairs(players) do
-                            local change = {
-                                id = "init_" .. name .. "_" .. os.time() .. "_" .. math.random(100000),
-                                type = "update_balance",
-                                data = {
-                                    player = name,
-                                    balance = data.balance or 0,
-                                    emaBalance = data.emaBalance or 0
-                                }
-                            }
-                            add_pending_change(change)
-                            player_count = player_count + 1
-                            
-                            -- Отправляем пачку из 10 игроков
-                            if player_count % 10 == 0 then
-                                send_pending_changes()
-                                os.sleep(0.5)  -- пауза, чтобы сервер успел обработать
-                            end
-                        end
-                        addLog("✅ Отправлено " .. total_players .. " игроков (пачками по 10)")
+                    if d.emaBalance then
+                        players[playerName].emaBalance = tonumber(d.emaBalance) or 0
                     end
-                end
-                
-                local existingPlayer = players[playerName]
-                
-                if not playersData[playerName] then
-                    writeDebugLog("➕ Создаём нового игрока в playersData: " .. playerName)
-                    playersData[playerName] = {
-                        balance = existingPlayer and existingPlayer.balance or 0,
-                        emaBalance = existingPlayer and existingPlayer.emaBalance or 0,
-                        transactions = existingPlayer and existingPlayer.transactions or 0,
-                        banned = existingPlayer and existingPlayer.banned or false,
-                        agreed = existingPlayer and existingPlayer.agreed or false,
-                        hasFeedback = existingPlayer and existingPlayer.hasFeedback or false,
-                        regDate = existingPlayer and existingPlayer.regDate or os.date("%d.%m.%Y %H:%M:%S", getRealTimestamp()),
-                        transactionsList = existingPlayer and existingPlayer.transactionsList or {}
-                    }
-                end
-                
-                local oldAgreed = playersData[playerName].agreed or (existingPlayer and existingPlayer.agreed) or false
-                local oldHasFeedback = playersData[playerName].hasFeedback or (existingPlayer and existingPlayer.hasFeedback) or false
-                local oldBanned = playersData[playerName].banned or (existingPlayer and existingPlayer.banned) or false
-                local oldTransactions = playersData[playerName].transactions or (existingPlayer and existingPlayer.transactions) or 0
-                local oldTransactionsList = playersData[playerName].transactionsList or (existingPlayer and existingPlayer.transactionsList) or {}
-                local oldRegDate = playersData[playerName].regDate or (existingPlayer and existingPlayer.regDate) or os.date("%d.%m.%Y %H:%M:%S", getRealTimestamp())
-                
-                writeDebugLog("📌 Старые флаги: agreed=" .. tostring(oldAgreed) .. ", hasFeedback=" .. tostring(oldHasFeedback))
-                
-                if d.balance ~= nil then
-                    playersData[playerName].balance = tonumber(d.balance) or 0
-                    writeDebugLog("💰 Coin обновлён: " .. tostring(playersData[playerName].balance))
-                end
-                if d.coin ~= nil then
-                    playersData[playerName].balance = tonumber(d.coin) or 0
-                    writeDebugLog("💰 Coin (из coin): " .. tostring(playersData[playerName].balance))
-                end
-                if d.emaBalance ~= nil then
-                    playersData[playerName].emaBalance = tonumber(d.emaBalance) or 0
-                    writeDebugLog("💰 EMA обновлён: " .. tostring(playersData[playerName].emaBalance))
-                end
-                if d.ema ~= nil then
-                    playersData[playerName].emaBalance = tonumber(d.ema) or 0
-                    writeDebugLog("💰 EMA (из ema): " .. tostring(playersData[playerName].emaBalance))
-                end
-                
-                playersData[playerName].agreed = oldAgreed
-                playersData[playerName].hasFeedback = oldHasFeedback
-                playersData[playerName].banned = oldBanned
-                playersData[playerName].transactions = oldTransactions
-                playersData[playerName].transactionsList = oldTransactionsList
-                playersData[playerName].regDate = oldRegDate
-                
-                writeDebugLog("📌 Восстановлены флаги: agreed=" .. tostring(oldAgreed) .. ", hasFeedback=" .. tostring(oldHasFeedback))
-                
-                local file = io.open(DB_PATH, "w")
-                if file then
-                    file:write(serialization.serialize(playersData))
-                    file:close()
-                    writeDebugLog("✅ Файл players.db сохранён")
-                else
-                    writeErrorLog("❌ Не удалось сохранить players.db")
-                    sendResult(false, "Ошибка записи в файл")
-                    goto continue
-                end
-                
-                players = playersData
-                
-                -- ★ ДОБАВЛЯЕМ ИЗМЕНЕНИЕ БАЛАНСА В БУФЕР ★
-                if currentPlayer == playerName then
-                    coinBalance = playersData[playerName].balance or 0
-                    emaBalance = playersData[playerName].emaBalance or 0
-                    playerTransactions = playersData[playerName].transactions or 0
-                    playerAgreed = playersData[playerName].agreed or false
-                    playerRegDate = playersData[playerName].regDate or ""
+                    saveDBDeferred()
+                    addLog("💰 Баланс обновлён: " .. playerName)
                     
-                    -- Добавляем в буфер изменение баланса
+                    -- Отправляем дельту на сервер
                     local balance_change = {
                         id = "bal_" .. os.time() .. "_" .. math.random(100000),
                         type = "update_balance",
                         data = {
                             player = playerName,
-                            balance = coinBalance,
-                            emaBalance = emaBalance
+                            balance = players[playerName].balance,
+                            emaBalance = players[playerName].emaBalance
                         }
                     }
                     add_pending_change(balance_change)
                     
-                    writeDebugLog("✅ Текущий игрок обновлён: Coin=" .. coinBalance .. ", EMA=" .. emaBalance .. ", Agreed=" .. tostring(playerAgreed))
-                    
-                    if currentScreen == "menu" then
-                        drawMainMenu()
-                    elseif currentScreen == "account" then
-                        drawAccount({balance = coinBalance, emaBalance = emaBalance, transactions = playerTransactions, regDate = playerRegDate, agreed = playerAgreed})
-                    elseif currentScreen == "shop_buy" or currentScreen == "shop_sell" then
-                        drawBuyStatic()
-                        drawBuyItemsList()
-                        drawBuyButtons()
-                    end
+                    sendResult(true, "Баланс обновлён")
+                else
+                    sendResult(false, "Игрок не найден")
                 end
-                
-                sendResult(true, "Игрок обновлён успешно")
-                writeDebugLog("✅ Команда update_player выполнена")
+                goto continue
+            end
             
             -- ==================== ИНКРЕМЕНТАЛЬНОЕ ОБНОВЛЕНИЕ ТОВАРОВ ====================
             elseif cmd.command == "save_buy_items_incremental" then
@@ -4488,7 +4356,7 @@ function main()
             -- Рисуем баннер БЕЗ drawBigTitle()
             gpu.setForeground(colors.error)
             drawCenteredText(6, "╔══════════════════════════════════════════════════════════════╗", colors.error)
-            drawCenteredText(7, "║                     ВЫ ЗАБЛОКИРОВАНЫ                        ║", colors.error)
+            drawCenteredText(7, "║                     ВЫ ЗАБЛОКИРОВАНЫ                         ║", colors.error)
             drawCenteredText(8, "╚══════════════════════════════════════════════════════════════╝", colors.error)
             
             drawCenteredText(10, "Причина: " .. (banInfo.reason or "Не указана"), colors.text_main)

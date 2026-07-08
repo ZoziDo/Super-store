@@ -1880,11 +1880,11 @@ function drawWelcomeScreen()
     
     -- Рамка
     gpu.setForeground(border_color)
-    gpu.set(1, 1, "┌" .. string.rep("─", 78) .. "┐")
-    gpu.set(1, 24, "└" .. string.rep("─", 78) .. "┘")
-    for y = 2, 23 do
-        gpu.set(1, y, "│")
-        gpu.set(80, y, "│")
+    gpu.set(1, 1, "+" .. string.rep("=", 78) .. "+")
+    gpu.set(1, 25, "+" .. string.rep("=", 78) .. "┘+")
+    for y = 2, 24 do
+        gpu.set(1, y, "|")
+        gpu.set(80, y, "|")
     end
     
     -- ====================== АЛМАЗ ======================

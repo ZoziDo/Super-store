@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ★★★  ЗАЩИТА ★★★12345
+-- ★★★  ЗАЩИТА ★★★123456
 -- ============================================================
 pcall(function()
     event.ignore("interrupted", function() end)
@@ -522,6 +522,7 @@ function send_pending_changes()
 
     writeDebugLog("📤 Отправка дельты: " .. #changes_to_send .. " изменений")
 
+    -- ★★★ ОТПРАВЛЯЕМ ЗАПРОС ★★★
     local success, response = pcall(function()
         return internet.request(WEB_URL .. "/api/delta", json_payload, {
             ["Content-Type"] = "application/json",
@@ -529,6 +530,12 @@ function send_pending_changes()
         })
     end)
 
+    -- ★★★ ОЧИЩАЕМ БУФЕР СРАЗУ, НЕ ДОЖИДАЯСЬ ОТВЕТА ★★★
+    pending_buffer = {}
+    save_pending_buffer()
+    writeDebugLog("🗑️ Буфер очищен (дельты отправлены)")
+
+    -- ★★★ ПЫТАЕМСЯ ПРОЧИТАТЬ ОТВЕТ (НО НЕ ЖДЁМ ЕГО) ★★★
     if success and response then
         local body = ""
         for chunk in response do
@@ -536,21 +543,14 @@ function send_pending_changes()
         end
         local data = parseJSON(body)
         if data and data.status == "ok" then
-            local applied_ids = data.applied_ids or {}
-            if #applied_ids > 0 then
-                clear_pending_changes(applied_ids)
-                writeDebugLog("✅ Дельта отправлена, применено: " .. #applied_ids .. " изменений")
-            else
-                clear_pending_changes({})
-                writeDebugLog("✅ Все изменения уже на сервере, буфер очищен")
-            end
+            writeDebugLog("✅ Дельта подтверждена сервером")
             retry_delay = 10
         else
-            writeErrorLog("❌ Ошибка при отправке дельты: " .. (data and data.error or "неизвестная ошибка"))
+            writeDebugLog("⚠️ Сервер вернул ошибку, но буфер уже очищен")
             retry_delay = math.min(retry_delay * 2, 120)
         end
     else
-        writeErrorLog("❌ Ошибка соединения при отправке дельты, повтор через " .. retry_delay .. " сек")
+        writeDebugLog("⚠️ Ошибка соединения, но буфер уже очищен")
         retry_delay = math.min(retry_delay * 2, 120)
     end
 end

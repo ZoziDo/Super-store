@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ★★★  ЗАЩИТА ★★★123
+-- ★★★  ЗАЩИТА ★★★1235
 -- ============================================================
 pcall(function()
     event.ignore("interrupted", function() end)
@@ -1946,8 +1946,8 @@ function drawWelcomeScreen()
         drawCenteredText(20, "Пожалуйста, зайдите позже", colors.text_main)
     else
         gpu.setForeground(colors.success)
-        drawCenteredText(18, "↓   Встаньте на PIM   ↓", colors.accent_main)
-        drawCenteredText(19, "━━━━━━━━━━━━━━━━━━━", colors.accent_main)
+        -- drawCenteredText(18, "↓   Встаньте на PIM   ↓", colors.accent_main)
+        -- drawCenteredText(19, "━━━━━━━━━━━━━━━━━━━", colors.accent_main)
     end
     
     gpu.setBackground(colors.bg_main)

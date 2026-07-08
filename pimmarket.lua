@@ -1,5 +1,5 @@
 -- ============================================================
--- ОСНОВНОЙ КОД МАГАЗИНА (PIM MARKET) – ОПТИМИЗИРОВАННАЯ ВЕРСИЯ
+-- ОСНОВНОЙ КОД МАГАЗИНА (PIM MARKET) – НОВАЯ АРХИТЕКТУРА
 -- ============================================================
 
 local component = require("component")
@@ -17,7 +17,26 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ВРЕМЯ16
+-- ★★★  ЗАЩИТА ★★★
+-- ============================================================
+pcall(function()
+    event.ignore("interrupted", function() end)
+    event.ignore("terminate", function() end)
+end)
+
+if not event.shouldInterrupt then
+    function event.shouldInterrupt()
+        return false
+    end
+end
+
+originalExit = os.exit
+os.exit = function(code)
+    if code == 0 then return else originalExit(code) end
+end
+
+-- ============================================================
+-- ВРЕМЯ
 -- ============================================================
 
 tmpfs = component.proxy(computer.tmpAddress())
@@ -151,23 +170,14 @@ end
 ERROR_LOG = "/home/errors.log"
 
 function writeErrorLog(msg)
-    local file = io.open(ERROR_LOG, "a")
-    if file then
-        local time = os.date("%Y-%m-%d %H:%M:%S")
-        file:write("[" .. time .. "] " .. msg .. "\n")
-        file:close()
-    end
+    -- Локальное логирование в файл ОТКЛЮЧЕНО (чтобы не забивать диск)
+    -- Ошибки всё равно отправляются на веб-сервер и в очередь логов
     addLogEntry(msg, "ERROR")
     sendErrorToWeb(msg, "ERROR")
 end
 
 function writeDebugLog(msg)
-    local file = io.open(ERROR_LOG, "a")
-    if file then
-        local time = os.date("%Y-%m-%d %H:%M:%S")
-        file:write("[" .. time .. "] 🔍 " .. msg .. "\n")
-        file:close()
-    end
+    -- Отладочные логи полностью отключены
 end
 
 function safeCall(func, ...)
@@ -186,7 +196,6 @@ function safeCall(func, ...)
     end
     return true, ok
 end
-
 
 -- ============================================================
 -- ИГНОРИРОВАНИЕ СОБЫТИЙ
@@ -409,11 +418,146 @@ DB_PATH = "/home/players.db"
 STATS_PATH = "/home/global_stats.db"
 FEEDBACKS_PATH = "/home/feedbacks.db"
 REPORTS_PATH = "/home/reports.log"
+PENDING_FILE = "/home/pending_changes.lua"  -- ★ НОВЫЙ БУФЕР ИЗМЕНЕНИЙ ★
 
 admins = {}
 players = {}
 globalStats = { totalReports = 0, totalBuys = 0, totalSells = 0, totalRevenue = 0, totalBalance = 0 }
 transactions = {}
+pending_buffer = {}  -- ★ БУФЕР ДЛЯ ДЕЛЬТ ★
+retry_delay = 10     -- ★ НАЧАЛЬНАЯ ЗАДЕРЖКА ДЛЯ ОТПРАВКИ ★
+
+-- ============================================================
+-- ФУНКЦИИ ДЛЯ БУФЕРА ИЗМЕНЕНИЙ
+-- ============================================================
+
+function load_pending_buffer()
+    if fs.exists(PENDING_FILE) then
+        local ok, data = pcall(dofile, PENDING_FILE)
+        if ok and type(data) == "table" then
+            pending_buffer = data
+            writeDebugLog("📂 Загружен буфер изменений: " .. #pending_buffer .. " записей")
+        else
+            pending_buffer = {}
+        end
+    else
+        pending_buffer = {}
+    end
+end
+
+function save_pending_buffer()
+    local tmp = PENDING_FILE .. ".tmp"
+    local file = io.open(tmp, "w")
+    if file then
+        file:write(serialization.serialize(pending_buffer))
+        file:close()
+        fs.rename(tmp, PENDING_FILE)
+        return true
+    else
+        writeErrorLog("❌ Не удалось сохранить буфер изменений")
+        return false
+    end
+end
+
+function add_pending_change(change)
+    if not change.id then
+        change.id = "chg_" .. os.time() .. "_" .. math.random(100000)
+    end
+    table.insert(pending_buffer, change)
+    save_pending_buffer()
+    if #pending_buffer >= 50 then
+        send_pending_changes()
+    end
+end
+
+function clear_pending_changes(ids)
+    local new_buffer = {}
+    local removed_count = 0
+    local ids_set = {}
+    if ids then
+        for _, id in ipairs(ids) do ids_set[id] = true end
+    end
+    for _, change in ipairs(pending_buffer) do
+        local keep = true
+        if ids and ids_set[change.id] then
+            keep = false
+            removed_count = removed_count + 1
+        end
+        if keep then
+            table.insert(new_buffer, change)
+        end
+    end
+    pending_buffer = new_buffer
+    save_pending_buffer()
+    if removed_count > 0 then
+        writeDebugLog("🗑️ Удалено из буфера: " .. removed_count .. " записей")
+    end
+end
+
+-- ============================================================
+-- ОТПРАВКА БУФЕРА ИЗМЕНЕНИЙ НА СЕРВЕР (ДЕЛЬТА)
+-- ============================================================
+
+function send_pending_changes()
+    if #pending_buffer == 0 then
+        retry_delay = 10
+        return
+    end
+
+    local changes_to_send = {}
+    for _, ch in ipairs(pending_buffer) do
+        table.insert(changes_to_send, ch)
+    end
+
+    local payload = { changes = changes_to_send }
+    local json_payload = toJson(payload)
+
+    writeDebugLog("📤 Отправка дельты: " .. #changes_to_send .. " изменений")
+
+    local success, response = pcall(function()
+        return internet.request(WEB_URL .. "/api/delta", json_payload, {
+            ["Content-Type"] = "application/json",
+            ["Connection"] = "close"
+        })
+    end)
+
+    if success and response then
+        local body = ""
+        for chunk in response do
+            body = body .. chunk
+        end
+        local data = parseJSON(body)
+        if data and data.status == "ok" then
+            local applied_ids = data.applied_ids or {}
+            if #applied_ids > 0 then
+                clear_pending_changes(applied_ids)
+                writeDebugLog("✅ Дельта отправлена, применено: " .. #applied_ids .. " изменений")
+            else
+                clear_pending_changes({})
+                writeDebugLog("✅ Все изменения уже на сервере, буфер очищен")
+            end
+            retry_delay = 10
+        else
+            writeErrorLog("❌ Ошибка при отправке дельты: " .. (data and data.error or "неизвестная ошибка"))
+            retry_delay = math.min(retry_delay * 2, 120)
+        end
+    else
+        writeErrorLog("❌ Ошибка соединения при отправке дельты, повтор через " .. retry_delay .. " сек")
+        retry_delay = math.min(retry_delay * 2, 120)
+    end
+end
+
+-- Запускаем таймер для периодической отправки буфера
+event.timer(10, function()
+    if #pending_buffer > 0 then
+        send_pending_changes()
+    end
+    return true
+end, math.huge)
+
+-- ============================================================
+-- ФУНКЦИИ ДЛЯ РАБОТЫ С ФАЙЛАМИ (СОХРАНЕНИЕ)
+-- ============================================================
 
 function ensureFileExists(path, defaultData)
     writeDebugLog("ensureFileExists: " .. path)
@@ -440,6 +584,7 @@ ensureFileExists(DB_PATH, {})
 ensureFileExists(STATS_PATH, { totalReports = 0, totalBuys = 0, totalSells = 0, totalRevenue = 0, totalBalance = 0 })
 ensureFileExists(FEEDBACKS_PATH, {})
 ensureFileExists(REPORTS_PATH, "")
+ensureFileExists(PENDING_FILE, {})
 
 -- Загрузка админов
 if fs.exists(ADMINS_PATH) then
@@ -488,7 +633,10 @@ if fs.exists(STATS_PATH) then
     end
 end
 
--- ОПТИМИЗАЦИЯ: отложенное сохранение БД (не чаще раза в 5 секунд)
+-- Загрузка буфера изменений
+load_pending_buffer()
+
+-- Отложенное сохранение БД (не чаще раза в 5 секунд)
 dbDirty = false
 SAVE_DB_INTERVAL = 5
 
@@ -561,43 +709,9 @@ function removeAdmin(playerName)
     return false
 end
 
--- ОПТИМИЗАЦИЯ: буфер транзакций для пакетной отправки
-transactionBuffer = {}
-TRANSACTION_FLUSH_INTERVAL = 10
-
-function addTransactionToBuffer(type, playerName, item, qty, value_coin, value_ema)
-    table.insert(transactionBuffer, {
-        op = type,
-        name = playerName,  -- это текущий игрок из addTransaction
-        item = item,
-        qty = qty,
-        value_coin = value_coin,
-        value_ema = value_ema,
-        token = currentToken
-    })
-end
-
-function flushTransactionBuffer()
-    if #transactionBuffer == 0 then return end
-    -- Пропускаем транзакции без имени
-    local validTransactions = {}
-    for _, t in ipairs(transactionBuffer) do
-        if t.name and t.name ~= "" and t.name ~= "?" then
-            table.insert(validTransactions, t)
-        else
-            writeErrorLog("⚠️ Пропущена транзакция без имени игрока: " .. tostring(t.item))
-        end
-    end
-    if #validTransactions == 0 then
-        transactionBuffer = {}
-        return
-    end
-    local payload = { transactions = validTransactions }
-    sendToWeb("/api/transactions_batch", toJson(payload))
-    transactionBuffer = {}
-end
-
-event.timer(TRANSACTION_FLUSH_INTERVAL, flushTransactionBuffer, math.huge)
+-- ============================================================
+-- ДОБАВЛЕНИЕ ТРАНЗАКЦИИ (С ЗАПИСЬЮ В БУФЕР)
+-- ============================================================
 
 function addTransaction(type, playerName, item, qty, value_coin, value_ema)
     writeDebugLog("addTransaction: " .. type .. " " .. (playerName or "?"))
@@ -632,10 +746,9 @@ function addTransaction(type, playerName, item, qty, value_coin, value_ema)
     })
     while #transactions > 100 do table.remove(transactions, 1) end
     
-    -- ★★★ ИСПРАВЛЕННАЯ ЧАСТЬ: создаём игрока, если его нет ★★★
+    -- ★ СОЗДАЁМ ИЛИ ОБНОВЛЯЕМ ИГРОКА ★
     if playerName and playerName ~= "?" then
         if not players[playerName] then
-            -- Создаём игрока, если его нет
             players[playerName] = {
                 balance = 0,
                 emaBalance = 0,
@@ -661,8 +774,19 @@ function addTransaction(type, playerName, item, qty, value_coin, value_ema)
         writeErrorLog("⚠️ Некорректное имя игрока при добавлении транзакции: " .. tostring(playerName))
     end
     
-    -- Отправка на сервер через буфер
-    addTransactionToBuffer(type, playerName, item, qty, value_coin, value_ema)
+    -- ★ ДОБАВЛЯЕМ ИЗМЕНЕНИЕ В ОБЩИЙ БУФЕР ★
+    local change = {
+        id = "txn_" .. os.time() .. "_" .. math.random(100000),
+        type = type,  -- "buy" или "sell"
+        data = {
+            player = playerName,
+            item = item,
+            qty = qty,
+            coin = value_coin or 0,
+            ema = value_ema or 0
+        }
+    }
+    add_pending_change(change)
 end
 
 -- ============================================================
@@ -689,11 +813,11 @@ function broadcastKill()
 end
 
 -- ============================================================
--- ОТПРАВКА СТАТИСТИКИ (С РАСШИРЕННЫМ ЛОГИРОВАНИЕМ)
+-- ОТПРАВКА СТАТИСТИКИ (ПОЛНЫЙ ДАМП – РЕЗЕРВ)
 -- ============================================================
 
 function sendStats()
-    writeDebugLog("📊 sendStats() начат")
+    writeDebugLog("📊 sendStats() начат (резервный дамп)")
     
     local playerList = {}
     local totalBalance = 0
@@ -809,7 +933,8 @@ function sendStats()
     sendToWeb("/api/update", jsonData)
 end
 
-event.timer(60, sendStats, math.huge)
+-- Резервный дамп раз в час (на случай, если дельта-обновления пропущены)
+event.timer(3600, sendStats, math.huge)
 
 -- ============================================================
 -- ЗАГРУЗКА ТОВАРОВ И СОГЛАШЕНИЯ
@@ -1392,7 +1517,7 @@ function extractToME(targetName, amount, targetDamage)
 end
 
 -- ============================================================
--- UI МАГАЗИНА
+-- UI МАГАЗИНА (ПОЛНОСТЬЮ СОХРАНЁН)
 -- ============================================================
 
 function drawBalanceLine(x, y)
@@ -2680,7 +2805,7 @@ function handleQuantityButtonClick(btnText)
 end
 
 -- ============================================================
--- ВЫПОЛНЕНИЕ ПОКУПКИ И ПРОДАЖИ (ОПТИМИЗИРОВАНЫ)
+-- ВЫПОЛНЕНИЕ ПОКУПКИ И ПРОДАЖИ (С ДОБАВЛЕНИЕМ В БУФЕР)
 -- ============================================================
 
 function performSell()
@@ -2716,7 +2841,8 @@ function performSell()
     end
     playerTransactions = playerTransactions + 1
 
-    addTransactionToBuffer("sell", currentPlayer, sellConfirmItem.displayName, realExtracted, value, 0)
+    -- ★ ДОБАВЛЯЕМ ТРАНЗАКЦИЮ (ОНА САМА ДОБАВИТ В БУФЕР) ★
+    addTransaction("sell", currentPlayer, sellConfirmItem.displayName, realExtracted, value, 0)
 
     gpu.setBackground(colors.bg_main)
     gpu.fill(2, 17, 78, 1, " ")
@@ -2854,7 +2980,7 @@ function performBuy()
         return
     end
 
-    -- ★★★ ЧАСТИЧНАЯ ВЫДАЧА ★★★
+    -- ★ ЧАСТИЧНАЯ ВЫДАЧА ★
     if extracted < qty then
         local actuallySpentCoin = extracted * (item.priceCoin or 0)
         local actuallySpentEma = extracted * (item.priceEma or 0)
@@ -2862,7 +2988,6 @@ function performBuy()
         emaBalance = emaBalance - actuallySpentEma
         playerTransactions = playerTransactions + 1
 
-        -- ★★★ НЕМЕДЛЕННО СОХРАНЯЕМ БАЛАНС ★★★
         if currentPlayer and players[currentPlayer] then
             players[currentPlayer].balance = coinBalance
             players[currentPlayer].emaBalance = emaBalance
@@ -2871,7 +2996,7 @@ function performBuy()
             writeDebugLog("💾 Баланс сохранён (част.) для " .. currentPlayer .. ": Coin=" .. coinBalance .. ", EMA=" .. emaBalance)
         end
 
-        addTransactionToBuffer("buy", currentPlayer, item.displayName, extracted, actuallySpentCoin, actuallySpentEma)
+        addTransaction("buy", currentPlayer, item.displayName, extracted, actuallySpentCoin, actuallySpentEma)
 
         partialExtracted = extracted
         partialRequested = qty
@@ -2884,12 +3009,11 @@ function performBuy()
         return
     end
 
-    -- ★★★ ПОЛНАЯ ВЫДАЧА ★★★
+    -- ★ ПОЛНАЯ ВЫДАЧА ★
     coinBalance = coinBalance - totalCoin
     emaBalance = emaBalance - totalEma
     playerTransactions = playerTransactions + 1
 
-    -- ★★★ НЕМЕДЛЕННО СОХРАНЯЕМ БАЛАНС ★★★
     if currentPlayer and players[currentPlayer] then
         players[currentPlayer].balance = coinBalance
         players[currentPlayer].emaBalance = emaBalance
@@ -2898,7 +3022,7 @@ function performBuy()
         writeDebugLog("💾 Баланс сохранён (полн.) для " .. currentPlayer .. ": Coin=" .. coinBalance .. ", EMA=" .. emaBalance)
     end
 
-    addTransactionToBuffer("buy", currentPlayer, item.displayName, extracted, totalCoin, totalEma)
+    addTransaction("buy", currentPlayer, item.displayName, extracted, totalCoin, totalEma)
 
     gpu.setBackground(colors.bg_main)
     gpu.fill(2, 20, 78, 1, " ")
@@ -2925,7 +3049,7 @@ function performBuy()
 end
 
 -- ============================================================
--- ИНКРЕМЕНТАЛЬНОЕ ПРИМЕНЕНИЕ ИЗМЕНЕНИЙ
+-- ИНКРЕМЕНТАЛЬНОЕ ПРИМЕНЕНИЕ ИЗМЕНЕНИЙ (ДЛЯ ТОВАРОВ)
 -- ============================================================
 
 function applyIncrementalChanges(itemsFile, changes, itemType)
@@ -3089,7 +3213,7 @@ function applyIncrementalChanges(itemsFile, changes, itemType)
 end
 
 -- ============================================================
--- ОБРАБОТКА КОМАНД С САЙТА (ОПТИМИЗИРОВАНА)
+-- ОБРАБОТКА КОМАНД С САЙТА (С ДОБАВЛЕНИЕМ В БУФЕР)
 -- ============================================================
 
 function checkWebCommands()
@@ -3251,12 +3375,25 @@ function checkWebCommands()
                 
                 players = playersData
                 
+                -- ★ ДОБАВЛЯЕМ ИЗМЕНЕНИЕ БАЛАНСА В БУФЕР ★
                 if currentPlayer == playerName then
                     coinBalance = playersData[playerName].balance or 0
                     emaBalance = playersData[playerName].emaBalance or 0
                     playerTransactions = playersData[playerName].transactions or 0
                     playerAgreed = playersData[playerName].agreed or false
                     playerRegDate = playersData[playerName].regDate or ""
+                    
+                    -- Добавляем в буфер изменение баланса
+                    local balance_change = {
+                        id = "bal_" .. os.time() .. "_" .. math.random(100000),
+                        type = "update_balance",
+                        data = {
+                            player = playerName,
+                            balance = coinBalance,
+                            emaBalance = emaBalance
+                        }
+                    }
+                    add_pending_change(balance_change)
                     
                     writeDebugLog("✅ Текущий игрок обновлён: Coin=" .. coinBalance .. ", EMA=" .. emaBalance .. ", Agreed=" .. tostring(playerAgreed))
                     
@@ -3279,12 +3416,35 @@ function checkWebCommands()
                 writeDebugLog("📥 save_buy_items_incremental получен")
                 local changes = d.changes
                 local ok = applyIncrementalChanges("/home/buy_items.lua", changes, "buy_items")
+                -- ★ ДОБАВЛЯЕМ ИЗМЕНЕНИЕ ТОВАРОВ В БУФЕР ★
+                if ok and changes then
+                    local item_change = {
+                        id = "items_" .. os.time() .. "_" .. math.random(100000),
+                        type = "update_items",
+                        data = {
+                            file = "buy_items",
+                            changes = changes
+                        }
+                    }
+                    add_pending_change(item_change)
+                end
                 sendResult(ok, ok and "Товары покупки обновлены" or "Ошибка обновления buy_items")
         
             elseif cmd.command == "save_shop_items_incremental" then
                 writeDebugLog("📥 save_shop_items_incremental получен")
                 local changes = d.changes
                 local ok = applyIncrementalChanges("/home/shop_items.lua", changes, "shop_items")
+                if ok and changes then
+                    local item_change = {
+                        id = "items_" .. os.time() .. "_" .. math.random(100000),
+                        type = "update_items",
+                        data = {
+                            file = "sell_items",
+                            changes = changes
+                        }
+                    }
+                    add_pending_change(item_change)
+                end
                 sendResult(ok, ok and "Магазин обновлён" or "Ошибка обновления shop_items")
         
             -- ==================== РЕЖИМ ОБСЛУЖИВАНИЯ ====================
@@ -3335,6 +3495,79 @@ function checkWebCommands()
                 broadcastKill()
                 sendResult(true, "Терминалы будут завершены")
         
+            -- ==================== БАН / РАЗБАН ====================
+            elseif cmd.command == "toggle_ban" then
+                local playerName = d.name
+                local banned = d.banned
+                local reason = d.reason or "Без причины"
+                
+                if not playerName then
+                    sendResult(false, "Нет имени игрока")
+                    goto continue
+                end
+                
+                writeDebugLog("📥 toggle_ban: " .. playerName .. " -> " .. tostring(banned))
+                
+                if banned then
+                    -- Бан
+                    if players[playerName] then
+                        players[playerName].banned = true
+                        players[playerName].banReason = reason
+                        players[playerName].banAdmin = "Система" -- можно взять из d.admin если передаётся
+                        players[playerName].banDate = getRealTimeString()
+                        players[playerName].banExpires = nil -- бессрочно или по сроку
+                        saveDB()
+                        writeDebugLog("🔒 Игрок забанен: " .. playerName)
+                    else
+                        writeErrorLog("⚠️ Игрок не найден для бана: " .. playerName)
+                    end
+                    -- Добавляем в буфер
+                    local ban_change = {
+                        id = "ban_" .. os.time() .. "_" .. math.random(100000),
+                        type = "ban",
+                        data = {
+                            player = playerName,
+                            reason = reason,
+                            admin = "Система"
+                        }
+                    }
+                    add_pending_change(ban_change)
+                    sendResult(true, "Игрок забанен")
+                else
+                    -- Разбан
+                    if players[playerName] then
+                        players[playerName].banned = false
+                        players[playerName].banReason = nil
+                        players[playerName].banAdmin = nil
+                        players[playerName].banDate = nil
+                        players[playerName].banExpires = nil
+                        saveDB()
+                        writeDebugLog("🔓 Игрок разбанен: " .. playerName)
+                    end
+                    local unban_change = {
+                        id = "unban_" .. os.time() .. "_" .. math.random(100000),
+                        type = "unban",
+                        data = {
+                            player = playerName
+                        }
+                    }
+                    add_pending_change(unban_change)
+                    sendResult(true, "Игрок разбанен")
+                end
+                
+                -- Обновляем UI, если это текущий игрок
+                if currentPlayer == playerName then
+                    if banned then
+                        drawCenteredText(20, "ВЫ ЗАБАНЕНЫ!", colors.error)
+                        os.sleep(2)
+                        currentPlayer = nil
+                        currentToken = nil
+                        alreadyAuthorized = false
+                        currentScreen = "welcome"
+                        drawWelcomeScreen()
+                    end
+                end
+
             -- ==================== УДАЛЕНИЕ ОТЗЫВА ====================
             elseif cmd.command == "delete_feedback" then
                 local index = d.index
@@ -3472,7 +3705,7 @@ if not drawAgreementScreen then
 end
 
 -- ============================================================
--- ОСНОВНОЙ ЦИКЛ (С DEBOUNCE ДЛЯ MOUSE_MOVE)
+-- ОСНОВНОЙ ЦИКЛ (С ДОБАВЛЕННОЙ ПРОВЕРКОЙ БАНА ПРИ ВХОДЕ)
 -- ============================================================
 
 gpu.setResolution(80, 25)
@@ -4008,8 +4241,8 @@ function main()
                 end
                 goto continue
             end
-
             goto continue
+        end
 
         elseif e == "scroll" and (currentScreen == "shop_buy" or currentScreen == "shop_sell") then
             local playerName = ev[6] or "Неизвестный"
@@ -4176,6 +4409,56 @@ function main()
             end
             currentPlayer = playerName:match("^%s*(.-)%s*$") or playerName
             
+            -- ★★★ ПРОВЕРКА БАНА ЧЕРЕЗ СЕРВЕР ★★★
+            local banInfo = nil
+            local success, response = pcall(function()
+                return internet.request(WEB_URL .. "/api/check_ban?name=" .. currentPlayer)
+            end)
+            if success and response then
+                local body = ""
+                for chunk in response do
+                    body = body .. chunk
+                end
+                local data = parseJSON(body)
+                if data and data.banned then
+                    banInfo = data
+                end
+            end
+
+            if banInfo then
+                -- Показываем экран бана
+                gpu.setBackground(colors.bg_main)
+                gpu.fill(1, 1, 80, 25, " ")
+                drawBigTitle()
+                drawCenteredText(8, "ВЫ ЗАБЛОКИРОВАНЫ", colors.error)
+                drawCenteredText(10, "Причина: " .. (banInfo.reason or "Не указана"), colors.text_main)
+                drawCenteredText(11, "Администратор: " .. (banInfo.admin or "Система"), colors.text_main)
+                drawCenteredText(12, "Дата: " .. (banInfo.date or ""), colors.text_main)
+                if banInfo.expires then
+                    drawCenteredText(13, "Срок истекает: " .. banInfo.expires, colors.text_main)
+                else
+                    drawCenteredText(13, "Бессрочный бан", colors.text_main)
+                end
+                drawCenteredText(15, "Доступ запрещён", colors.error)
+                drawTempMessage()
+                
+                -- Ждём, пока игрок уйдёт с PIM
+                while true do
+                    local ev2 = {event.pull(1)}
+                    if ev2[1] == "player_off" or ev2[1] == "pim_player_leave" then
+                        writeDebugLog("👤 Игрок ушёл с PIM: " .. playerName)
+                        drawWelcomeScreen()
+                        break
+                    end
+                end
+                currentPlayer = nil
+                pimOwner = nil
+                alreadyAuthorized = false
+                currentScreen = "welcome"
+                goto continue
+            end
+            
+            -- Если бан не найден, продолжаем обычную авторизацию
             if alreadyAuthorized then
                 if currentScreen == "auth" or currentScreen == "account_loading" then
                     currentScreen = "menu"
@@ -4250,7 +4533,7 @@ function main()
                     }))
                 end
             end
-        
+
         elseif e == "player_off" or e == "pim_player_leave" then
             local playerName = ev[2] or "Игрок"
             writeDebugLog("player_off: " .. playerName)
@@ -4284,7 +4567,6 @@ end
 -- ============================================================
 -- ЗАПУСК
 -- ============================================================
-
 
 while true do
     local ok, err = pcall(main)

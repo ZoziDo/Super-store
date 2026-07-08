@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ★★★  ЗАЩИТА ★★★12
+-- ★★★  ЗАЩИТА ★★★123
 -- ============================================================
 pcall(function()
     event.ignore("interrupted", function() end)
@@ -3732,7 +3732,7 @@ function main()
             end
         end
 
-        if e == "touch" then
+                if e == "touch" then
             local x = tonumber(ev[3]) or 0
             local y = tonumber(ev[4]) or 0
             local playerName = ev[6] or "Неизвестный"
@@ -4168,7 +4168,7 @@ function main()
                     goto continue
                 end
             end
-            
+
             if showInsufficientPopup then
                 local popupWidth = 52
                 local popupHeight = 11
@@ -4191,7 +4191,7 @@ function main()
                 end
                 goto continue
             end
-            
+
             if showPartialPopup then
                 local popupWidth = 52
                 local popupHeight = 9
@@ -4214,7 +4214,7 @@ function main()
                 end
                 goto continue
             end
-            
+
             if showInventoryFullPopup then
                 local popupWidth = 52
                 local popupHeight = 9
@@ -4237,10 +4237,11 @@ function main()
                 end
                 goto continue
             end
+
             goto continue
-        end
-      end
-    
+        end   -- <-- ЭТОТ END ЗАКРЫВАЕТ if e == "touch"
+
+        -- ===== ОТДЕЛЬНЫЕ ОБРАБОТЧИКИ (без elseif) =====
         if e == "scroll" and (currentScreen == "shop_buy" or currentScreen == "shop_sell") then
             local playerName = ev[6] or "Неизвестный"
             if not isPimOwner(playerName) then
@@ -4256,6 +4257,8 @@ function main()
                     smoothScroll(-1)
                 end
             end
+            goto continue
+        end
 
         if e == "mouse_move" and (currentScreen == "shop_buy" or currentScreen == "shop_sell") then
             if not pimOwner then
@@ -4281,6 +4284,8 @@ function main()
                     drawBuyItemsList()
                 end
             end
+            goto continue
+        end
 
         if e == "key_down" then
             local playerName = ev[5] or "Неизвестный"
@@ -4372,6 +4377,8 @@ function main()
                 end
                 goto continue
             end
+            goto continue
+        end
 
         if e == "player_on" or e == "pim" or e == "pim_player_enter" then
             local playerName = ev[2] or "Игрок"
@@ -4423,7 +4430,6 @@ function main()
             end
 
             if banInfo then
-                -- Показываем экран бана
                 gpu.setBackground(colors.bg_main)
                 gpu.fill(1, 1, 80, 25, " ")
                 drawBigTitle()
@@ -4439,7 +4445,6 @@ function main()
                 drawCenteredText(15, "Доступ запрещён", colors.error)
                 drawTempMessage()
                 
-                -- Ждём, пока игрок уйдёт с PIM
                 while true do
                     local ev2 = {event.pull(1)}
                     if ev2[1] == "player_off" or ev2[1] == "pim_player_leave" then
@@ -4455,7 +4460,6 @@ function main()
                 goto continue
             end
             
-            -- Если бан не найден, продолжаем обычную авторизацию
             if alreadyAuthorized then
                 if currentScreen == "auth" or currentScreen == "account_loading" then
                     currentScreen = "menu"
@@ -4530,6 +4534,8 @@ function main()
                     }))
                 end
             end
+            goto continue
+        end
 
         if e == "player_off" or e == "pim_player_leave" then
             local playerName = ev[2] or "Игрок"
@@ -4555,11 +4561,11 @@ function main()
             pcall(selector.setSlot, 0, nil)
             pcall(selector.setSlot, 1, nil)
             drawWelcomeScreen()
+            goto continue
         end
 
         ::continue::
     end
-end
 
 -- ============================================================
 -- ЗАПУСК

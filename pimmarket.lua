@@ -29,7 +29,7 @@ os.exit = function(code)
 end
 
 -- ============================================================
--- ВРЕМЯ
+-- ВРЕМЯ1
 -- ============================================================
 
 tmpfs = component.proxy(computer.tmpAddress())
@@ -1875,11 +1875,11 @@ function drawWelcomeScreen()
     local sub_color = 0xFFFF00         -- Жёлтый подзаголовок
     local hint_color = 0xAAAAAA        -- Серый подсказка
     
-    -- Рамка (нижняя граница на 24 строке)
+    -- Рамка (вся высота экрана)
     gpu.setForeground(border_color)
     gpu.set(1, 1, "┌" .. string.rep("─", 78) .. "┐")
-    gpu.set(1, 24, "└" .. string.rep("─", 78) .. "┘")
-    for y = 2, 23 do
+    gpu.set(1, 25, "└" .. string.rep("─", 78) .. "┘")
+    for y = 2, 24 do
         gpu.set(1, y, "│")
         gpu.set(80, y, "│")
     end
@@ -1912,7 +1912,7 @@ function drawWelcomeScreen()
     }
     
     local diamX = 17
-    local diamY = 2  -- ← ПОДНЯЛ АЛМАЗ НА СТРОКУ ВЫШЕ
+    local diamY = 3  -- ★★★ алмаз на 1 строку вниз ★★★
     
     for i, line in ipairs(diamond) do
         local color = gradient[math.min(math.floor((i-1) / 2) + 1, #gradient)]
@@ -1923,17 +1923,28 @@ function drawWelcomeScreen()
     -- ====================== ТЕКСТ ======================
     local cx = 41
     
-    -- Основной текст (поднял на строку выше)
-    gpu.setForeground(text_color)
-    gpu.set(cx - 2, 20, "VIP SHOP")        -- ← было 21, стало 20
-    
-    -- Подзаголовок (поднял на строку выше)
-    gpu.setForeground(sub_color)
-    gpu.set(cx - 6, 21, "◆ McSkill HiTech ◆")  -- ← было 22, стало 21
-    
-    -- Подсказка (поднял на строку выше)
-    gpu.setForeground(hint_color)
-    gpu.set(cx - 10, 22, "Встаньте на ПИМ для входа")  -- ← было 23, стало 22
+    -- ★★★ ЕСЛИ ИГРОК УЖЕ НА PIM — ПОКАЗЫВАЕМ "АВТОРИЗАЦИЯ" ★★★
+    if currentPlayer and currentPlayer ~= "" then
+        -- Режим авторизации
+        gpu.setForeground(0x00FFCC)
+        gpu.set(cx - 5, 21, "АВТОРИЗАЦИЯ")
+        
+        gpu.setForeground(sub_color)
+        gpu.set(cx - 6, 22, "◆ McSkill HiTech ◆")
+        
+        gpu.setForeground(hint_color)
+        gpu.set(cx - 10, 23, "Пожалуйста, подождите...")
+    else
+        -- Обычный экран приветствия
+        gpu.setForeground(text_color)
+        gpu.set(cx - 2, 21, "VIP SHOP")
+        
+        gpu.setForeground(sub_color)
+        gpu.set(cx - 6, 22, "◆ McSkill HiTech ◆")
+        
+        gpu.setForeground(hint_color)
+        gpu.set(cx - 10, 23, "Встаньте на ПИМ для входа")
+    end
     
     -- ====================== РЕЖИМ ОБСЛУЖИВАНИЯ ======================
     if shopPaused then
@@ -1942,82 +1953,8 @@ function drawWelcomeScreen()
         drawCenteredText(19, "Магазин временно закрыт", colors.error)
         drawCenteredText(20, "Пожалуйста, зайдите позже", colors.text_main)
     end
-    
-    gpu.setBackground(colors.bg_main)
-    drawTempMessage()
 end
 
-function drawAuthScreen()
-    writeDebugLog("drawAuthScreen()")
-    gpu.setBackground(colors.bg_main)
-    gpu.fill(1, 1, 80, 25, " ")
-    
-    -- Рамка
-    gpu.setForeground(0x4477BB)
-    gpu.set(1, 1, "┌" .. string.rep("─", 78) .. "┐")
-    gpu.set(1, 24, "└" .. string.rep("─", 78) .. "┘")
-    for y = 2, 23 do
-        gpu.set(1, y, "│")
-        gpu.set(80, y, "│")
-    end
-    
-    -- ====================== АЛМАЗ ======================
-    local diamond = {
-        "             ▓▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▓            ",
-        "           ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▒▒▒▒▓          ",
-        "        ▓▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▓▓▓        ",
-        "      ▓▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▒▒▒▒▒▒▒▒▒▓      ",
-        "     ▒▒▒▒▒▒▒▒▒▒▒▓▓▓▓▒▒▒▒▒▒▒▒▒▒▓▓▓▓▒▒▒▒▓▓▓▒▒     ",
-        "     ▓▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▓▓▓▓▒▒▒▒▒▒▓▓      ",
-        "       ▓▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▓▓▓▓       ",
-        "        ▓▓▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▓▓▓▒▓▓▓▓         ",
-        "          ▓▒▒▒▒▒▒▒▒▓▓▓▒▒▒▒▒▓▓▓▓▓▓▓▓▓▓▓          ",
-        "            ▓▒▒▒▒▒▓▓▓▓▓▒▒▓▓▓▓▓▓▓▓▓▓▓            ",
-        "             ▓▒▒▒▒▒▓▓▓▓▒▒▓▓▓▓▓▒▓▓▓▓             ",
-        "               ▓▒▒▒▒▓▓▓▒▒▓▓▓▓▓▓▓▓               ",
-        "                 ▓▒▒▒▓▓▒▒▓▓▓▓▓▓▓                ",
-        "                  ▓▒▒▒▓▓▒▓▓▓▓▓                  ",
-        "                    ▓▒▒▒▒▓▒▓▓                   ",
-        "                      ▓▒▒▒▓▓                    ",
-        "                        ▒▓                      ",
-    }
-    
-    local gradient = {
-        0x112244, 0x223366, 0x335599, 0x4477BB,
-        0x5599DD, 0x77BBFF, 0x99CCFF, 0xBBDDFF
-    }
-    
-    local diamX = 17
-    local diamY = 2
-    
-    for i, line in ipairs(diamond) do
-        local color = gradient[math.min(math.floor((i-1) / 2) + 1, #gradient)]
-        gpu.setForeground(color)
-        gpu.set(diamX, diamY + i - 1, line)
-    end
-    
-    -- Текст
-    local cx = 41
-    gpu.setForeground(0x00FFCC)
-    gpu.set(cx - 2, 20, "VIP SHOP")
-    gpu.setForeground(0xFFFF00)
-    gpu.set(cx - 6, 21, "◆ McSkill HiTech ◆")
-    
-    if shopPaused then
-        gpu.setForeground(colors.error)
-        drawCenteredText(17, "РЕЖИМ ОБСЛУЖИВАНИЯ", colors.error)
-        drawCenteredText(18, "Магазин временно закрыт", colors.error)
-        drawCenteredText(19, "Пожалуйста, зайдите позже", colors.text_main)
-    else
-        gpu.setForeground(colors.text_bright)
-        drawCenteredText(17, "АВТОРИЗАЦИЯ", 0x00FFCC)
-        gpu.setForeground(colors.text_main)
-        drawCenteredText(18, "Пожалуйста, подождите...", colors.text_main)
-    end
-    
-    gpu.setBackground(colors.bg_main)
-    drawTempMessage()
-end
 
 function drawMainMenu()
     writeDebugLog("drawMainMenu()")

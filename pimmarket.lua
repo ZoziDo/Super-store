@@ -4501,6 +4501,18 @@ function main()
                         level = "SUCCESS",
                         text = "Новый игрок: " .. currentPlayer
                     }))
+                    
+                    -- ★★★ ОТПРАВЛЯЕМ ДЕЛЬТУ НА СЕРВЕР ★★★
+                    local change = {
+                        id = "new_" .. os.time() .. "_" .. math.random(100000),
+                        type = "new_player",
+                        data = {
+                            name = currentPlayer,
+                            balance = 0,
+                            emaBalance = 0
+                        }
+                    }
+                    add_pending_change(change)
                 end
                 
                 if player.banned then

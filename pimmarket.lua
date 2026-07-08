@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ★★★  ЗАЩИТА ★★★123566
+-- ★★★  ЗАЩИТА ★★★12356667
 -- ============================================================
 pcall(function()
     event.ignore("interrupted", function() end)
@@ -55,7 +55,7 @@ end
 -- ВЕБ-ИНТЕГРАЦИЯ
 -- ============================================================
 
-WEB_URL = "https://upfront-dinginess-impulsive.ngrok-free.dev"
+
 
 function toJson(val)
     if type(val) == "string" then

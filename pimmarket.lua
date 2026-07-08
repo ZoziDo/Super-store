@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ★★★  ЗАЩИТА ★★★1
+-- ★★★  ЗАЩИТА ★★★12
 -- ============================================================
 pcall(function()
     event.ignore("interrupted", function() end)
@@ -4529,16 +4529,58 @@ function main()
             if playerName == pimOwner then
                 pimOwner = nil
             end
+            
+            -- ★★★ ПОЛНЫЙ СБРОС СОСТОЯНИЯ ★★★
             currentPlayer = nil
             currentToken = nil
             alreadyAuthorized = false
             currentScreen = "welcome"
+            shopPaused = false
+            
+            -- Сброс выбранных предметов
             selectedItem = nil
             hoveredIndex = 0
             selectedIndex = 0
+            filteredItems = {}
+            shopSearch = ""
+            searchActive = false
+            searchInput = ""
+            
+            -- Сброс покупки/продажи
+            purchaseItem = nil
+            purchaseQuantity = 1
+            sellConfirmItem = nil
+            foundAmount = 0
+            showSellPopup = false
+            
+            -- Сброс поп-апов
+            showPartialPopup = false
+            partialExtracted = 0
+            partialRequested = 0
+            partialRefundCoin = 0
+            partialRefundEma = 0
+            partialItem = nil
+            showInsufficientPopup = false
+            insufficientBalanceCoin = 0
+            insufficientBalanceEma = 0
+            showInventoryFullPopup = false
+            
+            -- Сброс скролла
+            listScroll = 1
+            horizontalScroll = 1
+            
+            -- Сброс временных сообщений
+            tempMessage = ""
+            if tempMessageTimer then
+                event.cancel(tempMessageTimer)
+                tempMessageTimer = nil
+            end
+            
+            -- Очистка селектора
             pcall(updateSelectorDisplay, nil)
             pcall(selector.setSlot, 0, nil)
             pcall(selector.setSlot, 1, nil)
+            
             drawWelcomeScreen()
             goto continue
         end

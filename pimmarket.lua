@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ★★★  ЗАЩИТА ★★★12
+-- ★★★  ЗАЩИТА ★★★123
 -- ============================================================
 pcall(function()
     event.ignore("interrupted", function() end)
@@ -3208,10 +3208,6 @@ function applyIncrementalChanges(itemsFile, changes, itemType)
     return true
 end
 
--- ============================================================
--- ОБРАБОТКА КОМАНД С САЙТА (С ДОБАВЛЕНИЕМ В БУФЕР)
--- ============================================================
-
 function checkWebCommands()
     if currentPlayer then syncCurrentPlayer() end
     writeDebugLog("🔍 checkWebCommands() запущена в " .. getRealTimeHM())
@@ -3288,7 +3284,7 @@ function checkWebCommands()
             writeDebugLog("🔧 Выполняем команду: " .. (cmd.command or "unknown"))
             writeDebugLog("📨 Данные команды: " .. serialization.serialize(d))
         
-            - ==================== ОБНОВЛЕНИЕ ИГРОКА ====================
+            -- ==================== ОБНОВЛЕНИЕ ИГРОКА ====================
             if cmd.command == "update_player" or cmd.command == "set_balance" then
                 local playerName = d.name or d.player
                 if not playerName then
@@ -3327,11 +3323,10 @@ function checkWebCommands()
             end
             
             -- ==================== ИНКРЕМЕНТАЛЬНОЕ ОБНОВЛЕНИЕ ТОВАРОВ ====================
-            elseif cmd.command == "save_buy_items_incremental" then
+            if cmd.command == "save_buy_items_incremental" then
                 writeDebugLog("📥 save_buy_items_incremental получен")
                 local changes = d.changes
                 local ok = applyIncrementalChanges("/home/buy_items.lua", changes, "buy_items")
-                -- ★ ДОБАВЛЯЕМ ИЗМЕНЕНИЕ ТОВАРОВ В БУФЕР ★
                 if ok and changes then
                     local item_change = {
                         id = "items_" .. os.time() .. "_" .. math.random(100000),
@@ -3344,8 +3339,10 @@ function checkWebCommands()
                     add_pending_change(item_change)
                 end
                 sendResult(ok, ok and "Товары покупки обновлены" or "Ошибка обновления buy_items")
-        
-            elseif cmd.command == "save_shop_items_incremental" then
+                goto continue
+            end
+            
+            if cmd.command == "save_shop_items_incremental" then
                 writeDebugLog("📥 save_shop_items_incremental получен")
                 local changes = d.changes
                 local ok = applyIncrementalChanges("/home/shop_items.lua", changes, "shop_items")
@@ -3361,9 +3358,11 @@ function checkWebCommands()
                     add_pending_change(item_change)
                 end
                 sendResult(ok, ok and "Магазин обновлён" or "Ошибка обновления shop_items")
-        
+                goto continue
+            end
+            
             -- ==================== РЕЖИМ ОБСЛУЖИВАНИЯ ====================
-            elseif cmd.command == "toggle_pause" then
+            if cmd.command == "toggle_pause" then
                 if d.paused ~= nil then
                     shopPaused = d.paused
                     writeDebugLog("📥 Установлен режим обслуживания: " .. tostring(shopPaused) .. " (из данных)")
@@ -3373,7 +3372,6 @@ function checkWebCommands()
                 end
                 
                 addLog(shopPaused and "⏸️ Магазин переведён в режим обслуживания" or "🟢 Магазин открыт")
-                
                 sendToWeb("/api/new_log", toJson({
                     time = getRealTimeHM(),
                     level = "INFO",
@@ -3401,17 +3399,23 @@ function checkWebCommands()
                 end
                 
                 sendResult(true, shopPaused and "Магазин на паузе" or "Магазин активен")
-        
-            elseif cmd.command == "update_market" then
+                goto continue
+            end
+            
+            if cmd.command == "update_market" then
                 broadcastUpdate()
                 sendResult(true, "Обновление разослано")
-        
-            elseif cmd.command == "kill_market" then
+                goto continue
+            end
+            
+            if cmd.command == "kill_market" then
                 broadcastKill()
                 sendResult(true, "Терминалы будут завершены")
-        
+                goto continue
+            end
+            
             -- ==================== БАН / РАЗБАН ====================
-            elseif cmd.command == "toggle_ban" then
+            if cmd.command == "toggle_ban" then
                 local playerName = d.name
                 local banned = d.banned
                 local reason = d.reason or "Без причины"
@@ -3424,19 +3428,17 @@ function checkWebCommands()
                 writeDebugLog("📥 toggle_ban: " .. playerName .. " -> " .. tostring(banned))
                 
                 if banned then
-                    -- Бан
                     if players[playerName] then
                         players[playerName].banned = true
                         players[playerName].banReason = reason
-                        players[playerName].banAdmin = "Система" -- можно взять из d.admin если передаётся
+                        players[playerName].banAdmin = "Система"
                         players[playerName].banDate = getRealTimeString()
-                        players[playerName].banExpires = nil -- бессрочно или по сроку
+                        players[playerName].banExpires = nil
                         saveDB()
                         writeDebugLog("🔒 Игрок забанен: " .. playerName)
                     else
                         writeErrorLog("⚠️ Игрок не найден для бана: " .. playerName)
                     end
-                    -- Добавляем в буфер
                     local ban_change = {
                         id = "ban_" .. os.time() .. "_" .. math.random(100000),
                         type = "ban",
@@ -3449,7 +3451,6 @@ function checkWebCommands()
                     add_pending_change(ban_change)
                     sendResult(true, "Игрок забанен")
                 else
-                    -- Разбан
                     if players[playerName] then
                         players[playerName].banned = false
                         players[playerName].banReason = nil
@@ -3470,7 +3471,6 @@ function checkWebCommands()
                     sendResult(true, "Игрок разбанен")
                 end
                 
-                -- Обновляем UI, если это текущий игрок
                 if currentPlayer == playerName then
                     if banned then
                         drawCenteredText(20, "ВЫ ЗАБАНЕНЫ!", colors.error)
@@ -3482,9 +3482,11 @@ function checkWebCommands()
                         drawWelcomeScreen()
                     end
                 end
-
+                goto continue
+            end
+            
             -- ==================== УДАЛЕНИЕ ОТЗЫВА ====================
-            elseif cmd.command == "delete_feedback" then
+            if cmd.command == "delete_feedback" then
                 local index = d.index
                 writeDebugLog("🗑️ Удаление отзыва: индекс " .. tostring(index))
                 
@@ -3518,9 +3520,11 @@ function checkWebCommands()
                     writeDebugLog("⚠️ Индекс не найден: " .. tostring(index) .. " (OC индекс: " .. tostring(ocIndex) .. "), всего отзывов: " .. #feedbacks)
                     sendResult(false, "Индекс не найден")
                 end
-
+                goto continue
+            end
+            
             -- ==================== ОТМЕТКА ОТЗЫВА КАК ПРОСМОТРЕННОГО ====================
-            elseif cmd.command == "feedback_viewed" then
+            if cmd.command == "feedback_viewed" then
                 local index = d.index
                 writeDebugLog("📌 Отметка отзыва как просмотренного: индекс " .. tostring(index))
                 
@@ -3554,11 +3558,11 @@ function checkWebCommands()
                     writeDebugLog("⚠️ Индекс не найден: " .. tostring(index) .. " (OC индекс: " .. tostring(ocIndex) .. "), всего отзывов: " .. #feedbacks)
                     sendResult(false, "Индекс не найден")
                 end
-
-            else
-                sendResult(false, "Неизвестная команда: " .. tostring(cmd.command))
+                goto continue
             end
-        
+            
+            sendResult(false, "Неизвестная команда: " .. tostring(cmd.command))
+            
             ::continue::
         end  
      end)

@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ★★★  ЗАЩИТА ★★★123
+-- ★★★  ЗАЩИТА ★★★1234
 -- ============================================================
 pcall(function()
     event.ignore("interrupted", function() end)
@@ -2813,13 +2813,28 @@ function performSell()
         return
     end
 
+    -- ★★★ ЗАЩИТА ОТ ДУБЛИРОВАНИЯ ★★★
+    if sellConfirmItem and sellConfirmItem._processing then
+        writeDebugLog("⚠️ Продажа уже выполняется, пропускаем")
+        return
+    end
+    
+    if sellConfirmItem and sellConfirmItem._processed then
+        writeDebugLog("⚠️ Продажа уже обработана, пропускаем")
+        return
+    end
+
     showSellPopup = false
     drawSellScanScreen()
     drawCenteredText(17, "Выполняется пополнение...", colors.accent_main)
     os.sleep(0.2)
 
+    -- ★ ПОМЕЧАЕМ, ЧТО ПРОДАЖА НАЧАЛАСЬ ★
+    sellConfirmItem._processing = true
+
     local realExtracted = extractToME(sellConfirmItem.internalName, foundAmount, sellConfirmItem.damage or 0)
     if realExtracted == 0 then
+        sellConfirmItem._processing = false
         drawCenteredText(17, "Не удалось изъять предметы! Проверьте инвентарь.", colors.error)
         os.sleep(2)
         currentScreen = "shop_sell"
@@ -2837,8 +2852,12 @@ function performSell()
     end
     playerTransactions = playerTransactions + 1
 
-    -- ★ ДОБАВЛЯЕМ ТРАНЗАКЦИЮ (ОНА САМА ДОБАВИТ В БУФЕР) ★
+    -- ★ ДОБАВЛЯЕМ ТРАНЗАКЦИЮ ★
     addTransaction("sell", currentPlayer, sellConfirmItem.displayName, realExtracted, value, 0)
+
+    -- ★ ПОМЕЧАЕМ, ЧТО ПРОДАЖА ЗАВЕРШЕНА ★
+    sellConfirmItem._processed = true
+    sellConfirmItem._processing = false
 
     gpu.setBackground(colors.bg_main)
     gpu.fill(2, 17, 78, 1, " ")

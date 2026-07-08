@@ -1,7 +1,3 @@
--- ============================================================
--- ОСНОВНОЙ КОД МАГАЗИНА (PIM MARKET) – НОВАЯ АРХИТЕКТУРА
--- ============================================================
-
 local component = require("component")
 local event = require("event")
 local gpu = component.gpu
@@ -17,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ★★★  ЗАЩИТА ★★★1
+-- ★★★  ЗАЩИТА ★★★12
 -- ============================================================
 pcall(function()
     event.ignore("interrupted", function() end)
@@ -4243,8 +4239,9 @@ function main()
             end
             goto continue
         end
-
-        elseif e == "scroll" and (currentScreen == "shop_buy" or currentScreen == "shop_sell") then
+      end
+    
+        if e == "scroll" and (currentScreen == "shop_buy" or currentScreen == "shop_sell") then
             local playerName = ev[6] or "Неизвестный"
             if not isPimOwner(playerName) then
                 goto continue
@@ -4260,7 +4257,7 @@ function main()
                 end
             end
 
-        elseif e == "mouse_move" and (currentScreen == "shop_buy" or currentScreen == "shop_sell") then
+        if e == "mouse_move" and (currentScreen == "shop_buy" or currentScreen == "shop_sell") then
             if not pimOwner then
                 goto continue
             end
@@ -4285,7 +4282,7 @@ function main()
                 end
             end
 
-        elseif e == "key_down" then
+        if e == "key_down" then
             local playerName = ev[5] or "Неизвестный"
             local keyCode = ev[3] or 0
             
@@ -4376,7 +4373,7 @@ function main()
                 goto continue
             end
 
-        elseif e == "player_on" or e == "pim" or e == "pim_player_enter" then
+        if e == "player_on" or e == "pim" or e == "pim_player_enter" then
             local playerName = ev[2] or "Игрок"
             writeDebugLog("player_on: " .. playerName)
             
@@ -4534,7 +4531,7 @@ function main()
                 end
             end
 
-        elseif e == "player_off" or e == "pim_player_leave" then
+        if e == "player_off" or e == "pim_player_leave" then
             local playerName = ev[2] or "Игрок"
             writeDebugLog("player_off: " .. playerName)
             addLog("👤 Выход: " .. playerName)

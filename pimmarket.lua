@@ -55,7 +55,7 @@ end
 -- ВЕБ-ИНТЕГРАЦИЯ
 -- ============================================================
 
-WEB_URL = "https://upfront-dinginess-impulsive.ngrok-free.dev"
+WEB_URL = "https://pim-market-server--pasharazgonyaev.replit.app"
 
 function toJson(val)
     if type(val) == "string" then
@@ -4566,6 +4566,7 @@ function main()
 
         ::continue::
     end
+end
 
 -- ============================================================
 -- ЗАПУСК

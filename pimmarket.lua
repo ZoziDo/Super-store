@@ -12,9 +12,6 @@ local math = require("math")
 local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
--- ============================================================
--- ★★★  ЗАЩИТА ★★★12356667
--- ============================================================
 pcall(function()
     event.ignore("interrupted", function() end)
     event.ignore("terminate", function() end)
@@ -1878,13 +1875,13 @@ function drawWelcomeScreen()
     local sub_color = 0xFFFF00         -- Жёлтый подзаголовок
     local hint_color = 0xAAAAAA        -- Серый подсказка
     
-    -- Рамка
+    -- Рамка (нижняя граница на 24 строке)
     gpu.setForeground(border_color)
-    gpu.set(1, 1, "+" .. string.rep("=", 78) .. "+")
-    gpu.set(1, 25, "+" .. string.rep("=", 78) .. "┘+")
-    for y = 2, 24 do
-        gpu.set(1, y, "|")
-        gpu.set(80, y, "|")
+    gpu.set(1, 1, "┌" .. string.rep("─", 78) .. "┐")
+    gpu.set(1, 24, "└" .. string.rep("─", 78) .. "┘")
+    for y = 2, 23 do
+        gpu.set(1, y, "│")
+        gpu.set(80, y, "│")
     end
     
     -- ====================== АЛМАЗ ======================
@@ -1915,7 +1912,7 @@ function drawWelcomeScreen()
     }
     
     local diamX = 17
-    local diamY = 3
+    local diamY = 2  -- ← ПОДНЯЛ АЛМАЗ НА СТРОКУ ВЫШЕ
     
     for i, line in ipairs(diamond) do
         local color = gradient[math.min(math.floor((i-1) / 2) + 1, #gradient)]
@@ -1926,28 +1923,24 @@ function drawWelcomeScreen()
     -- ====================== ТЕКСТ ======================
     local cx = 41
     
-    -- Основной текст
+    -- Основной текст (поднял на строку выше)
     gpu.setForeground(text_color)
-    gpu.set(cx - 2, 21, "VIP SHOP")
+    gpu.set(cx - 2, 20, "VIP SHOP")        -- ← было 21, стало 20
     
-    -- Подзаголовок
+    -- Подзаголовок (поднял на строку выше)
     gpu.setForeground(sub_color)
-    gpu.set(cx - 6, 22, "◆ McSkill HiTech ◆")
+    gpu.set(cx - 6, 21, "◆ McSkill HiTech ◆")  -- ← было 22, стало 21
     
-    -- Подсказка
+    -- Подсказка (поднял на строку выше)
     gpu.setForeground(hint_color)
-    gpu.set(cx - 10, 23, "Встаньте на ПИМ для входа")
+    gpu.set(cx - 10, 22, "Встаньте на ПИМ для входа")  -- ← было 23, стало 22
     
-    -- ====================== СОСТОЯНИЕ МАГАЗИНА ======================
+    -- ====================== РЕЖИМ ОБСЛУЖИВАНИЯ ======================
     if shopPaused then
         gpu.setForeground(colors.error)
         drawCenteredText(18, "РЕЖИМ ОБСЛУЖИВАНИЯ", colors.error)
         drawCenteredText(19, "Магазин временно закрыт", colors.error)
         drawCenteredText(20, "Пожалуйста, зайдите позже", colors.text_main)
-    else
-        gpu.setForeground(colors.success)
-        -- drawCenteredText(18, "↓   Встаньте на PIM   ↓", colors.accent_main)
-        -- drawCenteredText(19, "━━━━━━━━━━━━━━━━━━━", colors.accent_main)
     end
     
     gpu.setBackground(colors.bg_main)

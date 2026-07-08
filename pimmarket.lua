@@ -4481,35 +4481,48 @@ function main()
             end
 
             if banInfo then
-                gpu.setBackground(colors.bg_main)
-                gpu.fill(1, 1, 80, 25, " ")
-                drawBigTitle()
-                drawCenteredText(8, "ВЫ ЗАБЛОКИРОВАНЫ", colors.error)
-                drawCenteredText(10, "Причина: " .. (banInfo.reason or "Не указана"), colors.text_main)
-                drawCenteredText(11, "Администратор: " .. (banInfo.admin or "Система"), colors.text_main)
-                drawCenteredText(12, "Дата: " .. (banInfo.date or ""), colors.text_main)
-                if banInfo.expires then
-                    drawCenteredText(13, "Срок истекает: " .. banInfo.expires, colors.text_main)
-                else
-                    drawCenteredText(13, "Бессрочный бан", colors.text_main)
-                end
-                drawCenteredText(15, "Доступ запрещён", colors.error)
-                drawTempMessage()
-                
-                while true do
-                    local ev2 = {event.pull(1)}
-                    if ev2[1] == "player_off" or ev2[1] == "pim_player_leave" then
-                        writeDebugLog("👤 Игрок ушёл с PIM: " .. playerName)
-                        drawWelcomeScreen()
-                        break
-                    end
-                end
-                currentPlayer = nil
-                pimOwner = nil
-                alreadyAuthorized = false
-                currentScreen = "welcome"
-                goto continue
+            -- ★★★ ПОЛНОСТЬЮ ОЧИЩАЕМ ЭКРАН БЕЗ VIP SHOP ★★★
+            gpu.setBackground(colors.bg_main)
+            gpu.fill(1, 1, 80, 25, " ")
+            
+            -- Рисуем баннер БЕЗ drawBigTitle()
+            gpu.setForeground(colors.error)
+            drawCenteredText(6, "╔══════════════════════════════════════════════════════════════╗", colors.error)
+            drawCenteredText(7, "║                     ВЫ ЗАБЛОКИРОВАНЫ                        ║", colors.error)
+            drawCenteredText(8, "╚══════════════════════════════════════════════════════════════╝", colors.error)
+            
+            drawCenteredText(10, "Причина: " .. (banInfo.reason or "Не указана"), colors.text_main)
+            drawCenteredText(11, "Администратор: " .. (banInfo.admin or "Система"), colors.text_main)
+            drawCenteredText(12, "Дата: " .. (banInfo.date or ""), colors.text_main)
+            
+            if banInfo.expires then
+                drawCenteredText(13, "Срок истекает: " .. banInfo.expires, colors.text_main)
+            else
+                drawCenteredText(13, "Бессрочный бан", colors.text_main)
             end
+            
+            drawCenteredText(15, "Доступ запрещён", colors.error)
+            
+            -- Рисуем нижнюю границу
+            gpu.setForeground(colors.accent_secondary)
+            drawCenteredText(22, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", colors.accent_secondary)
+            
+            drawTempMessage()
+            
+            while true do
+                local ev2 = {event.pull(1)}
+                if ev2[1] == "player_off" or ev2[1] == "pim_player_leave" then
+                    writeDebugLog("👤 Игрок ушёл с PIM: " .. playerName)
+                    drawWelcomeScreen()
+                    break
+                end
+            end
+            currentPlayer = nil
+            pimOwner = nil
+            alreadyAuthorized = false
+            currentScreen = "welcome"
+            goto continue
+        end
             
             if alreadyAuthorized then
                 if currentScreen == "auth" or currentScreen == "account_loading" then

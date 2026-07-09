@@ -3985,514 +3985,515 @@ function main()
             end
         end
 
-        if e == "touch" then
-            local x = tonumber(ev[3]) or 0
-            local y = tonumber(ev[4]) or 0
-            local playerName = ev[6] or "Неизвестный"
-            
-            if not isPimOwner(playerName) then
-                goto continue
-            end
-
-            if currentScreen == "menu" then
-                for name, btn in pairs(menuButtons) do
-                    if x >= btn.x and x < btn.x + btn.xs and y >= btn.y and y < btn.y + btn.ys then
-                        if name == "shop" then
-                            if playerAgreed then
-                                goToShop()
-                            else
-                                showShopDenied = true
-                                drawMainMenu()
-                            end
-                        elseif name == "account" then
-                            showShopDenied = false
-                            goToAccount()
-                        end
-                        goto continue
-                    end
-                end
-
-            if currentScreen == "shop" then
-                for name, btn in pairs(shopMenuButtons) do
-                    if x >= btn.x and x < btn.x + btn.xs and y >= btn.y and y < btn.y + btn.ys then
-                        if name == "buy" then
-                            goToBuy()
-                        elseif name == "sell" then
-                            goToSell()
-                        end
-                        goto continue
-                    end
-                end
-                local backButton = {
-                    text = "[ НАЗАД ]",
-                    x = 37, y = 24,
-                    xs = unicode.len("[ НАЗАД ]") + 2,
-                    ys = 1,
-                    bg = colors.bg_button,
-                    fg = colors.accent_secondary
-                }
-                if isButtonClicked(backButton, x, y) then
-                    goBackToMenu()
-                    goto continue
-                end
-            end
-
-            if currentScreen == "shop_buy" or currentScreen == "shop_sell" then
-                if y >= 7 and y <= 21 and x >= 2 and x <= 77 then
-                    local relativeRow = y - 6
-                    local clickedIndex = (listScroll or 1) + relativeRow - 1
-                    local item = filteredItems[clickedIndex]
-                    if item and (currentShopMode ~= "buy" or item.qty > 0) then
-                        selectedIndex = clickedIndex
-                        selectedItem = item
-                        hoveredIndex = 0
-                        updateSelectorDisplay(selectedItem)
-                        drawBuyItemsList()
-                        drawBuyButtons()
-                    end
-                    goto continue
-                end
-
-                if x >= 78 and y >= 7 and y <= 21 then
-                    local total = #filteredItems
-                    if total > visibleRows then
-                        local clickPos = y - 6
-                        listScroll = math.floor((clickPos - 1) * (total - visibleRows) / visibleRows) + 1
-                        drawBuyItemsList()
-                    end
-                    goto continue
-                end
-
-                if y == 3 and x >= 42 and x <= 64 then
-                    searchActive = true
-                    searchInput = shopSearch or ""
-                    redrawSearchField()
-                    drawBuyItemsList()
-                    goto continue
-                end
-
-                if y == 3 and x >= 66 and x <= 78 then
-                    shopSearch = ""
-                    searchInput = ""
-                    searchActive = false
-                    redrawSearchField()
-                    listScroll = 1
-                    selectedIndex = 0
-                    selectedItem = nil
-                    hoveredIndex = 0
-                    drawBuyItemsList()
-                    drawBuyButtons()
-                    goto continue
-                end
-
-                local backButton = {
-                    text = "[ НАЗАД ]",
-                    x = 37, y = 24,
-                    xs = unicode.len("[ НАЗАД ]") + 2,
-                    ys = 1,
-                    bg = colors.bg_button,
-                    fg = colors.accent_secondary
-                }
-                local nextButton = {}
-                if currentShopMode == "buy" then
-                    nextButton.text = "[ КУПИТЬ ]"
-                    nextButton.xs = unicode.len(nextButton.text) + 2
-                else
-                    nextButton.text = "[ ПРОДАТЬ ]"
-                    nextButton.xs = unicode.len(nextButton.text) + 2
-                end
-                nextButton.x = 59
-                nextButton.y = 24
-                nextButton.ys = 1
-                nextButton.bg = colors.bg_button
-                nextButton.fg = colors.inactive
-
-                if selectedItem and (currentShopMode ~= "buy" or selectedItem.qty > 0) then
-                    nextButton.fg = colors.accent_secondary
-                else
-                    nextButton.fg = colors.inactive
-                end
-
-                if isButtonClicked(backButton, x, y) then
-                    currentScreen = "shop"
-                    selectedIndex = 0
-                    selectedItem = nil
-                    hoveredIndex = 0
-                    updateSelectorDisplay(nil)
-                    drawShopMenu()
-                    goto continue
-                end
-
-                if isButtonClicked(nextButton, x, y) then
-                    if selectedItem and (currentShopMode ~= "buy" or selectedItem.qty > 0) then
-                        if currentShopMode == "buy" then
-                            local needCoin = selectedItem.priceCoin or 0
-                            local needEma = selectedItem.priceEma or 0
-                            if (needCoin > 0 and coinBalance < needCoin) or (needEma > 0 and emaBalance < needEma) then
-                                showInsufficientPopup = true
-                                insufficientBalanceCoin = coinBalance
-                                insufficientBalanceEma = emaBalance
-                                drawBuyStatic()
-                                drawBuyItemsList()
-                                drawBuyButtons()
-                                drawInsufficientPopup()
-                                goto continue
-                            end
-                            goToPurchase(selectedItem)
+       if e == "touch" then
+        local x = tonumber(ev[3]) or 0
+        local y = tonumber(ev[4]) or 0
+        local playerName = ev[6] or "Неизвестный"
+        
+        if not isPimOwner(playerName) then
+            goto continue
+        end
+    
+        if currentScreen == "menu" then
+            for name, btn in pairs(menuButtons) do
+                if x >= btn.x and x < btn.x + btn.xs and y >= btn.y and y < btn.y + btn.ys then
+                    if name == "shop" then
+                        if playerAgreed then
+                            goToShop()
                         else
-                            goToSellConfirm(selectedItem)
+                            showShopDenied = true
+                            drawMainMenu()
                         end
+                    elseif name == "account" then
+                        showShopDenied = false
+                        goToAccount()
                     end
                     goto continue
                 end
-
-                if searchActive then
-                    shopSearch = searchInput or ""
-                    searchActive = false
-                    listScroll = 1
-                    selectedIndex = 0
-                    selectedItem = nil
+            end
+            -- ★ ЗАКРЫВАЕМ if currentScreen == "menu" ★
+        end
+    
+        if currentScreen == "shop" then
+            for name, btn in pairs(shopMenuButtons) do
+                if x >= btn.x and x < btn.x + btn.xs and y >= btn.y and y < btn.y + btn.ys then
+                    if name == "buy" then
+                        goToBuy()
+                    elseif name == "sell" then
+                        goToSell()
+                    end
+                    goto continue
+                end
+            end
+            local backButton = {
+                text = "[ НАЗАД ]",
+                x = 37, y = 24,
+                xs = unicode.len("[ НАЗАД ]") + 2,
+                ys = 1,
+                bg = colors.bg_button,
+                fg = colors.accent_secondary
+            }
+            if isButtonClicked(backButton, x, y) then
+                goBackToMenu()
+                goto continue
+            end
+        end
+    
+        if currentScreen == "shop_buy" or currentScreen == "shop_sell" then
+            if y >= 7 and y <= 21 and x >= 2 and x <= 77 then
+                local relativeRow = y - 6
+                local clickedIndex = (listScroll or 1) + relativeRow - 1
+                local item = filteredItems[clickedIndex]
+                if item and (currentShopMode ~= "buy" or item.qty > 0) then
+                    selectedIndex = clickedIndex
+                    selectedItem = item
                     hoveredIndex = 0
+                    updateSelectorDisplay(selectedItem)
                     drawBuyItemsList()
                     drawBuyButtons()
-                    goto continue
-                end
-
-            elseif showSellPopup and currentScreen == "sell_scan" then
-                local popupWidth = 40
-                local popupHeight = 10
-                local popupX = math.floor((80 - popupWidth) / 2)
-                local popupY = 10
-                local yesBtn = {x=popupX+5, y=popupY+7, xs=13, ys=1}
-                local noBtn  = {x=popupX+popupWidth-16, y=popupY+7, xs=12, ys=1}
-                if isButtonClicked(yesBtn, x, y) then
-                    performSell()
-                elseif isButtonClicked(noBtn, x, y) then
-                    showSellPopup = false
-                    drawSellScanScreen()
-                elseif not (x >= popupX and x < popupX + popupWidth and y >= popupY and y < popupY + popupHeight) then
-                    showSellPopup = false
-                    drawSellScanScreen()
                 end
                 goto continue
-
-            elseif currentScreen == "purchase" then
-                if (y >= 24 and y <= 24) and (x >= 19 and x <= 28) then
-                    if currentShopMode == "buy" then
-                        currentScreen = "shop_buy"
-                        drawBuyStatic()
-                        drawBuyItemsList()
-                        drawBuyButtons()
-                    else
-                        currentScreen = "shop_sell"
-                        drawBuyStatic()
-                        drawBuyItemsList()
-                        drawBuyButtons()
-                    end
-                    goto continue
-                elseif (y >= 24 and y <= 24) and (x >= 51 and x <= 61) then
-                    performBuy()
-                    goto continue
+            end
+    
+            if x >= 78 and y >= 7 and y <= 21 then
+                local total = #filteredItems
+                if total > visibleRows then
+                    local clickPos = y - 6
+                    listScroll = math.floor((clickPos - 1) * (total - visibleRows) / visibleRows) + 1
+                    drawBuyItemsList()
                 end
-
-                local startX = 34
-                local startY = 11
-                local btnW = 3
-                local btnH = 1
-                local spacing = 2
-                local keys = {
-                    {"1","2","3"},
-                    {"4","5","6"},
-                    {"7","8","9"},
-                    {"<","0","C"}
-                }
-                for row = 1, 4 do
-                    for col = 1, 3 do
-                        local bx = startX + (col-1)*(btnW + spacing)
-                        local by = startY + (row-1)*(btnH + 1)
-                        if x >= bx and x < bx+btnW and y >= by and y < by+btnH then
-                            handleQuantityButtonClick(keys[row][col])
+                goto continue
+            end
+    
+            if y == 3 and x >= 42 and x <= 64 then
+                searchActive = true
+                searchInput = shopSearch or ""
+                redrawSearchField()
+                drawBuyItemsList()
+                goto continue
+            end
+    
+            if y == 3 and x >= 66 and x <= 78 then
+                shopSearch = ""
+                searchInput = ""
+                searchActive = false
+                redrawSearchField()
+                listScroll = 1
+                selectedIndex = 0
+                selectedItem = nil
+                hoveredIndex = 0
+                drawBuyItemsList()
+                drawBuyButtons()
+                goto continue
+            end
+    
+            local backButton = {
+                text = "[ НАЗАД ]",
+                x = 37, y = 24,
+                xs = unicode.len("[ НАЗАД ]") + 2,
+                ys = 1,
+                bg = colors.bg_button,
+                fg = colors.accent_secondary
+            }
+            local nextButton = {}
+            if currentShopMode == "buy" then
+                nextButton.text = "[ КУПИТЬ ]"
+                nextButton.xs = unicode.len(nextButton.text) + 2
+            else
+                nextButton.text = "[ ПРОДАТЬ ]"
+                nextButton.xs = unicode.len(nextButton.text) + 2
+            end
+            nextButton.x = 59
+            nextButton.y = 24
+            nextButton.ys = 1
+            nextButton.bg = colors.bg_button
+            nextButton.fg = colors.inactive
+    
+            if selectedItem and (currentShopMode ~= "buy" or selectedItem.qty > 0) then
+                nextButton.fg = colors.accent_secondary
+            else
+                nextButton.fg = colors.inactive
+            end
+    
+            if isButtonClicked(backButton, x, y) then
+                currentScreen = "shop"
+                selectedIndex = 0
+                selectedItem = nil
+                hoveredIndex = 0
+                updateSelectorDisplay(nil)
+                drawShopMenu()
+                goto continue
+            end
+    
+            if isButtonClicked(nextButton, x, y) then
+                if selectedItem and (currentShopMode ~= "buy" or selectedItem.qty > 0) then
+                    if currentShopMode == "buy" then
+                        local needCoin = selectedItem.priceCoin or 0
+                        local needEma = selectedItem.priceEma or 0
+                        if (needCoin > 0 and coinBalance < needCoin) or (needEma > 0 and emaBalance < needEma) then
+                            showInsufficientPopup = true
+                            insufficientBalanceCoin = coinBalance
+                            insufficientBalanceEma = emaBalance
+                            drawBuyStatic()
+                            drawBuyItemsList()
+                            drawBuyButtons()
+                            drawInsufficientPopup()
                             goto continue
                         end
+                        goToPurchase(selectedItem)
+                    else
+                        goToSellConfirm(selectedItem)
                     end
                 end
-
-            elseif currentScreen == "sell_scan" then
-                local backButton = {
-                    text = "[ НАЗАД ]",
-                    x = 37, y = 24,
-                    xs = unicode.len("[ НАЗАД ]") + 2,
-                    ys = 1,
-                    bg = colors.bg_button,
-                    fg = colors.accent_secondary
-                }
-                if isButtonClicked(backButton, x, y) then
-                    currentScreen = "shop_sell"
-                    showSellPopup = false
+                goto continue
+            end
+    
+            if searchActive then
+                shopSearch = searchInput or ""
+                searchActive = false
+                listScroll = 1
+                selectedIndex = 0
+                selectedItem = nil
+                hoveredIndex = 0
+                drawBuyItemsList()
+                drawBuyButtons()
+                goto continue
+            end
+        -- ★ ЗАКРЫВАЕМ if currentScreen == "shop_buy" or currentScreen == "shop_sell" ★
+        end
+    
+        if showSellPopup and currentScreen == "sell_scan" then
+            local popupWidth = 40
+            local popupHeight = 10
+            local popupX = math.floor((80 - popupWidth) / 2)
+            local popupY = 10
+            local yesBtn = {x=popupX+5, y=popupY+7, xs=13, ys=1}
+            local noBtn  = {x=popupX+popupWidth-16, y=popupY+7, xs=12, ys=1}
+            if isButtonClicked(yesBtn, x, y) then
+                performSell()
+            elseif isButtonClicked(noBtn, x, y) then
+                showSellPopup = false
+                drawSellScanScreen()
+            elseif not (x >= popupX and x < popupX + popupWidth and y >= popupY and y < popupY + popupHeight) then
+                showSellPopup = false
+                drawSellScanScreen()
+            end
+            goto continue
+        end
+    
+        if currentScreen == "purchase" then
+            if (y >= 24 and y <= 24) and (x >= 19 and x <= 28) then
+                if currentShopMode == "buy" then
+                    currentScreen = "shop_buy"
                     drawBuyStatic()
                     drawBuyItemsList()
                     drawBuyButtons()
-                    goto continue
-                elseif y == 13 and x >= 30 and x <= 50 then
-                    drawCenteredText(17, "Сканирование...", colors.accent_secondary)
-                    os.sleep(0.6)
-                    if not sellConfirmItem then
-                        writeErrorLog("❌ sellConfirmItem = nil при сканировании!")
+                else
+                    currentScreen = "shop_sell"
+                    drawBuyStatic()
+                    drawBuyItemsList()
+                    drawBuyButtons()
+                end
+                goto continue
+            elseif (y >= 24 and y <= 24) and (x >= 51 and x <= 61) then
+                performBuy()
+                goto continue
+            end
+    
+            local startX = 34
+            local startY = 11
+            local btnW = 3
+            local btnH = 1
+            local spacing = 2
+            local keys = {
+                {"1","2","3"},
+                {"4","5","6"},
+                {"7","8","9"},
+                {"<","0","C"}
+            }
+            for row = 1, 4 do
+                for col = 1, 3 do
+                    local bx = startX + (col-1)*(btnW + spacing)
+                    local by = startY + (row-1)*(btnH + 1)
+                    if x >= bx and x < bx+btnW and y >= by and y < by+btnH then
+                        handleQuantityButtonClick(keys[row][col])
                         goto continue
                     end
-                    foundAmount = scanPlayerInventory(sellConfirmItem.internalName, sellConfirmItem.damage or 0)
-                    if foundAmount > 0 then
-                        showSellPopup = true
-                        drawSellScanScreen()
-                    else
-                        drawCenteredText(17, "Предмет не найден!", colors.error)
-                        os.sleep(0.8)
-                        drawSellScanScreen()
-                    end
+                end
+            end
+        end
+    
+        if currentScreen == "sell_scan" then
+            local backButton = {
+                text = "[ НАЗАД ]",
+                x = 37, y = 24,
+                xs = unicode.len("[ НАЗАД ]") + 2,
+                ys = 1,
+                bg = colors.bg_button,
+                fg = colors.accent_secondary
+            }
+            if isButtonClicked(backButton, x, y) then
+                currentScreen = "shop_sell"
+                showSellPopup = false
+                drawBuyStatic()
+                drawBuyItemsList()
+                drawBuyButtons()
+                goto continue
+            elseif y == 13 and x >= 30 and x <= 50 then
+                drawCenteredText(17, "Сканирование...", colors.accent_secondary)
+                os.sleep(0.6)
+                if not sellConfirmItem then
+                    writeErrorLog("❌ sellConfirmItem = nil при сканировании!")
                     goto continue
                 end
-
-            elseif currentScreen == "report" then
-                local backButton = {
-                    text = "[ НАЗАД ]",
-                    x = 37, y = 24,
-                    xs = unicode.len("[ НАЗАД ]") + 2,
-                    ys = 1,
-                    bg = colors.bg_button,
-                    fg = colors.accent_secondary
-                }
-                if isButtonClicked(backButton, x, y) then
-                    goBackToMenu()
-                    goto continue
+                foundAmount = scanPlayerInventory(sellConfirmItem.internalName, sellConfirmItem.damage or 0)
+                if foundAmount > 0 then
+                    showSellPopup = true
+                    drawSellScanScreen()
+                else
+                    drawCenteredText(17, "Предмет не найден!", colors.error)
+                    os.sleep(0.8)
+                    drawSellScanScreen()
                 end
-                if canSendReport() then
+                goto continue
+            end
+        end
+    
+        if currentScreen == "report" then
+            local backButton = {
+                text = "[ НАЗАД ]",
+                x = 37, y = 24,
+                xs = unicode.len("[ НАЗАД ]") + 2,
+                ys = 1,
+                bg = colors.bg_button,
+                fg = colors.accent_secondary
+            }
+            if isButtonClicked(backButton, x, y) then
+                goBackToMenu()
+                goto continue
+            end
+            if canSendReport() then
                 local sendBtn = {x=33, y=14, xs=17, ys=1}
                 if isButtonClicked(sendBtn, x, y) and reportInput and reportInput ~= "" then
                     addReportToLocal(currentPlayer or "?", reportInput)
-                    
                     sendToWeb("/api/new_report", toJson({
                         time = getRealTimeString(),
                         name = currentPlayer or "?",
                         text = reportInput
                     }))
-                    
                     local file = io.open(REPORTS_PATH, "a")
                     if file then
                         file:write("[" .. getRealTimeString() .. "] " .. (currentPlayer or "?") .. ": " .. reportInput .. "\n")
                         file:close()
                     end
-                    
                     addLog("📩 Репорт от " .. (currentPlayer or "?"))
                     lastReportTime = getRealTimestamp()
                     globalStats.totalReports = (globalStats.totalReports or 0) + 1
                     saveGlobalStats()
-                    
                     drawCenteredText(18, "Сообщение успешно отправлено! Ожидайте ответа.", colors.success)
                     os.sleep(0.8)
                     goBackToMenu()
                     goto continue
                 end
             end
-
-
-            elseif currentScreen == "feedbacks" then
-                local backBtn = {x=5, y=24, xs=11, ys=1}
-                if isButtonClicked(backBtn, x, y) then
-                    currentScreen = "menu"
-                    drawMainMenu()
-                    goto continue
-                end
-                local addBtn = {x=36, y=24, xs=14, ys=1}
-                if isButtonClicked(addBtn, x, y) then
-                    if playerHasFeedback then
-                        showTempMessage("Вы уже оставляли отзыв!", 2)
-                    else
-                        feedbackInput = ""
-                        feedbackEditMode = true
-                        drawFeedbackInputScreen()
-                    end
-                    goto continue
-                end
-                if isButtonClicked({x=59, y=24, xs=7, ys=1}, x, y) and feedbacksPage > 1 then
-                    feedbacksPage = feedbacksPage - 1
-                    drawFeedbacksList()
-                    goto continue
-                end
-                if isButtonClicked({x=69, y=24, xs=7, ys=1}, x, y) and feedbacksPage < feedbacksTotalPages then
-                    feedbacksPage = feedbacksPage + 1
-                    drawFeedbacksList()
-                    goto continue
-                end
-
-            elseif currentScreen == "feedback_input" then
-                if isButtonClicked({x=20, y=24, xs=12, ys=1}, x, y) then
-                    feedbackEditMode = false
+        end
+    
+        if currentScreen == "feedbacks" then
+            local backBtn = {x=5, y=24, xs=11, ys=1}
+            if isButtonClicked(backBtn, x, y) then
+                currentScreen = "menu"
+                drawMainMenu()
+                goto continue
+            end
+            local addBtn = {x=36, y=24, xs=14, ys=1}
+            if isButtonClicked(addBtn, x, y) then
+                if playerHasFeedback then
+                    showTempMessage("Вы уже оставляли отзыв!", 2)
+                else
                     feedbackInput = ""
-                    currentScreen = "feedbacks"
-                    drawFeedbacksList()
-                    goto continue
+                    feedbackEditMode = true
+                    drawFeedbackInputScreen()
                 end
-                if isButtonClicked({x=46, y=24, xs=15, ys=1}, x, y) and feedbackInput and feedbackInput ~= "" then
-                    local feedbacks = {}
-                    if fs.exists(FEEDBACKS_PATH) then
-                        local file = io.open(FEEDBACKS_PATH, "r")
-                        if file then
-                            local data = file:read("*a")
-                            file:close()
-                            if data and #data > 0 then
-                                local ok, result = pcall(serialization.unserialize, data)
-                                if ok and type(result) == "table" then feedbacks = result end
-                            end
+                goto continue
+            end
+            if isButtonClicked({x=59, y=24, xs=7, ys=1}, x, y) and feedbacksPage > 1 then
+                feedbacksPage = feedbacksPage - 1
+                drawFeedbacksList()
+                goto continue
+            end
+            if isButtonClicked({x=69, y=24, xs=7, ys=1}, x, y) and feedbacksPage < feedbacksTotalPages then
+                feedbacksPage = feedbacksPage + 1
+                drawFeedbacksList()
+                goto continue
+            end
+        end
+    
+        if currentScreen == "feedback_input" then
+            if isButtonClicked({x=20, y=24, xs=12, ys=1}, x, y) then
+                feedbackEditMode = false
+                feedbackInput = ""
+                currentScreen = "feedbacks"
+                drawFeedbacksList()
+                goto continue
+            end
+            if isButtonClicked({x=46, y=24, xs=15, ys=1}, x, y) and feedbackInput and feedbackInput ~= "" then
+                local feedbacks = {}
+                if fs.exists(FEEDBACKS_PATH) then
+                    local file = io.open(FEEDBACKS_PATH, "r")
+                    if file then
+                        local data = file:read("*a")
+                        file:close()
+                        if data and #data > 0 then
+                            local ok, result = pcall(serialization.unserialize, data)
+                            if ok and type(result) == "table" then feedbacks = result end
                         end
                     end
-                    table.insert(feedbacks, 1, {
-                        name = currentPlayer or "Аноним",
-                        text = feedbackInput,
-                        time = getRealTimeString()
-                    })
-                    local file = io.open(FEEDBACKS_PATH, "w")
-                    if file then
-                        file:write(serialization.serialize(feedbacks))
-                        file:close()
-                    end
-                    playerHasFeedback = true
-                    showTempMessage("✅ Отзыв отправлен! Спасибо!", 10)
-                    feedbackEditMode = false
-                    feedbackInput = ""
-                    currentScreen = "feedbacks"
-                    drawFeedbacksList()
-                    goto continue
                 end
-
-            elseif currentScreen == "agreement" then
-                local backButton = {
-                    text = "[ НАЗАД ]",
-                    x = 37, y = 24,
-                    xs = unicode.len("[ НАЗАД ]") + 2,
-                    ys = 1,
-                    bg = colors.bg_button,
-                    fg = colors.accent_secondary
-                }
-                if isButtonClicked(backButton, x, y) then
-                    goBackToMenu()
-                    goto continue
+                table.insert(feedbacks, 1, {
+                    name = currentPlayer or "Аноним",
+                    text = feedbackInput,
+                    time = getRealTimeString()
+                })
+                local file = io.open(FEEDBACKS_PATH, "w")
+                if file then
+                    file:write(serialization.serialize(feedbacks))
+                    file:close()
                 end
-                local btnText = "[ ПОНЯТНО ]"
-                local btnW = unicode.len(btnText) + 4
-                local btnX = math.floor((80 - btnW)/2) + 2
-                if y == 22 and x >= btnX and x <= btnX + btnW then
-                    playerAgreed = true
-                    local player = players[currentPlayer]
-                    if player then
-                        player.agreed = true
-                        saveDBDeferred()
-                    end
-                    showTempMessage("✅ Спасибо! Теперь вам доступен магазин.", 2)
-                    goBackToMenu()
-                    goto continue
-                end
-
-             elseif currentScreen == "account" or currentScreen == "account_loading" then
-                -- Кнопка НАЗАД (x=50)
-                local backButton = {
-                    text = "[ НАЗАД ]",
-                    x = 50, y = 24,
-                    xs = unicode.len("[ НАЗАД ]") + 2,
-                    ys = 1,
-                    bg = colors.bg_button,
-                    fg = colors.accent_secondary
-                }
-                if isButtonClicked(backButton, x, y) then
-                    goBackToMenu()
-                    goto continue
-                end
-
-                -- ★★★ КНОПКА АУТЕНТИФИКАЦИИ (x=20) ★★★
-                local authBtn = {
-                    text = "[ АУТЕНТИФИКАЦИЯ ]",
-                    x = 20, y = 24,
-                    xs = unicode.len("[ АУТЕНТИФИКАЦИЯ ]") + 2,
-                    ys = 1,
-                    bg = colors.bg_button,
-                    fg = colors.accent_secondary
-                }
-                if isButtonClicked(authBtn, x, y) then
-                    showAuthPopup()
-                    goto continue
-                end
+                playerHasFeedback = true
+                showTempMessage("✅ Отзыв отправлен! Спасибо!", 10)
+                feedbackEditMode = false
+                feedbackInput = ""
+                currentScreen = "feedbacks"
+                drawFeedbacksList()
+                goto continue
             end
-
-            if showInsufficientPopup then
-                local popupWidth = 52
-                local popupHeight = 11
-                local popupX = math.floor((80 - popupWidth) / 2)
-                local popupY = 7
-                
-                local okBtn = {
-                    x = popupX + 18,
-                    y = popupY + 8,
-                    xs = 16,
-                    ys = 1
-                }
-                
-                if x >= okBtn.x and x < okBtn.x + okBtn.xs and y >= okBtn.y and y < okBtn.y + okBtn.ys then
-                    showInsufficientPopup = false
-                    if currentShopMode == "buy" then
-                        currentScreen = "shop_buy"
-                        drawBuyStatic()
-                        drawBuyItemsList()
-                        drawBuyButtons()
-                    else
-                        currentScreen = "shop_sell"
-                        drawBuyStatic()
-                        drawBuyItemsList()
-                        drawBuyButtons()
-                    end
-                    goto continue
-                end
-                
-                if not (x >= popupX and x < popupX + popupWidth and y >= popupY and y < popupY + popupHeight) then
-                    showInsufficientPopup = false
-                    if currentShopMode == "buy" then
-                        currentScreen = "shop_buy"
-                        drawBuyStatic()
-                        drawBuyItemsList()
-                        drawBuyButtons()
-                    else
-                        currentScreen = "shop_sell"
-                        drawBuyStatic()
-                        drawBuyItemsList()
-                        drawBuyButtons()
-                    end
-                    goto continue
-                end
+        end
+    
+        if currentScreen == "agreement" then
+            local backButton = {
+                text = "[ НАЗАД ]",
+                x = 37, y = 24,
+                xs = unicode.len("[ НАЗАД ]") + 2,
+                ys = 1,
+                bg = colors.bg_button,
+                fg = colors.accent_secondary
+            }
+            if isButtonClicked(backButton, x, y) then
+                goBackToMenu()
+                goto continue
             end
-
-            if showInventoryFullPopup then
-                local popupWidth = 52
-                local popupHeight = 9
-                local popupX = math.floor((80 - popupWidth) / 2)
-                local popupY = 9
-                local okBtnText = "[ ПОНЯТНО ]"
-                local okBtnWidth = unicode.len(okBtnText) + 2
-                local okBtn = {
-                    x = popupX + math.floor((popupWidth - okBtnWidth) / 2),
-                    y = popupY+6,
-                    xs = okBtnWidth,
-                    ys = 1
-                }
-                if isButtonClicked(okBtn, x, y) then
-                    showInventoryFullPopup = false
+            local btnText = "[ ПОНЯТНО ]"
+            local btnW = unicode.len(btnText) + 4
+            local btnX = math.floor((80 - btnW)/2) + 2
+            if y == 22 and x >= btnX and x <= btnX + btnW then
+                playerAgreed = true
+                local player = players[currentPlayer]
+                if player then
+                    player.agreed = true
+                    saveDBDeferred()
+                end
+                showTempMessage("✅ Спасибо! Теперь вам доступен магазин.", 2)
+                goBackToMenu()
+                goto continue
+            end
+        end
+    
+        if currentScreen == "account" or currentScreen == "account_loading" then
+            local backButton = {
+                text = "[ НАЗАД ]",
+                x = 50, y = 24,
+                xs = unicode.len("[ НАЗАД ]") + 2,
+                ys = 1,
+                bg = colors.bg_button,
+                fg = colors.accent_secondary
+            }
+            if isButtonClicked(backButton, x, y) then
+                goBackToMenu()
+                goto continue
+            end
+    
+            local authBtn = {
+                text = "[ АУТЕНТИФИКАЦИЯ ]",
+                x = 20, y = 24,
+                xs = unicode.len("[ АУТЕНТИФИКАЦИЯ ]") + 2,
+                ys = 1,
+                bg = colors.bg_button,
+                fg = colors.accent_secondary
+            }
+            if isButtonClicked(authBtn, x, y) then
+                showAuthPopup()
+                goto continue
+            end
+        end
+    
+        if showInsufficientPopup then
+            local popupWidth = 52
+            local popupHeight = 11
+            local popupX = math.floor((80 - popupWidth) / 2)
+            local popupY = 7
+            local okBtn = {
+                x = popupX + 18,
+                y = popupY + 8,
+                xs = 16,
+                ys = 1
+            }
+            if x >= okBtn.x and x < okBtn.x + okBtn.xs and y >= okBtn.y and y < okBtn.y + okBtn.ys then
+                showInsufficientPopup = false
+                if currentShopMode == "buy" then
                     currentScreen = "shop_buy"
+                    drawBuyStatic()
+                    drawBuyItemsList()
+                    drawBuyButtons()
+                else
+                    currentScreen = "shop_sell"
                     drawBuyStatic()
                     drawBuyItemsList()
                     drawBuyButtons()
                 end
                 goto continue
             end
-
+            if not (x >= popupX and x < popupX + popupWidth and y >= popupY and y < popupY + popupHeight) then
+                showInsufficientPopup = false
+                if currentShopMode == "buy" then
+                    currentScreen = "shop_buy"
+                    drawBuyStatic()
+                    drawBuyItemsList()
+                    drawBuyButtons()
+                else
+                    currentScreen = "shop_sell"
+                    drawBuyStatic()
+                    drawBuyItemsList()
+                    drawBuyButtons()
+                end
+                goto continue
+            end
+        end
+    
+        if showInventoryFullPopup then
+            local popupWidth = 52
+            local popupHeight = 9
+            local popupX = math.floor((80 - popupWidth) / 2)
+            local popupY = 9
+            local okBtnText = "[ ПОНЯТНО ]"
+            local okBtnWidth = unicode.len(okBtnText) + 2
+            local okBtn = {
+                x = popupX + math.floor((popupWidth - okBtnWidth) / 2),
+                y = popupY+6,
+                xs = okBtnWidth,
+                ys = 1
+            }
+            if isButtonClicked(okBtn, x, y) then
+                showInventoryFullPopup = false
+                currentScreen = "shop_buy"
+                drawBuyStatic()
+                drawBuyItemsList()
+                drawBuyButtons()
+            end
             goto continue
         end
+    
+        goto continue
+    end  -- ★ ЭТОТ end закрывает if e == "touch" ★
 
         if e == "scroll" and (currentScreen == "shop_buy" or currentScreen == "shop_sell") then
             local playerName = ev[6] or "Неизвестный"

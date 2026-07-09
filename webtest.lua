@@ -4,7 +4,7 @@ local computer = require("computer")
 
 print("")
 print("═══════════════════════════════════════════════════════════════")
-print("  ТЕСТ ВЫДАЧИ ПРЕДМЕТА В PIM")
+print("  ТЕСТ ВЫДАЧИ ПРЕДМЕТА В PIM (ИСПРАВЛЕННЫЙ)")
 print("═══════════════════════════════════════════════════════════════")
 print("")
 
@@ -33,13 +33,12 @@ end
 local pim = component.proxy(pimAddr)
 print("✅ PIM найден: " .. pimAddr)
 
--- ★★★ ПРОВЕРЯЕМ, ЕСТЬ ЛИ КТО-ТО НА PIM (БЕЗ getOwner) ★★★
+-- Проверяем, есть ли предметы в инвентаре PIM
 print("")
 print("   ⚠️ Проверка PIM...")
 print("   Встаньте на PIM и нажмите любую клавишу")
 event.pull("key_down")
 
--- Проверяем, есть ли предметы в инвентаре PIM
 local hasItems = false
 for slot = 1, 36 do
     local stack = pim.getStackInSlot(slot)
@@ -175,81 +174,41 @@ print("")
 print("5. ТЕСТОВАЯ ВЫДАЧА")
 print("")
 
--- ★★★ ПРОБУЕМ РАЗНЫЕ СПОСОБЫ ВЫДАЧИ ★★★
 local successResult = false
 
--- Способ 1: Стандартная выдача с направлением "up"
-print("   Способ 1: exportItem с направлением 'up'")
+-- ИСПРАВЛЕННЫЙ Способ 1: Выдача с направлением UP (UPPERCASE)
+print("   Способ 1: exportItem с направлением UP")
 local success, result = pcall(function()
-    return me.exportItem(fingerprint, "up", testQty)
+    return me.exportItem(fingerprint, "UP", testQty)
 end)
 if success and result and type(result) == "number" and result > 0 then
     print("   ✅ УСПЕШНО! Выдано " .. result .. " шт.")
-    print("   Направление 'up' работает!")
+    print("   Направление 'UP' работает!")
     print("")
-    print("   ИСПОЛЬЗУЙТЕ В КОДЕ: PULL_DIRECTION = \"up\"")
+    print("   ИСПОЛЬЗУЙТЕ В КОДЕ: me.exportItem(fingerprint, \"UP\", qty)")
     successResult = true
 else
     print("   ❌ Не работает. Результат: " .. tostring(result))
 end
 
--- Способ 2: Выдача в слот PIM (слот 0 = весь инвентарь)
+-- Способ 2: Другие направления
 if not successResult then
     print("")
-    print("   Способ 2: exportItem в слот 0 (весь инвентарь)")
-    local success, result = pcall(function()
-        return me.exportItem(fingerprint, 0, testQty)
-    end)
-    if success and result and type(result) == "number" and result > 0 then
-        print("   ✅ УСПЕШНО! Выдано " .. result .. " шт.")
-        print("   Способ со слотом 0 работает!")
-        print("")
-        print("   ИСПОЛЬЗУЙТЕ В КОДЕ: me.exportItem(fingerprint, 0, toTake)")
-        successResult = true
-    else
-        print("   ❌ Не работает. Результат: " .. tostring(result))
-    end
-end
-
--- Способ 3: Выдача в конкретный свободный слот
-if not successResult then
-    print("")
-    print("   Способ 3: exportItem в свободный слот")
-    local foundSlot = false
-    for slot = 1, 36 do
-        if foundSlot then break end
-        local stack = pim.getStackInSlot(slot)
-        if not stack or stack.size == 0 then
-            print("     Пробуем слот " .. slot)
-            local success, result = pcall(function()
-                return me.exportItem(fingerprint, slot, testQty)
-            end)
-            if success and result and type(result) == "number" and result > 0 then
-                print("   ✅ УСПЕШНО! Выдано " .. result .. " шт. в слот " .. slot)
-                print("")
-                print("   ИСПОЛЬЗУЙТЕ В КОДЕ: me.exportItem(fingerprint, slot, toTake)")
-                print("   где slot - номер свободного слота")
-                successResult = true
-                foundSlot = true
-            else
-                print("     ❌ Не работает. Результат: " .. tostring(result))
-            end
+    print("   Способ 2: Пробуем другие направления")
+    local directions = {"DOWN", "NORTH", "SOUTH", "WEST", "EAST", "UNKNOWN"}
+    
+    for _, dir in ipairs(directions) do
+        if successResult then break end
+        print("     Пробуем направление: " .. dir)
+        local success, result = pcall(function()
+            return me.exportItem(fingerprint, dir, testQty)
+        end)
+        if success and result and type(result) == "number" and result > 0 then
+            print("   ✅ УСПЕШНО! Выдано " .. result .. " шт. в направлении " .. dir)
+            print("")
+            print("   ИСПОЛЬЗУЙТЕ В КОДЕ: me.exportItem(fingerprint, \"" .. dir .. "\", qty)")
+            successResult = true
         end
-    end
-end
-
--- Способ 4: Выдача с force = true (если есть)
-if not successResult then
-    print("")
-    print("   Способ 4: exportItem с force = true")
-    local success, result = pcall(function()
-        return me.exportItem(fingerprint, "up", testQty, true)
-    end)
-    if success and result and type(result) == "number" and result > 0 then
-        print("   ✅ УСПЕШНО! Выдано " .. result .. " шт.")
-        successResult = true
-    else
-        print("   ❌ Не работает. Результат: " .. tostring(result))
     end
 end
 
@@ -263,7 +222,7 @@ if not successResult then
     print("  2. Предмет не может быть выдан через ME (NBT, особый предмет)")
     print("  3. Проблема с PIM (не настроен на приём)")
     print("  4. В инвентаре нет места для этого конкретного предмета")
-    print("  5. Нужно использовать другой метод выдачи")
+    print("  5. PIM находится не в том направлении относительно ME")
     print("")
     print("Нажмите любую клавишу для выхода...")
     event.pull("key_down")

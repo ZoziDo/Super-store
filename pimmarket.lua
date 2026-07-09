@@ -1334,10 +1334,7 @@ function checkBindingStatus()
     if not currentPlayer then return end
     
     local checkSuccess, checkResponse = pcall(function()
-        return internet.request(WEB_URL .. "/api/update_binding_status", toJson({
-            game_player = currentPlayer
-        }), {
-            ["Content-Type"] = "application/json",
+        return internet.request(WEB_URL .. "/api/player_binding?game_player=" .. currentPlayer, nil, {
             ["Connection"] = "close",
             ["Timeout"] = "3"
         })
@@ -1351,10 +1348,9 @@ function checkBindingStatus()
         local data = parseJSON(body)
         if data and data.success then
             local wasBound = boundPlayer ~= nil
-            local isBound = data.bound
+            local isBound = data.success and data.site_user ~= nil
             
             if wasBound and not isBound then
-                -- Привязка потеряна!
                 boundPlayer = nil
                 clearBoundPlayer()
                 addLog("🔓 Привязка отозвана на сервере")
@@ -1362,7 +1358,6 @@ function checkBindingStatus()
                     drawMainMenu()
                 end
             elseif not wasBound and isBound then
-                -- Привязка появилась!
                 boundPlayer = currentPlayer
                 saveBoundPlayer(currentPlayer)
                 addLog("🔗 Привязка восстановлена на сервере")
@@ -2163,13 +2158,10 @@ function drawMainMenu()
         local boundInfo = ""
         local boundColor = colors.error
         
-        -- Проверяем привязку на сервере
+        -- Проверяем привязку на сервере (GET запрос)
         local serverBound = false
         local checkSuccess, checkResponse = pcall(function()
-            return internet.request(WEB_URL .. "/api/update_binding_status", toJson({
-                game_player = currentPlayer
-            }), {
-                ["Content-Type"] = "application/json",
+            return internet.request(WEB_URL .. "/api/player_binding?game_player=" .. currentPlayer, nil, {
                 ["Connection"] = "close",
                 ["Timeout"] = "2"
             })
@@ -2181,7 +2173,7 @@ function drawMainMenu()
                 body = body .. chunk
             end
             local data = parseJSON(body)
-            if data and data.success and data.bound then
+            if data and data.success then
                 serverBound = true
                 boundPlayer = currentPlayer
                 saveBoundPlayer(currentPlayer)
@@ -5190,17 +5182,14 @@ function main()
                 goto continue
             end
             
-            if alreadyAuthorized then
+              if alreadyAuthorized then
                 if currentScreen == "auth" or currentScreen == "account_loading" then
                     currentScreen = "menu"
                     drawMainMenu()
                 end
-                -- ★★★ ПРОВЕРЯЕМ ПРИВЯЗКУ НА СЕРВЕРЕ (УСИЛЕННАЯ) ★★★
+                -- ★★★ ПРОВЕРЯЕМ ПРИВЯЗКУ НА СЕРВЕРЕ ★★★
                 local checkSuccess, checkResponse = pcall(function()
-                    return internet.request(WEB_URL .. "/api/update_binding_status", toJson({
-                        game_player = currentPlayer
-                    }), {
-                        ["Content-Type"] = "application/json",
+                    return internet.request(WEB_URL .. "/api/player_binding?game_player=" .. currentPlayer, nil, {
                         ["Connection"] = "close",
                         ["Timeout"] = "3"
                     })
@@ -5213,15 +5202,13 @@ function main()
                     end
                     local data = parseJSON(body)
                     if data and data.success then
-                        if data.bound then
-                            boundPlayer = currentPlayer
-                            saveBoundPlayer(currentPlayer)
-                            writeDebugLog("🔗 Привязка подтверждена на сервере: " .. currentPlayer)
-                        else
-                            boundPlayer = nil
-                            clearBoundPlayer()
-                            writeDebugLog("⚠️ Привязка на сервере НЕ НАЙДЕНА, очищаем")
-                        end
+                        boundPlayer = currentPlayer
+                        saveBoundPlayer(currentPlayer)
+                        writeDebugLog("🔗 Привязка подтверждена на сервере: " .. currentPlayer)
+                    else
+                        boundPlayer = nil
+                        clearBoundPlayer()
+                        writeDebugLog("⚠️ Привязка на сервере НЕ НАЙДЕНА, очищаем")
                     end
                 end
                 

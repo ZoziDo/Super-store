@@ -1,9 +1,3 @@
--- ============================================================
--- ★★★ ТЕСТОВЫЙ СКРИПТ ВЫДАЧИ В PIM (ИСПРАВЛЕННЫЙ) ★★★
--- Сохраните как /home/test_pim_export.lua
--- Запустите: lua /home/test_pim_export.lua11111
--- ============================================================
-
 local component = require("component")
 local event = require("event")
 local computer = require("computer")
@@ -39,21 +33,26 @@ end
 local pim = component.proxy(pimAddr)
 print("✅ PIM найден: " .. pimAddr)
 
--- Проверяем, кто стоит на PIM
-local owner = pim.getOwner()
-if owner then
-    print("   Владелец PIM: " .. owner)
-else
-    print("   ⚠️ На PIM никого нет! Встаньте на PIM")
-    print("   Нажмите любую клавишу после того как встанете...")
-    event.pull("key_down")
-    owner = pim.getOwner()
-    if owner then
-        print("   ✅ Теперь на PIM: " .. owner)
-    else
-        print("   ❌ Всё ещё никого нет на PIM")
-        return
+-- ★★★ ПРОВЕРЯЕМ, ЕСТЬ ЛИ КТО-ТО НА PIM (БЕЗ getOwner) ★★★
+print("")
+print("   ⚠️ Проверка PIM...")
+print("   Встаньте на PIM и нажмите любую клавишу")
+event.pull("key_down")
+
+-- Проверяем, есть ли предметы в инвентаре PIM
+local hasItems = false
+for slot = 1, 36 do
+    local stack = pim.getStackInSlot(slot)
+    if stack and stack.size and stack.size > 0 then
+        hasItems = true
+        print("   Слот " .. slot .. ": " .. stack.name .. " x" .. stack.size)
     end
+end
+
+if not hasItems then
+    print("   ✅ Инвентарь пуст, можно тестировать")
+else
+    print("   ⚠️ В инвентаре есть предметы, они могут мешать")
 end
 
 print("")
@@ -163,9 +162,13 @@ if freeSlots == 0 then
     return
 end
 
-print("   Предметы в инвентаре:")
-for slot, data in pairs(slotContents) do
-    print("     Слот " .. slot .. ": " .. data.name .. " x" .. data.size)
+if next(slotContents) then
+    print("   Предметы в инвентаре:")
+    for slot, data in pairs(slotContents) do
+        print("     Слот " .. slot .. ": " .. data.name .. " x" .. data.size)
+    end
+else
+    print("   Инвентарь пуст")
 end
 
 print("")
@@ -212,7 +215,9 @@ end
 if not successResult then
     print("")
     print("   Способ 3: exportItem в свободный слот")
+    local foundSlot = false
     for slot = 1, 36 do
+        if foundSlot then break end
         local stack = pim.getStackInSlot(slot)
         if not stack or stack.size == 0 then
             print("     Пробуем слот " .. slot)
@@ -225,7 +230,7 @@ if not successResult then
                 print("   ИСПОЛЬЗУЙТЕ В КОДЕ: me.exportItem(fingerprint, slot, toTake)")
                 print("   где slot - номер свободного слота")
                 successResult = true
-                break
+                foundSlot = true
             else
                 print("     ❌ Не работает. Результат: " .. tostring(result))
             end
@@ -274,11 +279,17 @@ print("")
 
 -- Проверяем, что предмет появился в инвентаре
 print("ПРОВЕРКА ИНВЕНТАРЯ ПОСЛЕ ВЫДАЧИ:")
+local hasItemsAfter = false
 for slot = 1, 36 do
     local stack = pim.getStackInSlot(slot)
     if stack and stack.size and stack.size > 0 then
+        hasItemsAfter = true
         print("  Слот " .. slot .. ": " .. stack.name .. " x" .. stack.size)
     end
+end
+
+if not hasItemsAfter then
+    print("  Инвентарь пуст! Предмет не появился.")
 end
 
 print("")

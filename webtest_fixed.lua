@@ -4,7 +4,7 @@ local computer = require("computer")
 
 print("")
 print("═══════════════════════════════════════════════════════════════")
-print("  ТЕСТ ВЫДАЧИ ПРЕДМЕТА В PIM (ИСПРАВЛЕННЫЙ v4)")
+print("  ТЕСТ1 ВЫДАЧИ NBT ПРЕДМЕТОВ ЧЕРЕЗ ME INTERFACE + PIM")
 print("═══════════════════════════════════════════════════════════════")
 print("")
 
@@ -32,27 +32,6 @@ if not pimAddr then
 end
 local pim = component.proxy(pimAddr)
 print("✅ PIM найден: " .. pimAddr)
-
--- Проверяем, есть ли предметы в инвентаре PIM
-print("")
-print("   ⚠️ Проверка PIM...")
-print("   Встаньте на PIM и нажмите любую клавишу")
-event.pull("key_down")
-
-local hasItems = false
-for slot = 1, 36 do
-    local stack = pim.getStackInSlot(slot)
-    if stack and stack.size and stack.size > 0 then
-        hasItems = true
-        print("   Слот " .. slot .. ": " .. stack.name .. " x" .. stack.size)
-    end
-end
-
-if not hasItems then
-    print("   ✅ Инвентарь пуст, можно тестировать")
-else
-    print("   ⚠️ В инвентаре есть предметы, они могут мешать")
-end
 
 print("")
 print("2. ВВОД ДАННЫХ")
@@ -114,11 +93,7 @@ if not foundItem then
         end
     end
     if count == 0 then
-        print("     Нет похожих предметов. Первые 10 в ME:")
-        for i = 1, math.min(10, #items) do
-            local item = items[i]
-            print("     " .. item.name .. " (damage: " .. (item.damage or 0) .. ") - " .. (item.size or 0) .. " шт.")
-        end
+        print("     Нет похожих предметов.")
     end
     return
 end
@@ -127,32 +102,28 @@ print("✅ Предмет найден!")
 print("   Количество в ME: " .. (foundItem.size or 0) .. " шт.")
 
 if (foundItem.size or 0) < testQty then
-    print("⚠️ В ME меньше предметов чем нужно для теста!")
+    print("⚠️ В ME меньше предметов чем нужно!")
     testQty = foundItem.size or 0
     if testQty == 0 then
         print("❌ Нет предметов для теста")
         return
     end
-    print("   Будем тестировать с " .. testQty .. " шт.")
+    print("   Тестируем с " .. testQty .. " шт.")
 end
 
 print("")
-print("4. ПРОВЕРКА ИНВЕНТАРЯ")
+print("4. ПРОВЕРКА ИНВЕНТАРЯ PIM")
 print("")
 
 local freeSlots = 0
-local slotContents = {}
-
 for slot = 1, 36 do
     local stack = pim.getStackInSlot(slot)
-    if stack and stack.size and stack.size > 0 then
-        slotContents[slot] = { name = stack.name, size = stack.size, damage = stack.damage or 0 }
-    else
+    if not stack or not stack.size or stack.size == 0 then
         freeSlots = freeSlots + 1
     end
 end
 
-print("   Свободных слотов: " .. freeSlots)
+print("   Свободных слотов в PIM: " .. freeSlots)
 
 if freeSlots == 0 then
     print("❌ ИНВЕНТАРЬ ПОЛОН! Освободите место.")
@@ -161,74 +132,112 @@ if freeSlots == 0 then
     return
 end
 
-if next(slotContents) then
-    print("   Предметы в инвентаре:")
-    for slot, data in pairs(slotContents) do
-        print("     Слот " .. slot .. ": " .. data.name .. " x" .. data.size)
-    end
-else
-    print("   Инвентарь пуст")
-end
-
 print("")
-print("5. ТЕСТОВАЯ ВЫДАЧА")
+print("5. ТЕСТОВАЯ ВЫДАЧА ЧЕРЕЗ ME INTERFACE")
 print("")
 
-local successResult = false
-local successDirection = nil
-
--- ПРАВИЛЬНЫЕ КОДЫ: 1..7 (не 0..6!)
+-- Пробуем все направления (1-7)
 -- 1=DOWN, 2=UP, 3=NORTH, 4=SOUTH, 5=WEST, 6=EAST, 7=UNKNOWN
-local directionCodes = {
-    DOWN = 1,
-    UP = 2,
-    NORTH = 3,
-    SOUTH = 4,
-    WEST = 5,
-    EAST = 6,
-    UNKNOWN = 7
+local directions = {
+    {code = 1, name = "DOWN"},
+    {code = 2, name = "UP"},
+    {code = 3, name = "NORTH"},
+    {code = 4, name = "SOUTH"},
+    {code = 5, name = "WEST"},
+    {code = 6, name = "EAST"},
+    {code = 7, name = "UNKNOWN"},
 }
 
-print("   🔍 Пробуем exportItem с правильными кодами направлений (1..7):")
+local successDirection = nil
+local extracted = 0
+
+print("   🔍 Пробуем exportItem с разными направлениями:")
 print("")
 
-for dirName, dirCode in pairs(directionCodes) do
-    if successResult then break end
-    print("   Пробуем направление: " .. dirName .. " (код: " .. dirCode .. ")")
-    
-    local success, result = pcall(function()
-        return me.exportItem(fingerprint, dirCode, testQty)
-    end)
-    
-    if success then
-        if result and type(result) == "number" and result > 0 then
-            print("   ✅ УСПЕШНО! Выдано " .. result .. " шт. в направлении " .. dirName)
-            successResult = true
-            successDirection = dirName
+for _, dir in ipairs(directions) do
+    if extracted == 0 then
+        print("   Пробуем направление: " .. dir.name .. " (код: " .. dir.code .. ")")
+        
+        local success, result = pcall(function()
+            return me.exportItem(fingerprint, dir.code, testQty)
+        end)
+        
+        if success then
+            if result and type(result) == "number" and result > 0 then
+                print("   ✅ УСПЕШНО! Выдано " .. result .. " шт. в направлении " .. dir.name)
+                extracted = result
+                successDirection = dir.name
+            else
+                print("     ❌ Результат: " .. tostring(result))
+            end
         else
-            print("     ❌ Результат: " .. tostring(result))
+            print("     ⚠️ Ошибка: " .. tostring(result))
         end
+    end
+end
+
+-- Если не сработало через exportItem, пробуем другие методы
+if extracted == 0 then
+    print("")
+    print("   🔍 Пробуем альтернативные методы:")
+    print("")
+    
+    -- Метод 1: через exportItem с другим форматом
+    print("   1. exportItem с форматом {id=..., dmg=...}:")
+    local success, result = pcall(function()
+        return me.exportItem({id = internalName, dmg = damage}, 2, testQty)
+    end)
+    if success and result and result > 0 then
+        print("   ✅ УСПЕШНО! Выдано " .. result .. " шт.")
+        extracted = result
+        successDirection = "UP (альтернативный)"
     else
-        local errMsg = tostring(result)
-        print("     ⚠️ " .. errMsg)
+        print("     ❌ " .. tostring(result))
+    end
+    
+    -- Метод 2: через pushItem в PIM напрямую
+    if extracted == 0 then
+        print("")
+        print("   2. Прямая отправка в PIM (pushItem):")
+        -- Сначала пробуем выдать в ME интерфейс
+        local ok, items = pcall(function()
+            return me.getItemsInNetwork()
+        end)
+        
+        if ok and items then
+            for _, item in ipairs(items) do
+                if item.name == internalName and (item.damage or 0) == damage then
+                    local success, result = pcall(function()
+                        return pim.pushItem(PIM_DIRECTION, 1, item.size)
+                    end)
+                    if success and result and result > 0 then
+                        print("   ✅ УСПЕШНО! Отправлено " .. result .. " шт. в PIM")
+                        extracted = result
+                        successDirection = "pushItem"
+                    else
+                        print("     ❌ " .. tostring(result))
+                    end
+                    break
+                end
+            end
+        end
     end
 end
 
 -- Если ничего не сработало
-if not successResult then
+if extracted == 0 then
     print("")
     print("❌ НИ ОДИН СПОСОБ НЕ СРАБОТАЛ!")
     print("")
-    print("📋 АНАЛИЗ РЕЗУЛЬТАТОВ:")
-    print("  • WEST и EAST: 'No neighbour attached' → PIM подключён туда, но не установлен")
-    print("  • DOWN/UP/NORTH/SOUTH: 'nil' → предмет не выходит в этих направлениях")
+    print("📋 ВОЗМОЖНЫЕ ПРИЧИНЫ:")
+    print("  1. NBT предметы не могут быть выданы через PIM")
+    print("  2. PIM не правильно подключён к ME сети")
+    print("  3. Нет кабеля между ME интерфейсом и PIM")
     print("")
-    print("⚙️ ЧТО ПРОВЕРИТЬ:")
-    print("  1. Убедитесь, что PIM установлен НА сторону ME интерфейса (WEST или EAST)")
-    print("  2. PIM должен быть АКТИВЕН (на красный сигнал, не наоборот)")
-    print("  3. В ME интерфейсе должны быть кабели/линии к PIM")
-    print("  4. PIM должен иметь прямой контакт с ME сетью (не через другие блоки)")
-    print("  5. Проверьте, что PIM корректно принимает предметы (попробуйте вручную)")
+    print("⚙️ РЕШЕНИЕ:")
+    print("  1. Используй ME интерфейс + сундук для NBT предметов")
+    print("  2. Поставь сундук за ME интерфейсом (невидимый для игрока)")
+    print("  3. В сундук выдавай предмет, потом забирай в PIM")
     print("")
     print("Нажмите любую клавишу для выхода...")
     event.pull("key_down")
@@ -241,12 +250,12 @@ print("════════════════════════�
 print("  ✅ ТЕСТ ЗАВЕРШЁН УСПЕШНО!")
 print("═══════════════════════════════════════════════════════════════")
 print("")
-
 print("✅ РАБОТАЮЩЕЕ НАПРАВЛЕНИЕ: " .. successDirection)
+print("✅ ВЫДАНО: " .. extracted .. " шт.")
 print("")
 
--- Проверяем, что предмет появился в инвентаре
-print("ПРОВЕРКА ИНВЕНТАРЯ ПОСЛЕ ВЫДАЧИ:")
+-- Проверяем инвентарь PIM
+print("ПРОВЕРКА ИНВЕНТАРЯ PIM ПОСЛЕ ВЫДАЧИ:")
 local hasItemsAfter = false
 for slot = 1, 36 do
     local stack = pim.getStackInSlot(slot)
@@ -258,18 +267,25 @@ end
 
 if not hasItemsAfter then
     print("  ⚠️ Инвентарь пуст! Предмет не появился в PIM.")
-    print("     Возможно, он вышел в другое место или был удален.")
 else
     print("  ✅ Предмет успешно появился в инвентаре PIM!")
 end
 
 print("")
 print("═══════════════════════════════════════════════════════════════")
-print("  КОД ДЛЯ ИСПОЛЬЗОВАНИЯ В СКРИПТАХ:")
+print("  КОД ДЛЯ ИСПОЛЬЗОВАНИЯ В ОСНОВНОМ СКРИПТЕ:")
 print("═══════════════════════════════════════════════════════════════")
 print("")
-print("  me.exportItem(fingerprint, " .. directionCodes[successDirection] .. ", qty)")
-print("  -- Где " .. directionCodes[successDirection] .. " = " .. successDirection)
+if successDirection == "pushItem" then
+    print("  -- Через прямой push в PIM")
+    print("  pim.pushItem(direction, slot, count)")
+else
+    print("  -- Через ME интерфейс")
+    print("  local me = component.me_interface")
+    print("  local fingerprint = { id = '" .. internalName .. "', dmg = " .. damage .. " }")
+    print("  me.exportItem(fingerprint, " .. dirCode .. ", count)")
+    print("  -- Где " .. dirCode .. " = " .. successDirection)
+end
 print("")
 print("Нажмите любую клавишу для выхода...")
 event.pull("key_down")

@@ -29,7 +29,7 @@ os.exit = function(code)
 end
 
 -- ============================================================
--- ВРЕМЯ122
+-- ВРЕМЯ1225
 -- ============================================================
 
 tmpfs = component.proxy(computer.tmpAddress())
@@ -1157,7 +1157,7 @@ function parseJSON(json_str)
         end
     end
 
-    local function parseString()
+    function parseString()
         if str:sub(pos, pos) ~= '"' then return nil end
         pos = pos + 1
         local start = pos
@@ -1173,8 +1173,31 @@ function parseJSON(json_str)
                 pos = pos + 1
                 if pos > len then return nil end
                 local esc = str:sub(pos, pos)
-                local map = {['"']='"', ['\\']='\\', ['/']='/', b='\b', f='\f', n='\n', r='\r', t='\t'}
-                result = result .. (map[esc] or '\\'..esc)
+                local map = {
+                    ['"'] = '"',
+                    ['\\'] = '\\',
+                    ['/'] = '/',
+                    b = '\b',
+                    f = '\f',
+                    n = '\n',
+                    r = '\r',
+                    t = '\t'
+                }
+                if map[esc] then
+                    result = result .. map[esc]
+                elseif esc == 'u' then
+                    -- ★★★ ОБРАБОТКА UNICODE ★★★
+                    local hex = str:sub(pos+1, pos+4)
+                    if #hex == 4 then
+                        local code = tonumber(hex, 16)
+                        if code then
+                            result = result .. unicode.char(code)
+                            pos = pos + 4
+                        end
+                    end
+                else
+                    result = result .. '\\' .. esc
+                end
                 pos = pos + 1
                 start = pos
             else
@@ -2968,57 +2991,94 @@ end
 -- ★★★ АУТЕНТИФИКАЦИЯ (ПРИВЯЗКА АККАУНТА) ★★★
 -- ============================================================
 
--- ★★★ НОВЫЙ ПОПАП ДЛЯ ВВОДА КОДА (с информацией) ★★★
--- ★★★ ПОПАП АУТЕНТИФИКАЦИИ (ИСПРАВЛЕННЫЙ) ★★★
+-- ★★★ ПОПАП АУТЕНТИФИКАЦИИ (ВСЁ В ОДНОМ ОКНЕ) ★★★
 function showAuthPopup()
     writeDebugLog("showAuthPopup()")
     currentScreen = "auth_popup"
     authCodeInput = authCodeInput or ""
     
-    clear()
-    drawScreenBorder()
+    -- Сохраняем фон
+    local savedScreen = currentScreen
+    local savedContent = {}
+    for y = 1, 25 do
+        savedContent[y] = {}
+        for x = 1, 80 do
+            savedContent[y][x] = gpu.get(x, y)
+        end
+    end
     
-    -- Заголовок (сдвинут на 3 пробела влево)
+    -- Рисуем попап
+    local popupWidth = 50
+    local popupHeight = 16
+    local popupX = math.floor((80 - popupWidth) / 2)
+    local popupY = math.floor((25 - popupHeight) / 2)
+    
+    -- Затемняем фон
+    gpu.setBackground(0x000000)
+    gpu.fill(1, 1, 80, 25, " ")
+    gpu.setBackground(0x0A0A1A)
+    gpu.fill(popupX, popupY, popupWidth, popupHeight, " ")
+    
+    -- Рамка
     gpu.setForeground(0x00FFCC)
-    gpu.set(27, 2, "═══════════════════════════════════")
-    gpu.set(27, 3, "   🔐 АУТЕНТИФИКАЦИЯ АККАУНТА   ")
-    gpu.set(27, 4, "═══════════════════════════════════")
+    gpu.fill(popupX, popupY, popupWidth, 1, "═")
+    gpu.fill(popupX, popupY + popupHeight - 1, popupWidth, 1, "═")
+    for i = 1, popupHeight - 2 do
+        gpu.set(popupX, popupY + i, "║")
+        gpu.set(popupX + popupWidth - 1, popupY + i, "║")
+    end
+    gpu.set(popupX, popupY, "╔")
+    gpu.set(popupX + popupWidth - 1, popupY, "╗")
+    gpu.set(popupX, popupY + popupHeight - 1, "╚")
+    gpu.set(popupX + popupWidth - 1, popupY + popupHeight - 1, "╝")
+    
+    -- Заголовок
+    gpu.setForeground(0x00FFCC)
+    gpu.set(popupX + math.floor((popupWidth - 22) / 2), popupY + 1, "🔐 АУТЕНТИФИКАЦИЯ")
     
     -- Информация об игроке
     gpu.setForeground(colors.white)
-    gpu.set(5, 7, "👤 Игрок: ")
+    gpu.set(popupX + 3, popupY + 3, "👤 Игрок: ")
     gpu.setForeground(colors.accent_main)
-    gpu.set(18, 7, currentPlayer or "Неизвестно")
+    gpu.set(popupX + 15, popupY + 3, currentPlayer or "Неизвестно")
     
-    -- Проверяем статус привязки
+    -- Проверяем привязку
     local savedBound = loadBoundPlayer()
     local isBound = (boundPlayer and boundPlayer ~= "") or (savedBound and savedBound ~= "")
     
     if isBound then
         local displayName = boundPlayer or savedBound
         
+        -- ★★★ ЕСЛИ ПРИВЯЗАН ★★★
         gpu.setForeground(colors.success)
-        gpu.set(5, 9, "✅ Аккаунт ПРИВЯЗАН к: " .. displayName)
-        gpu.setForeground(colors.text_main)
-        gpu.set(5, 10, "   Нажмите [ОТВЯЗАТЬ] чтобы отвязать аккаунт")
+        gpu.set(popupX + 3, popupY + 5, "✅ Аккаунт ПРИВЯЗАН к: " .. displayName)
         
-        -- ★★★ КНОПКА ОТВЯЗКИ ПЕРЕНЕСЕНА ВНИЗ (СТРОКА 24) ★★★
+        gpu.setForeground(colors.text_main)
+        gpu.set(popupX + 3, popupY + 7, "   Для отвязки нажмите кнопку ниже")
+        
+        -- Кнопка ОТВЯЗАТЬ
         local unbindBtn = {
             text = "[ ОТВЯЗАТЬ АККАУНТ ]",
-            x = 30,
-            y = 24,  -- ★★★ СТРОКА 24 ★★★
-            xs = unicode.len("[ ОТВЯЗАТЬ АККАУНТ ]") + 2,
+            x = popupX + math.floor((popupWidth - 18) / 2),
+            y = popupY + popupHeight - 3,
+            xs = 18,
             ys = 1,
-            bg = colors.bg_button,
+            bg = 0x441111,
             fg = colors.error
         }
-        
-        -- Кнопка НАЗАД (слева)
-        local backBtn = {x=5, y=24, xs=12, ys=1, text="[ НАЗАД ]", bg=colors.bg_button, fg=colors.accent_secondary}
-        
-        drawFlexButton(backBtn)
         drawFlexButton(unbindBtn)
-        drawTempMessage()
+        
+        -- Кнопка ЗАКРЫТЬ
+        local closeBtn = {
+            text = "[ ЗАКРЫТЬ ]",
+            x = popupX + popupWidth - 12,
+            y = popupY + popupHeight - 3,
+            xs = 10,
+            ys = 1,
+            bg = colors.bg_button,
+            fg = colors.accent_secondary
+        }
+        drawFlexButton(closeBtn)
         
         -- Обработка нажатий
         while currentScreen == "auth_popup" do
@@ -3027,72 +3087,66 @@ function showAuthPopup()
             if ev[1] == "touch" then
                 local x, y = ev[3], ev[4]
                 
-                if isButtonClicked(backBtn, x, y) then
+                if isButtonClicked(closeBtn, x, y) then
                     goBackToMenu()
                     break
                 end
                 
                 if isButtonClicked(unbindBtn, x, y) then
-                    unbindAccount()
+                    -- ★★★ ПОКАЗЫВАЕМ ПРЕДУПРЕЖДЕНИЕ ПЕРЕД ОТВЯЗКОЙ ★★★
+                    showUnbindConfirmPopup()
                     break
                 end
             end
         end
+        
     else
-        -- ★★★ ЕСЛИ НЕ ПРИВЯЗАН - ПОКАЗЫВАЕМ ПОЛЕ ВВОДА КОДА ★★★
+        -- ★★★ ЕСЛИ НЕ ПРИВЯЗАН ★★★
         gpu.setForeground(colors.text_main)
-        gpu.set(5, 9, "📋 Введите код из браузера:")
+        gpu.set(popupX + 3, popupY + 5, "📋 Введите код из браузера:")
         gpu.setForeground(colors.inactive)
-        gpu.set(5, 10, "   (код отображается на сайте в разделе 'Привязка')")
+        gpu.set(popupX + 3, popupY + 6, "   (код отображается на сайте)")
         
         -- Поле ввода кода
-        gpu.setBackground(colors.black_fon)
-        gpu.setForeground(0x00FFAA)
-        gpu.fill(20, 12, 40, 3, " ")
-        gpu.setBackground(colors.bg_secondary)
-        gpu.fill(21, 13, 38, 1, " ")
+        gpu.setBackground(0x000000)
+        gpu.fill(popupX + 5, popupY + 8, popupWidth - 10, 3, " ")
+        gpu.setBackground(0x1A1A2E)
+        gpu.fill(popupX + 6, popupY + 9, popupWidth - 12, 1, " ")
         
-        gpu.setForeground(colors.text_bright)
+        gpu.setForeground(0x00FFAA)
         local displayCode = authCodeInput or ""
         if #displayCode < 6 then
             displayCode = displayCode .. "_"
         end
-        local codeX = 21 + math.floor((38 - unicode.len(displayCode)) / 2)
-        gpu.set(codeX, 13, displayCode)
-        gpu.setBackground(colors.bg_main)
+        local codeX = popupX + 6 + math.floor((popupWidth - 12 - unicode.len(displayCode)) / 2)
+        gpu.set(codeX, popupY + 9, displayCode)
+        gpu.setBackground(0x0A0A1A)
         
-        -- Таймер
-        gpu.setForeground(colors.tomato)
-        gpu.set(5, 16, "⏱ Код действителен: 5:00")
-        
-        gpu.setForeground(colors.inactive)
-        gpu.set(5, 18, "❌ Аккаунт не привязан")
+        -- Статус
+        gpu.setForeground(colors.error)
+        gpu.set(popupX + 3, popupY + 12, "❌ Аккаунт НЕ привязан")
         
         -- Кнопки
-        local backBtn = {x=10, y=24, xs=12, ys=1, text="[ НАЗАД ]", bg=colors.bg_button, fg=colors.accent_secondary}
-        local confirmBtn = {x=58, y=24, xs=15, ys=1, text="[ ПОДТВЕРДИТЬ ]", bg=colors.bg_button, fg=colors.success}
-        drawFlexButton(backBtn)
+        local closeBtn = {
+            text = "[ ЗАКРЫТЬ ]",
+            x = popupX + popupWidth - 12,
+            y = popupY + popupHeight - 3,
+            xs = 10,
+            ys = 1,
+            bg = colors.bg_button,
+            fg = colors.accent_secondary
+        }
+        local confirmBtn = {
+            text = "[ ПОДТВЕРДИТЬ ]",
+            x = popupX + 3,
+            y = popupY + popupHeight - 3,
+            xs = 13,
+            ys = 1,
+            bg = colors.bg_button,
+            fg = colors.success
+        }
+        drawFlexButton(closeBtn)
         drawFlexButton(confirmBtn)
-        drawTempMessage()
-        
-        -- Таймер
-        local timerSeconds = 300
-        local timerId = nil
-        
-        timerId = event.timer(1, function()
-            timerSeconds = timerSeconds - 1
-            local mins = math.floor(timerSeconds / 60)
-            local secs = timerSeconds % 60
-            if timerSeconds > 0 then
-                gpu.setForeground(colors.tomato)
-                gpu.set(5, 16, "⏱ Код действителен: " .. string.format("%d:%02d", mins, secs))
-            else
-                gpu.setForeground(colors.error)
-                gpu.set(5, 16, "⏱ КОД ИСТЕК! Сгенерируйте новый")
-                return false
-            end
-            return true
-        end, math.huge)
         
         -- Обработка ввода
         local isEditing = true
@@ -3102,9 +3156,8 @@ function showAuthPopup()
             if ev[1] == "touch" then
                 local x, y = ev[3], ev[4]
                 
-                if isButtonClicked(backBtn, x, y) then
+                if isButtonClicked(closeBtn, x, y) then
                     isEditing = false
-                    if timerId then event.cancel(timerId) end
                     goBackToMenu()
                     break
                 end
@@ -3112,10 +3165,11 @@ function showAuthPopup()
                 if isButtonClicked(confirmBtn, x, y) then
                     if authCodeInput and #authCodeInput == 6 then
                         isEditing = false
-                        if timerId then event.cancel(timerId) end
                         verifyAuthCode(authCodeInput)
                     else
-                        drawCenteredText(21, "Введите 6-значный код!", colors.error)
+                        -- Показываем сообщение внутри попапа
+                        gpu.setForeground(colors.error)
+                        gpu.set(popupX + 3, popupY + 13, "⚠️ Введите 6-значный код!")
                         os.sleep(1.5)
                         showAuthPopup()
                     end
@@ -3128,10 +3182,10 @@ function showAuthPopup()
                 if ch == 13 then -- Enter
                     if authCodeInput and #authCodeInput == 6 then
                         isEditing = false
-                        if timerId then event.cancel(timerId) end
                         verifyAuthCode(authCodeInput)
                     else
-                        drawCenteredText(21, "Введите 6-значный код!", colors.error)
+                        gpu.setForeground(colors.error)
+                        gpu.set(popupX + 3, popupY + 13, "⚠️ Введите 6-значный код!")
                         os.sleep(1.5)
                         showAuthPopup()
                     end
@@ -3149,8 +3203,88 @@ function showAuthPopup()
                 end
             end
         end
+    end
+end
+
+-- ★★★ ПОПАП ПОДТВЕРЖДЕНИЯ ОТВЯЗКИ ★★★
+function showUnbindConfirmPopup()
+    writeDebugLog("showUnbindConfirmPopup()")
+    
+    local popupWidth = 46
+    local popupHeight = 10
+    local popupX = math.floor((80 - popupWidth) / 2)
+    local popupY = math.floor((25 - popupHeight) / 2)
+    
+    -- Затемняем фон
+    gpu.setBackground(0x000000)
+    gpu.fill(popupX - 2, popupY - 2, popupWidth + 4, popupHeight + 4, " ")
+    gpu.setBackground(0x0A0A1A)
+    gpu.fill(popupX, popupY, popupWidth, popupHeight, " ")
+    
+    -- Рамка (красная для предупреждения)
+    gpu.setForeground(colors.error)
+    gpu.fill(popupX, popupY, popupWidth, 1, "═")
+    gpu.fill(popupX, popupY + popupHeight - 1, popupWidth, 1, "═")
+    for i = 1, popupHeight - 2 do
+        gpu.set(popupX, popupY + i, "║")
+        gpu.set(popupX + popupWidth - 1, popupY + i, "║")
+    end
+    gpu.set(popupX, popupY, "╔")
+    gpu.set(popupX + popupWidth - 1, popupY, "╗")
+    gpu.set(popupX, popupY + popupHeight - 1, "╚")
+    gpu.set(popupX + popupWidth - 1, popupY + popupHeight - 1, "╝")
+    
+    -- Заголовок
+    gpu.setForeground(colors.error)
+    gpu.set(popupX + math.floor((popupWidth - 22) / 2), popupY + 1, "⚠️ ПОДТВЕРЖДЕНИЕ")
+    
+    gpu.setForeground(colors.text_main)
+    gpu.set(popupX + 3, popupY + 3, "Вы действительно хотите")
+    gpu.set(popupX + 3, popupY + 4, "ОТВЯЗАТЬ аккаунт?")
+    
+    gpu.setForeground(colors.inactive)
+    gpu.set(popupX + 3, popupY + 6, "После отвязки доступ к магазину")
+    gpu.set(popupX + 3, popupY + 7, "будет ограничен до новой привязки.")
+    
+    -- Кнопки
+    local yesBtn = {
+        text = "[ ДА, ОТВЯЗАТЬ ]",
+        x = popupX + 5,
+        y = popupY + popupHeight - 2,
+        xs = 15,
+        ys = 1,
+        bg = 0x441111,
+        fg = colors.error
+    }
+    local noBtn = {
+        text = "[ ОТМЕНА ]",
+        x = popupX + popupWidth - 12,
+        y = popupY + popupHeight - 2,
+        xs = 10,
+        ys = 1,
+        bg = colors.bg_button,
+        fg = colors.accent_secondary
+    }
+    drawFlexButton(yesBtn)
+    drawFlexButton(noBtn)
+    
+    -- Обработка
+    while true do
+        local ev = {event.pull(0.5)}
         
-        if timerId then event.cancel(timerId) end
+        if ev[1] == "touch" then
+            local x, y = ev[3], ev[4]
+            
+            if isButtonClicked(noBtn, x, y) then
+                showAuthPopup()
+                break
+            end
+            
+            if isButtonClicked(yesBtn, x, y) then
+                unbindAccount()
+                break
+            end
+        end
     end
 end
 
@@ -3212,17 +3346,17 @@ function verifyAuthCode(code)
     end
 end
 
--- ★★★ ВСТАВЬТЕ СЮДА ФУНКЦИЮ unbindAccount() ★★★
 function unbindAccount()
     if not currentPlayer then
         showTempMessage("Ошибка: игрок не авторизован", 2)
         return
     end
     
-    drawCenteredText(17, "Отвязка аккаунта...", colors.accent_secondary)
+    -- Показываем статус внутри попапа
+    gpu.setForeground(colors.accent_secondary)
+    gpu.set(20, 16, "Отвязка аккаунта...")
     os.sleep(0.5)
     
-    -- ★★★ ОТПРАВЛЯЕМ ЗАПРОС С ПРАВИЛЬНОЙ КОДИРОВКОЙ ★★★
     local json_data = toJson({
         site_user = currentPlayer
     })
@@ -3240,24 +3374,30 @@ function unbindAccount()
         for chunk in response do
             body = body .. chunk
         end
-        -- ★★★ ПАРСИМ JSON С УЧЁТОМ КИРИЛЛИЦЫ ★★★
         local data = parseJSON(body)
         
         if data and data.success then
             boundPlayer = nil
             clearBoundPlayer()
-            drawCenteredText(17, "✅ Аккаунт отвязан!", colors.success)
+            
+            -- Показываем успех
+            gpu.setForeground(colors.success)
+            gpu.set(20, 17, "✅ Аккаунт ОТВЯЗАН!")
+            gpu.setForeground(colors.text_main)
+            gpu.set(20, 18, "   Доступ к магазину ограничен")
             addLog("🔓 Аккаунт отвязан: " .. currentPlayer)
-            os.sleep(1.5)
+            os.sleep(2)
             goBackToMenu()
         else
             local errorMsg = (data and data.error) or "Ошибка отвязки"
-            drawCenteredText(17, "❌ " .. errorMsg, colors.error)
+            gpu.setForeground(colors.error)
+            gpu.set(20, 17, "❌ " .. errorMsg)
             os.sleep(2)
             showAuthPopup()
         end
     else
-        drawCenteredText(17, "❌ Ошибка соединения с сервером", colors.error)
+        gpu.setForeground(colors.error)
+        gpu.set(20, 17, "❌ Ошибка соединения")
         os.sleep(2)
         showAuthPopup()
     end

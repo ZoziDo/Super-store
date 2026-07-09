@@ -29,7 +29,7 @@ os.exit = function(code)
 end
 
 -- ============================================================
--- ВРЕМЯ2
+-- ВРЕМЯ24
 -- ============================================================
 
 tmpfs = component.proxy(computer.tmpAddress())
@@ -2162,14 +2162,29 @@ function drawAccount(data)
     gpu.setForeground(agreeColor)
     gpu.set(agreeX + unicode.len(agreeLabel), 15, agreeStatus)
 
+    -- ★★★ КНОПКА АУТЕНТИФИКАЦИИ (слева от [НАЗАД]) ★★★
+    local authBtn = {
+        text = "[ АУТЕНТИФИКАЦИЯ ]",
+        x = 20,  -- положение слева
+        y = 24,
+        xs = unicode.len("[ АУТЕНТИФИКАЦИЯ ]") + 2,
+        ys = 1,
+        bg = colors.bg_button,
+        fg = colors.accent_secondary
+    }
+
+    -- Кнопка НАЗАД (смещаем вправо)
     local backButton = {
         text = "[ НАЗАД ]",
-        x = 37, y = 24,
+        x = 50,
+        y = 24,
         xs = unicode.len("[ НАЗАД ]") + 2,
         ys = 1,
         bg = colors.bg_button,
         fg = colors.accent_secondary
     }
+
+    drawFlexButton(authBtn)
     drawFlexButton(backButton)
     drawTempMessage()
 end
@@ -4398,17 +4413,28 @@ function main()
                     goto continue
                 end
 
-            elseif currentScreen == "account" or currentScreen == "account_loading" then
+            if currentScreen == "account" or currentScreen == "account_loading" then
+                -- существующий код для кнопки НАЗАД
                 local backButton = {
                     text = "[ НАЗАД ]",
-                    x = 37, y = 24,
+                    x = 50, y = 24,
                     xs = unicode.len("[ НАЗАД ]") + 2,
-                    ys = 1,
-                    bg = colors.bg_button,
-                    fg = colors.accent_secondary
+                    ys = 1
                 }
                 if isButtonClicked(backButton, x, y) then
                     goBackToMenu()
+                    goto continue
+                end
+            
+                -- ★★★ НОВАЯ ПРОВЕРКА НА КНОПКУ АУТЕНТИФИКАЦИИ ★★★
+                local authBtn = {
+                    text = "[ АУТЕНТИФИКАЦИЯ ]",
+                    x = 20, y = 24,
+                    xs = unicode.len("[ АУТЕНТИФИКАЦИЯ ]") + 2,
+                    ys = 1
+                }
+                if isButtonClicked(authBtn, x, y) then
+                    showAuthPopup()  -- вызываем ту же функцию, что и раньше
                     goto continue
                 end
             end

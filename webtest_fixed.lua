@@ -4,7 +4,7 @@ local computer = require("computer")
 
 print("")
 print("═══════════════════════════════════════════════════════════════")
-print("  ТЕСТ ВЫДАЧИ ПРЕДМЕТА В PIM (ИСПРАВЛЕННЫЙ v3)")
+print("  ТЕСТ ВЫДАЧИ ПРЕДМЕТА В PIM (ИСПРАВЛЕННЫЙ v4)")
 print("═══════════════════════════════════════════════════════════════")
 print("")
 
@@ -175,20 +175,21 @@ print("5. ТЕСТОВАЯ ВЫДАЧА")
 print("")
 
 local successResult = false
+local successDirection = nil
 
--- КЛЮЧЕВОЕ ОТКРЫТИЕ: используем ЧИСЛОВЫЕ коды направлений (1..7)
--- DOWN=0, UP=1, NORTH=2, SOUTH=3, WEST=4, EAST=5, UNKNOWN=6
+-- ПРАВИЛЬНЫЕ КОДЫ: 1..7 (не 0..6!)
+-- 1=DOWN, 2=UP, 3=NORTH, 4=SOUTH, 5=WEST, 6=EAST, 7=UNKNOWN
 local directionCodes = {
-    DOWN = 0,
-    UP = 1,
-    NORTH = 2,
-    SOUTH = 3,
-    WEST = 4,
-    EAST = 5,
-    UNKNOWN = 6
+    DOWN = 1,
+    UP = 2,
+    NORTH = 3,
+    SOUTH = 4,
+    WEST = 5,
+    EAST = 6,
+    UNKNOWN = 7
 }
 
-print("   🔍 Пробуем exportItem с числовыми кодами направлений:")
+print("   🔍 Пробуем exportItem с правильными кодами направлений (1..7):")
 print("")
 
 for dirName, dirCode in pairs(directionCodes) do
@@ -199,20 +200,17 @@ for dirName, dirCode in pairs(directionCodes) do
         return me.exportItem(fingerprint, dirCode, testQty)
     end)
     
-    if success and result and type(result) == "number" and result > 0 then
-        print("   ✅ УСПЕШНО! Выдано " .. result .. " шт. в направлении " .. dirName)
-        print("")
-        print("   ИСПОЛЬЗУЙТЕ В КОДЕ:")
-        print("   me.exportItem(fingerprint, " .. dirCode .. ", qty)  -- " .. dirName)
-        print("   ИЛИ")
-        print("   me.exportItem(fingerprint, \"" .. dirName .. "\", qty)")
-        successResult = true
-    else
-        if success then
-            print("     ❌ Результат: " .. tostring(result))
+    if success then
+        if result and type(result) == "number" and result > 0 then
+            print("   ✅ УСПЕШНО! Выдано " .. result .. " шт. в направлении " .. dirName)
+            successResult = true
+            successDirection = dirName
         else
-            print("     ❌ Ошибка: " .. tostring(result))
+            print("     ❌ Результат: " .. tostring(result))
         end
+    else
+        local errMsg = tostring(result)
+        print("     ⚠️ " .. errMsg)
     end
 end
 
@@ -221,12 +219,16 @@ if not successResult then
     print("")
     print("❌ НИ ОДИН СПОСОБ НЕ СРАБОТАЛ!")
     print("")
-    print("Возможные причины:")
-    print("  1. ME интерфейс не подключён к сети хранения")
-    print("  2. Предмет не может быть выдан через ME (NBT, особый предмет)")
-    print("  3. Проблема с PIM (не настроен на приём)")
-    print("  4. В инвентаре нет места для этого конкретного предмета")
-    print("  5. PIM находится не в том направлении относительно ME")
+    print("📋 АНАЛИЗ РЕЗУЛЬТАТОВ:")
+    print("  • WEST и EAST: 'No neighbour attached' → PIM подключён туда, но не установлен")
+    print("  • DOWN/UP/NORTH/SOUTH: 'nil' → предмет не выходит в этих направлениях")
+    print("")
+    print("⚙️ ЧТО ПРОВЕРИТЬ:")
+    print("  1. Убедитесь, что PIM установлен НА сторону ME интерфейса (WEST или EAST)")
+    print("  2. PIM должен быть АКТИВЕН (на красный сигнал, не наоборот)")
+    print("  3. В ME интерфейсе должны быть кабели/линии к PIM")
+    print("  4. PIM должен иметь прямой контакт с ME сетью (не через другие блоки)")
+    print("  5. Проверьте, что PIM корректно принимает предметы (попробуйте вручную)")
     print("")
     print("Нажмите любую клавишу для выхода...")
     event.pull("key_down")
@@ -238,6 +240,9 @@ print("")
 print("═══════════════════════════════════════════════════════════════")
 print("  ✅ ТЕСТ ЗАВЕРШЁН УСПЕШНО!")
 print("═══════════════════════════════════════════════════════════════")
+print("")
+
+print("✅ РАБОТАЮЩЕЕ НАПРАВЛЕНИЕ: " .. successDirection)
 print("")
 
 -- Проверяем, что предмет появился в инвентаре
@@ -252,9 +257,19 @@ for slot = 1, 36 do
 end
 
 if not hasItemsAfter then
-    print("  Инвентарь пуст! Предмет не появился.")
+    print("  ⚠️ Инвентарь пуст! Предмет не появился в PIM.")
+    print("     Возможно, он вышел в другое место или был удален.")
+else
+    print("  ✅ Предмет успешно появился в инвентаре PIM!")
 end
 
+print("")
+print("═══════════════════════════════════════════════════════════════")
+print("  КОД ДЛЯ ИСПОЛЬЗОВАНИЯ В СКРИПТАХ:")
+print("═══════════════════════════════════════════════════════════════")
+print("")
+print("  me.exportItem(fingerprint, " .. directionCodes[successDirection] .. ", qty)")
+print("  -- Где " .. directionCodes[successDirection] .. " = " .. successDirection)
 print("")
 print("Нажмите любую клавишу для выхода...")
 event.pull("key_down")

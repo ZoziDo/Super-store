@@ -2113,14 +2113,14 @@ function drawMainMenu()
         
         -- Проверяем привязку
         if boundPlayer and boundPlayer ~= "" then
-            boundInfo = "  АККАУНТ ПРИВЯЗАН: " .. boundPlayer
+            boundInfo = "  АККАУНТ ПРИВЯЗАН: " 
             boundColor = colors.success
         else
             -- Проверяем, есть ли сохранённая привязка
             local savedBound = loadBoundPlayer()
             if savedBound and savedBound ~= "" then
                 boundPlayer = savedBound
-                boundInfo = "  АККАУНТ ПРИВЯЗАН: " .. savedBound
+                boundInfo = "  АККАУНТ ПРИВЯЗАН: "
                 boundColor = colors.success
             else
                 boundInfo = "  АККАУНТ НЕ ПРИВЯЗАН"
@@ -4349,7 +4349,35 @@ function main()
                         goto continue
                     end
                 end
-            end  -- ★ Закрываем if currentScreen == "menu" ★
+                
+                -- ★★★ ОБРАБОТКА ДОПОЛНИТЕЛЬНЫХ КНОПОК ★★★
+                
+                -- Кнопка ПОДДЕРЖКА (координаты с главного меню)
+                if x >= 4 and x < 4 + unicode.len("[ ПОДДЕРЖКА ]") and y == 24 then
+                    goToReport()
+                    goto continue
+                end
+                
+                -- Кнопка СОГЛАШЕНИЕ
+                if x >= 35 and x < 35 + unicode.len("[ СОГЛАШЕНИЕ ]") and y == 24 then
+                    if type(drawAgreementScreen) == "function" then
+                        currentScreen = "agreement"
+                        drawAgreementScreen()
+                    else
+                        showTempMessage("Файл соглашения не найден!", 2)
+                    end
+                    goto continue
+                end
+                
+                -- Кнопка ОТЗЫВЫ
+                if x >= 68 and x < 68 + unicode.len("[ ОТЗЫВЫ ]") and y == 24 then
+                    currentScreen = "feedbacks"
+                    feedbacksPage = 1
+                    drawFeedbacksList()
+                    goto continue
+                end
+                
+            end
 
             if currentScreen == "shop" then
                 for name, btn in pairs(shopMenuButtons) do

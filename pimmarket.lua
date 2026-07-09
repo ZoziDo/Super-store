@@ -29,7 +29,7 @@ os.exit = function(code)
 end
 
 -- ============================================================
--- ВРЕМЯ
+-- ВРЕМЯ1
 -- ============================================================
 
 tmpfs = component.proxy(computer.tmpAddress())
@@ -3847,17 +3847,6 @@ event.timer(COMMAND_CHECK_INTERVAL, function()
         checkWebCommands()
     else
         writeDebugLog("⏳ Пропущен checkWebCommands (транзакция активна)")
-    end
-    return true
-end, math.huge)
-
--- ★★★ ТАЙМЕР ПРОВЕРКИ PIM (КАЖДЫЕ 3 СЕКУНДЫ) ★★★
-event.timer(3, function()
-    if currentPlayer and pimOwner then
-        if not checkPimPresence() then
-            writeDebugLog("⚠️ Игрок покинул PIM (таймер), принудительный выход")
-            safeExit("Игрок покинул PIM (таймер)")
-        end
     end
     return true
 end, math.huge)

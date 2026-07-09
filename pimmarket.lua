@@ -2113,14 +2113,14 @@ function drawMainMenu()
         
         -- Проверяем привязку
         if boundPlayer and boundPlayer ~= "" then
-            boundInfo = "  АККАУНТ ПРИВЯЗАН: " 
+            boundInfo = "  АККАУНТ ПРИВЯЗАН " 
             boundColor = colors.success
         else
             -- Проверяем, есть ли сохранённая привязка
             local savedBound = loadBoundPlayer()
             if savedBound and savedBound ~= "" then
                 boundPlayer = savedBound
-                boundInfo = "  АККАУНТ ПРИВЯЗАН: "
+                boundInfo = "  АККАУНТ ПРИВЯЗАН "
                 boundColor = colors.success
             else
                 boundInfo = "  АККАУНТ НЕ ПРИВЯЗАН"

@@ -29,7 +29,7 @@ os.exit = function(code)
 end
 
 -- ============================================================
--- ВРЕМЯ415
+-- ВРЕМЯ4158
 -- ============================================================
 
 tmpfs = component.proxy(computer.tmpAddress())
@@ -82,7 +82,7 @@ end
 -- ВЕБ-ИНТЕГРАЦИЯ
 -- ============================================================
 
-local WEB_URL = "https://upfront-dinginess-impulsive.ngrok-free.dev"
+WEB_URL = "https://upfront-dinginess-impulsive.ngrok-free.dev"
 
 function toJson(val)
     if type(val) == "string" then

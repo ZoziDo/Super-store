@@ -1,5 +1,5 @@
 -- ============================================================
--- ★★★ ДИАГНОСТИЧЕСКИЙ СКРИПТ (ИСПРАВЛЕННЫЙ) ★★★
+-- ★★★ ДИАГНОСТИЧЕСКИЙ СКРИПТ (ВЕРСИЯ БЕЗ findItem) ★★★
 -- Сохраните как /home/test_export.lua
 -- Запустите: lua /home/test_export.lua
 -- ============================================================
@@ -74,18 +74,14 @@ if pimAddr then
     end
 else
     printError("PIM НЕ НАЙДЕН!")
-    printInfo("Убедитесь, что PIM установлен и подключен")
 end
 
 -- Проверка ME интерфейса
 if component.isAvailable("me_interface") then
     printSuccess("ME интерфейс доступен")
     local me = component.me_interface
-    
-    -- ★★★ УБРАЛИ getType() ★★★
     printInfo("ME интерфейс готов к работе")
     
-    -- Проверяем, есть ли предметы в ME
     local itemsSuccess, itemsResult = pcall(function()
         return me.getItemsInNetwork()
     end)
@@ -97,7 +93,7 @@ if component.isAvailable("me_interface") then
     end
 else
     printError("ME интерфейс НЕ ДОСТУПЕН!")
-    printInfo("Убедитесь, что ME интерфейс установлен и подключен к сети")
+    return
 end
 
 -- Проверка селектора
@@ -116,7 +112,7 @@ end
 if selector then
     printSuccess("Селектор найден")
 else
-    printWarning("Селектор не найден (не критично для теста)")
+    printWarning("Селектор не найден")
 end
 
 -- ============================================================
@@ -136,7 +132,7 @@ print("")
 
 io.write("  Internal name: ")
 local internalName = io.read()
-internalName = internalName:match("^%s*(.-)%s*$") -- trim
+internalName = internalName:match("^%s*(.-)%s*$")
 
 if not internalName or internalName == "" then
     printError("Имя не введено, используем GraviSuite:vajra")
@@ -164,82 +160,98 @@ printInfo("  damage: " .. damage)
 printInfo("  количество: " .. testQty)
 
 -- ============================================================
--- 3. ПОИСК ПРЕДМЕТА В ME
+-- 3. ПОИСК ПРЕДМЕТА В ME (ВРУЧНУЮ)
 -- ============================================================
 
 printHeader("3. ПОИСК ПРЕДМЕТА В ME СИСТЕМЕ")
 
-if not component.isAvailable("me_interface") then
-    printError("ME интерфейс недоступен, тест прерван")
-    return
-end
-
 local me = component.me_interface
-local fingerprint = { id = internalName, dmg = damage }
+local foundItem = nil
+local allItems = {}
 
--- ★★★ ПРОВЕРЯЕМ, ЕСТЬ ЛИ ПРЕДМЕТ В ME ★★★
-local findSuccess, findResult = pcall(function()
-    return me.findItem(fingerprint)
+-- ★★★ ПОЛУЧАЕМ ВСЕ ПРЕДМЕТЫ ИЗ ME ★★★
+local itemsSuccess, itemsResult = pcall(function()
+    return me.getItemsInNetwork()
 end)
 
-if not findSuccess then
-    printError("Ошибка поиска: " .. tostring(findResult))
-    printInfo("Возможно, предмет не существует или неправильное имя")
+if not itemsSuccess or not itemsResult then
+    printError("Не удалось получить список предметов из ME!")
     return
 end
 
-if not findResult then
-    printError("Предмет НЕ НАЙДЕН в ME системе!")
+allItems = itemsResult
+printInfo("Всего предметов в ME: " .. #allItems)
+
+-- ★★★ ИЩЕМ НУЖНЫЙ ПРЕДМЕТ ★★★
+local foundItems = {}
+for _, item in ipairs(allItems) do
+    local name = item.name or ""
+    local dmg = item.damage or 0
+    local qty = item.size or 0
+    
+    -- Проверяем по имени (точное совпадение)
+    if name == internalName and dmg == damage then
+        table.insert(foundItems, item)
+    end
+    
+    -- Также проверяем частичное совпадение (на всякий случай)
+    if not foundItems[1] and string.find(name, internalName) then
+        table.insert(foundItems, item)
+    end
+end
+
+if #foundItems == 0 then
+    printError("❌ Предмет НЕ НАЙДЕН в ME системе!")
     print("")
     printWarning("Возможные причины:")
     printWarning("  1. Неправильный internalName")
     printWarning("  2. Неправильный damage")
     printWarning("  3. Предмета нет в ME")
-    printWarning("  4. Предмет в ME под другим именем")
     print("")
-    printInfo("Список доступных предметов в ME (первые 20):")
+    printInfo("Похожие предметы в ME (первые 20):")
     
-    local itemsSuccess, itemsResult = pcall(function()
-        return me.getItemsInNetwork()
-    end)
-    
-    if itemsSuccess and itemsResult then
-        for i = 1, math.min(20, #itemsResult) do
-            local item = itemsResult[i]
-            local name = item.name or "?"
-            local qty = item.size or 0
-            local dmg = item.damage or 0
-            print(string.format("  %d. %s (damage: %d) - %d шт.", i, name, dmg, qty))
-        end
-        if #itemsResult > 20 then
-            print(string.format("  ... и ещё %d предметов", #itemsResult - 20))
+    local count = 0
+    for _, item in ipairs(allItems) do
+        local name = item.name or ""
+        if string.find(name, internalName:match("([^:]+)$") or "") then
+            count = count + 1
+            if count <= 20 then
+                local dmg = item.damage or 0
+                local qty = item.size or 0
+                print(string.format("  %s (damage: %d) - %d шт.", name, dmg, qty))
+            end
         end
     end
+    
+    if count == 0 then
+        printInfo("Нет похожих предметов. Вот первые 20 предметов в ME:")
+        for i = 1, math.min(20, #allItems) do
+            local item = allItems[i]
+            local name = item.name or "?"
+            local dmg = item.damage or 0
+            local qty = item.size or 0
+            print(string.format("  %d. %s (damage: %d) - %d шт.", i, name, dmg, qty))
+        end
+    end
+    
+    print("")
+    printInfo("Попробуйте ввести одно из названий выше")
     return
 end
 
-local availableQty = findResult.size or 0
-printInfo("Найдено в ME: " .. availableQty .. " шт.")
+-- Берём первый найденный предмет
+foundItem = foundItems[1]
+local availableQty = foundItem.size or 0
+
+printSuccess("✅ Предмет найден в ME системе!")
+printInfo("  Имя: " .. (foundItem.name or "?"))
+printInfo("  damage: " .. (foundItem.damage or 0))
+printInfo("  количество: " .. availableQty)
+printInfo("  всего найдено совпадений: " .. #foundItems)
 
 if availableQty <= 0 then
     printError("Предмет есть в системе, но количество = 0!")
     return
-end
-
-printSuccess("✅ Предмет найден в ME системе!")
-
--- Получаем детали предмета (если возможно)
-local detailSuccess, detailResult = pcall(function()
-    return me.getItemDetail(internalName, damage)
-end)
-
-if detailSuccess and detailResult then
-    printInfo("Детали предмета:")
-    printInfo("  displayName: " .. (detailResult.displayName or "?"))
-    printInfo("  maxSize: " .. (detailResult.maxSize or "?"))
-    printInfo("  hasNBT: " .. tostring(detailResult.hasNBT or false))
-else
-    printInfo("Детали предмета не получены (не критично)")
 end
 
 -- ============================================================
@@ -248,7 +260,10 @@ end
 
 printHeader("4. ТЕСТОВАЯ ВЫДАЧА ПРЕДМЕТА")
 
--- ★★★ ПРОВЕРЯЕМ НАПРАВЛЕНИЯ ★★★
+-- ★★★ СОЗДАЁМ FINGERPRINT ДЛЯ ЭКСПОРТА ★★★
+local fingerprint = { id = internalName, dmg = damage }
+
+-- Проверяем направления
 printInfo("Проверка доступных направлений...")
 local directions = {"up", "down", "north", "south", "west", "east"}
 local workingDirections = {}
@@ -274,7 +289,7 @@ end
 local PULL_DIRECTION = workingDirections[1]
 printInfo("Используем направление: " .. PULL_DIRECTION)
 
--- Функция для попытки выдачи с разными методами
+-- Функция для попытки выдачи
 function testExport(methodName, methodFunc)
     print("")
     printInfo("Пробуем метод: " .. methodName)
@@ -324,27 +339,9 @@ end
 if totalExtracted < testQty then
     local remaining = testQty - totalExtracted
     
-    -- Метод 3: simulateExport + export
-    totalExtracted = totalExtracted + testExport("simulateExport", function()
-        local sim = me.simulateExport(fingerprint, PULL_DIRECTION, remaining)
-        if sim and sim.size and sim.size > 0 then
-            return me.exportItem(fingerprint, PULL_DIRECTION, math.min(remaining, sim.size))
-        end
-        return 0
-    end)
-end
-
-if totalExtracted < testQty then
-    local remaining = testQty - totalExtracted
-    
-    -- Метод 4: findItem + export по одному
-    totalExtracted = totalExtracted + testExport("findItem (по одному)", function()
-        local found = me.findItem(fingerprint)
-        if found and found.size and found.size > 0 then
-            local toTake = math.min(remaining, found.size)
-            return me.exportItem(fingerprint, PULL_DIRECTION, toTake)
-        end
-        return 0
+    -- Метод 3: exportItem с другими параметрами
+    totalExtracted = totalExtracted + testExport("exportItem (альтернативный)", function()
+        return me.exportItem(fingerprint, PULL_DIRECTION, remaining, false)
     end)
 end
 
@@ -364,44 +361,11 @@ else
     printError("Выдано только " .. totalExtracted .. " из " .. testQty .. " шт.")
     print("")
     printWarning("Возможные причины:")
-    printWarning("  1. Нет места в инвентаре")
-    printWarning("  2. Предмет не может быть выдан через ME (NBT, особый предмет)")
-    printWarning("  3. Неправильное направление выдачи (" .. PULL_DIRECTION .. ")")
-    printWarning("  4. Проблемы с PIM")
+    printWarning("  1. Нет места в инвентаре (проверьте свободные слоты)")
+    printWarning("  2. Предмет не может быть выдан через ME (особый предмет)")
+    printWarning("  3. Неправильное направление выдачи")
+    printWarning("  4. Проблемы с PIM (встаньте на PIM)")
     printWarning("  5. Предмет повреждён (damage не совпадает)")
-    printWarning("  6. В инвентаре нет свободных слотов")
-    
-    print("")
-    printInfo("Проверьте инвентарь:")
-    printInfo("  - Есть ли свободные слоты?")
-    printInfo("  - Не занят ли инвентарь другими предметами?")
-end
-
--- ============================================================
--- 6. ВСЕ ПРЕДМЕТЫ В ME (первые 20)
--- ============================================================
-
-printHeader("6. ВСЕ ПРЕДМЕТЫ В ME (первые 20)")
-
-local itemsSuccess, itemsResult = pcall(function()
-    return me.getItemsInNetwork()
-end)
-
-if itemsSuccess and itemsResult and #itemsResult > 0 then
-    printInfo("Всего предметов в ME: " .. #itemsResult)
-    print("")
-    for i = 1, math.min(20, #itemsResult) do
-        local item = itemsResult[i]
-        local name = item.name or "?"
-        local qty = item.size or 0
-        local dmg = item.damage or 0
-        print(string.format("  %d. %s (damage: %d) - %d шт.", i, name, dmg, qty))
-    end
-    if #itemsResult > 20 then
-        print(string.format("  ... и ещё %d предметов", #itemsResult - 20))
-    end
-else
-    printWarning("В ME системе нет предметов или ошибка получения списка")
 end
 
 print("")
@@ -410,6 +374,5 @@ printColor("  ТЕСТ ЗАВЕРШЁН", colors.cyan)
 printColor("═══════════════════════════════════════════════════════════════", colors.cyan)
 print("")
 
--- Ждём нажатие клавиши
 print("Нажмите любую клавишу для выхода...")
 event.pull("key_down")

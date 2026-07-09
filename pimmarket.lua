@@ -29,7 +29,7 @@ os.exit = function(code)
 end
 
 -- ============================================================
--- ВРЕМЯ1114
+-- ВРЕМЯ11145555
 -- ============================================================
 
 tmpfs = component.proxy(computer.tmpAddress())
@@ -462,6 +462,7 @@ DB_PATH = "/home/players.db"
 STATS_PATH = "/home/global_stats.db"
 FEEDBACKS_PATH = "/home/feedbacks.db"
 REPORTS_PATH = "/home/reports.log"
+REPORTS_FILE = "/home/reports.json"  -- ★★★ НОВЫЙ ФАЙЛ ДЛЯ РЕПОРТОВ ★★★
 PENDING_FILE = "/home/pending_changes.lua"
 
 admins = {}
@@ -470,6 +471,53 @@ globalStats = { totalReports = 0, totalBuys = 0, totalSells = 0, totalRevenue = 
 transactions = {}
 pending_buffer = {}
 retry_delay = 10
+
+-- ============================================================
+-- ★★★ РАБОТА С РЕПОРТАМИ (ЛОКАЛЬНОЕ СОХРАНЕНИЕ) ★★★
+-- ============================================================
+
+function loadReportsFromFile()
+    if fs.exists(REPORTS_FILE) then
+        local file = io.open(REPORTS_FILE, "r")
+        if file then
+            local data = file:read("*a")
+            file:close()
+            if data and #data > 0 then
+                local ok, result = pcall(serialization.unserialize, data)
+                if ok and type(result) == "table" then
+                    return result
+                end
+            end
+        end
+    end
+    return {}
+end
+
+function saveReportsToFile(reports)
+    local file = io.open(REPORTS_FILE, "w")
+    if file then
+        file:write(serialization.serialize(reports))
+        file:close()
+        return true
+    else
+        writeErrorLog("❌ Не удалось сохранить репорты в файл")
+        return false
+    end
+end
+
+function addReportToLocal(name, text)
+    local reports = loadReportsFromFile()
+    local report_entry = {
+        time = getRealTimeString(),
+        name = name or "Аноним",
+        text = text or "",
+        viewed = false
+    }
+    table.insert(reports, 1, report_entry)
+    saveReportsToFile(reports)
+    writeDebugLog("📝 Репорт сохранён локально: " .. (name or "Аноним"))
+    return reports
+end
 
 -- ============================================================
 -- ФУНКЦИИ ДЛЯ БУФЕРА ИЗМЕНЕНИЙ
@@ -646,6 +694,7 @@ ensureFileExists(STATS_PATH, { totalReports = 0, totalBuys = 0, totalSells = 0, 
 ensureFileExists(FEEDBACKS_PATH, {})
 ensureFileExists(REPORTS_PATH, "")
 ensureFileExists(PENDING_FILE, {})
+ensureFileExists(REPORTS_FILE, {})  -- ★★★ ДОБАВЛЕНО ★★★
 
 -- Загрузка админов
 if fs.exists(ADMINS_PATH) then
@@ -4112,6 +4161,9 @@ function main()
                 if canSendReport() then
                 local sendBtn = {x=33, y=14, xs=17, ys=1}
                 if isButtonClicked(sendBtn, x, y) and reportInput and reportInput ~= "" then
+                    -- ★★★ СОХРАНЯЕМ РЕПОРТ ЛОКАЛЬНО ★★★
+                    addReportToLocal(currentPlayer or "?", reportInput)
+                    
                     sendToWeb("/api/new_report", toJson({
                         time = getRealTimeString(),
                         name = currentPlayer or "?",

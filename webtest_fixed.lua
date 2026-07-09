@@ -1,15 +1,32 @@
+-- ============================================================
+-- ★★★ ПОЛНАЯ ДИАГНОСТИКА ME + PIM ★★★1123
+-- Сохраните как /home/diag_full.lua
+-- Запустите: lua /home/diag_full.lua
+-- ============================================================
+
 local component = require("component")
 local event = require("event")
-local computer = require("computer")
+local serialization = require("serialization")
 
 print("")
 print("═══════════════════════════════════════════════════════════════")
-print("  ТЕСТ ВЫДАЧИ ПРЕДМЕТА В PIM (ИСПРАВЛЕННЫЙ)")
+print("  ПОЛНАЯ ДИАГНОСТИКА ME + PIM")
 print("═══════════════════════════════════════════════════════════════")
 print("")
 
--- 1. Проверяем компоненты
+-- ============================================================
+-- 1. ПРОВЕРКА КОМПОНЕНТОВ
+-- ============================================================
 print("1. ПРОВЕРКА КОМПОНЕНТОВ")
+print("")
+
+-- Все компоненты
+print("Все доступные компоненты:")
+for addr, type in component.list() do
+    if type == "me_interface" or type == "pim" or type == "inventory" then
+        print("  " .. type .. " -> " .. addr)
+    end
+end
 print("")
 
 -- ME интерфейс
@@ -19,6 +36,16 @@ if not component.isAvailable("me_interface") then
 end
 local me = component.me_interface
 print("✅ ME интерфейс доступен")
+
+-- Проверяем методы ME интерфейса
+print("")
+print("Доступные методы ME интерфейса:")
+for k, v in pairs(me) do
+    if type(v) == "function" then
+        print("  " .. k)
+    end
+end
+print("")
 
 -- PIM
 local pimAddr = nil
@@ -33,29 +60,48 @@ end
 local pim = component.proxy(pimAddr)
 print("✅ PIM найден: " .. pimAddr)
 
--- Проверяем, есть ли предметы в инвентаре PIM
+-- Проверяем методы PIM
 print("")
-print("   ⚠️ Проверка PIM...")
-print("   Встаньте на PIM и нажмите любую клавишу")
-event.pull("key_down")
+print("Доступные методы PIM:")
+for k, v in pairs(pim) do
+    if type(v) == "function" then
+        print("  " .. k)
+    end
+end
+print("")
 
+-- ============================================================
+-- 2. ПРОВЕРКА ИНВЕНТАРЯ PIM
+-- ============================================================
+print("2. ПРОВЕРКА ИНВЕНТАРЯ PIM")
+print("")
+
+local freeSlots = 0
 local hasItems = false
+
 for slot = 1, 36 do
-    local stack = pim.getStackInSlot(slot)
-    if stack and stack.size and stack.size > 0 then
+    local success, stack = pcall(function()
+        return pim.getStackInSlot(slot)
+    end)
+    if success and stack and stack.size and stack.size > 0 then
         hasItems = true
-        print("   Слот " .. slot .. ": " .. stack.name .. " x" .. stack.size)
+        print("  Слот " .. slot .. ": " .. stack.name .. " x" .. stack.size)
+    else
+        freeSlots = freeSlots + 1
     end
 end
 
-if not hasItems then
-    print("   ✅ Инвентарь пуст, можно тестировать")
-else
-    print("   ⚠️ В инвентаре есть предметы, они могут мешать")
-end
-
 print("")
-print("2. ВВОД ДАННЫХ")
+print("  Свободных слотов: " .. freeSlots)
+if freeSlots == 0 then
+    print("❌ ИНВЕНТАРЬ ПОЛОН! Освободите место.")
+end
+print("")
+
+-- ============================================================
+-- 3. ВВОД ДАННЫХ
+-- ============================================================
+print("3. ВВОД ДАННЫХ")
 print("")
 
 io.write("  Internal name (например GraviSuite:vajra): ")
@@ -82,175 +128,301 @@ if qtyInput and qtyInput ~= "" then
 end
 
 print("")
-print("   Тестируем: " .. internalName .. " (damage: " .. damage .. ") x" .. testQty)
+print("  Тестируем: " .. internalName .. " (damage: " .. damage .. ") x" .. testQty)
 print("")
 
--- 3. Проверяем наличие предмета в ME
-print("3. ПОИСК В ME")
+-- ============================================================
+-- 4. ПОИСК В ME
+-- ============================================================
+print("4. ПОИСК В ME")
 print("")
 
 local fingerprint = { id = internalName, dmg = damage }
+
+-- Получаем все предметы
 local items = me.getItemsInNetwork()
+print("  Всего предметов в ME: " .. #items)
+print("")
+
+-- Ищем точное совпадение
 local foundItem = nil
+local exactMatches = {}
 
 for _, item in ipairs(items) do
     if item.name == internalName and (item.damage or 0) == damage then
-        foundItem = item
-        break
+        table.insert(exactMatches, item)
     end
 end
 
-if not foundItem then
-    print("❌ Предмет НЕ НАЙДЕН в ME системе!")
+if #exactMatches > 0 then
+    foundItem = exactMatches[1]
+    print("  ✅ Найдено точных совпадений: " .. #exactMatches)
+    print("  Имя: " .. foundItem.name)
+    print("  Damage: " .. (foundItem.damage or 0))
+    print("  Количество: " .. (foundItem.size or 0))
+else
+    print("  ❌ Точных совпадений НЕТ!")
     print("")
-    print("   Похожие предметы в ME:")
+    print("  Похожие предметы в ME:")
     local count = 0
     for _, item in ipairs(items) do
         if string.find(item.name, internalName:match("[^:]+$") or "") then
             count = count + 1
-            if count <= 10 then
-                print("     " .. item.name .. " (damage: " .. (item.damage or 0) .. ") - " .. (item.size or 0) .. " шт.")
+            if count <= 20 then
+                print("    " .. item.name .. " (damage: " .. (item.damage or 0) .. ") - " .. (item.size or 0) .. " шт.")
             end
         end
     end
     if count == 0 then
-        print("     Нет похожих предметов. Первые 10 в ME:")
-        for i = 1, math.min(10, #items) do
+        print("    Нет похожих предметов!")
+        print("")
+        print("  Первые 20 предметов в ME:")
+        for i = 1, math.min(20, #items) do
             local item = items[i]
-            print("     " .. item.name .. " (damage: " .. (item.damage or 0) .. ") - " .. (item.size or 0) .. " шт.")
+            print("    " .. i .. ". " .. item.name .. " (damage: " .. (item.damage or 0) .. ") - " .. (item.size or 0) .. " шт.")
         end
     end
+    print("")
+    print("  Нажмите любую клавишу для выхода...")
+    event.pull("key_down")
     return
 end
-
-print("✅ Предмет найден!")
-print("   Количество в ME: " .. (foundItem.size or 0) .. " шт.")
 
 if (foundItem.size or 0) < testQty then
-    print("⚠️ В ME меньше предметов чем нужно для теста!")
+    print("  ⚠️ В ME меньше предметов чем нужно для теста!")
     testQty = foundItem.size or 0
     if testQty == 0 then
-        print("❌ Нет предметов для теста")
+        print("  ❌ Нет предметов для теста")
+        print("  Нажмите любую клавишу для выхода...")
+        event.pull("key_down")
         return
     end
-    print("   Будем тестировать с " .. testQty .. " шт.")
+    print("  Будем тестировать с " .. testQty .. " шт.")
 end
-
-print("")
-print("4. ПРОВЕРКА ИНВЕНТАРЯ")
 print("")
 
-local freeSlots = 0
-local slotContents = {}
-
-for slot = 1, 36 do
-    local stack = pim.getStackInSlot(slot)
-    if stack and stack.size and stack.size > 0 then
-        slotContents[slot] = { name = stack.name, size = stack.size, damage = stack.damage or 0 }
-    else
-        freeSlots = freeSlots + 1
-    end
-end
-
-print("   Свободных слотов: " .. freeSlots)
-
-if freeSlots == 0 then
-    print("❌ ИНВЕНТАРЬ ПОЛОН! Освободите место.")
-    print("   Нажмите любую клавишу для выхода...")
-    event.pull("key_down")
-    return
-end
-
-if next(slotContents) then
-    print("   Предметы в инвентаре:")
-    for slot, data in pairs(slotContents) do
-        print("     Слот " .. slot .. ": " .. data.name .. " x" .. data.size)
-    end
-else
-    print("   Инвентарь пуст")
-end
-
-print("")
-print("5. ТЕСТОВАЯ ВЫДАЧА")
+-- ============================================================
+-- 5. ПРОВЕРКА МЕТОДОВ ВЫДАЧИ (ПОЛНАЯ)
+-- ============================================================
+print("5. ПРОВЕРКА МЕТОДОВ ВЫДАЧИ")
 print("")
 
-local successResult = false
+local testResults = {}
 
--- ИСПРАВЛЕННЫЙ Способ 1: Выдача с направлением UP (UPPERCASE)
-print("   Способ 1: exportItem с направлением UP")
+-- Метод 1: exportItem с направлением "up"
+print("  Метод 1: exportItem(fingerprint, \"up\", " .. testQty .. ")")
 local success, result = pcall(function()
-    return me.exportItem(fingerprint, "UP", testQty)
+    return me.exportItem(fingerprint, "up", testQty)
 end)
-if success and result and type(result) == "number" and result > 0 then
-    print("   ✅ УСПЕШНО! Выдано " .. result .. " шт.")
-    print("   Направление 'UP' работает!")
-    print("")
-    print("   ИСПОЛЬЗУЙТЕ В КОДЕ: me.exportItem(fingerprint, \"UP\", qty)")
-    successResult = true
-else
-    print("   ❌ Не работает. Результат: " .. tostring(result))
-end
-
--- Способ 2: Другие направления
-if not successResult then
-    print("")
-    print("   Способ 2: Пробуем другие направления")
-    local directions = {"DOWN", "NORTH", "SOUTH", "WEST", "EAST", "UNKNOWN"}
-    
-    for _, dir in ipairs(directions) do
-        if successResult then break end
-        print("     Пробуем направление: " .. dir)
-        local success, result = pcall(function()
-            return me.exportItem(fingerprint, dir, testQty)
-        end)
-        if success and result and type(result) == "number" and result > 0 then
-            print("   ✅ УСПЕШНО! Выдано " .. result .. " шт. в направлении " .. dir)
-            print("")
-            print("   ИСПОЛЬЗУЙТЕ В КОДЕ: me.exportItem(fingerprint, \"" .. dir .. "\", qty)")
-            successResult = true
-        end
+if success then
+    print("    Результат: " .. tostring(result))
+    if result and type(result) == "number" and result > 0 then
+        print("    ✅ РАБОТАЕТ! Выдано " .. result .. " шт.")
+        table.insert(testResults, {method = "up", result = result})
+    else
+        print("    ❌ НЕ РАБОТАЕТ (вернул " .. tostring(result) .. ")")
     end
+else
+    print("    ❌ ОШИБКА: " .. tostring(result))
 end
+print("")
 
--- Если ничего не сработало
-if not successResult then
+-- Метод 2: exportItem с направлением "down"
+print("  Метод 2: exportItem(fingerprint, \"down\", " .. testQty .. ")")
+local success, result = pcall(function()
+    return me.exportItem(fingerprint, "down", testQty)
+end)
+if success then
+    print("    Результат: " .. tostring(result))
+    if result and type(result) == "number" and result > 0 then
+        print("    ✅ РАБОТАЕТ! Выдано " .. result .. " шт.")
+        table.insert(testResults, {method = "down", result = result})
+    else
+        print("    ❌ НЕ РАБОТАЕТ (вернул " .. tostring(result) .. ")")
+    end
+else
+    print("    ❌ ОШИБКА: " .. tostring(result))
+end
+print("")
+
+-- Метод 3: exportItem с направлением "north"
+print("  Метод 3: exportItem(fingerprint, \"north\", " .. testQty .. ")")
+local success, result = pcall(function()
+    return me.exportItem(fingerprint, "north", testQty)
+end)
+if success then
+    print("    Результат: " .. tostring(result))
+    if result and type(result) == "number" and result > 0 then
+        print("    ✅ РАБОТАЕТ! Выдано " .. result .. " шт.")
+        table.insert(testResults, {method = "north", result = result})
+    else
+        print("    ❌ НЕ РАБОТАЕТ (вернул " .. tostring(result) .. ")")
+    end
+else
+    print("    ❌ ОШИБКА: " .. tostring(result))
+end
+print("")
+
+-- Метод 4: exportItem с направлением "south"
+print("  Метод 4: exportItem(fingerprint, \"south\", " .. testQty .. ")")
+local success, result = pcall(function()
+    return me.exportItem(fingerprint, "south", testQty)
+end)
+if success then
+    print("    Результат: " .. tostring(result))
+    if result and type(result) == "number" and result > 0 then
+        print("    ✅ РАБОТАЕТ! Выдано " .. result .. " шт.")
+        table.insert(testResults, {method = "south", result = result})
+    else
+        print("    ❌ НЕ РАБОТАЕТ (вернул " .. tostring(result) .. ")")
+    end
+else
+    print("    ❌ ОШИБКА: " .. tostring(result))
+end
+print("")
+
+-- Метод 5: exportItem с направлением "west"
+print("  Метод 5: exportItem(fingerprint, \"west\", " .. testQty .. ")")
+local success, result = pcall(function()
+    return me.exportItem(fingerprint, "west", testQty)
+end)
+if success then
+    print("    Результат: " .. tostring(result))
+    if result and type(result) == "number" and result > 0 then
+        print("    ✅ РАБОТАЕТ! Выдано " .. result .. " шт.")
+        table.insert(testResults, {method = "west", result = result})
+    else
+        print("    ❌ НЕ РАБОТАЕТ (вернул " .. tostring(result) .. ")")
+    end
+else
+    print("    ❌ ОШИБКА: " .. tostring(result))
+end
+print("")
+
+-- Метод 6: exportItem с направлением "east"
+print("  Метод 6: exportItem(fingerprint, \"east\", " .. testQty .. ")")
+local success, result = pcall(function()
+    return me.exportItem(fingerprint, "east", testQty)
+end)
+if success then
+    print("    Результат: " .. tostring(result))
+    if result and type(result) == "number" and result > 0 then
+        print("    ✅ РАБОТАЕТ! Выдано " .. result .. " шт.")
+        table.insert(testResults, {method = "east", result = result})
+    else
+        print("    ❌ НЕ РАБОТАЕТ (вернул " .. tostring(result) .. ")")
+    end
+else
+    print("    ❌ ОШИБКА: " .. tostring(result))
+end
+print("")
+
+-- ============================================================
+-- 6. ЕСЛИ НИЧЕГО НЕ РАБОТАЕТ - ДОПОЛНИТЕЛЬНЫЕ ПРОВЕРКИ
+-- ============================================================
+if #testResults == 0 then
+    print("6. ДОПОЛНИТЕЛЬНЫЕ ПРОВЕРКИ")
     print("")
-    print("❌ НИ ОДИН СПОСОБ НЕ СРАБОТАЛ!")
+    
+    -- Проверяем, есть ли предмет в ME через findItem (если доступен)
+    if me.findItem then
+        print("  Проверка через findItem:")
+        local success, result = pcall(function()
+            return me.findItem(fingerprint)
+        end)
+        if success and result then
+            print("    Найдено: " .. tostring(result.size or 0) .. " шт.")
+        else
+            print("    Ошибка: " .. tostring(result))
+        end
+        print("")
+    end
+    
+    -- Проверяем simulateExport (если доступен)
+    if me.simulateExport then
+        print("  Проверка через simulateExport:")
+        local success, result = pcall(function()
+            return me.simulateExport(fingerprint, "up", 1)
+        end)
+        if success and result then
+            print("    Можно выдать: " .. tostring(result.size or 0) .. " шт.")
+        else
+            print("    Ошибка: " .. tostring(result))
+        end
+        print("")
+    end
+    
+    -- Проверяем exportItem с другими параметрами
+    print("  Проверка exportItem с разными вариантами:")
+    
+    -- Вариант: exportItem с 4 параметрами (force)
+    local success, result = pcall(function()
+        return me.exportItem(fingerprint, "up", 1, false)
+    end)
+    print("    exportItem(fingerprint, \"up\", 1, false) -> " .. tostring(result))
+    
+    local success, result = pcall(function()
+        return me.exportItem(fingerprint, "up", 1, true)
+    end)
+    print("    exportItem(fingerprint, \"up\", 1, true) -> " .. tostring(result))
     print("")
-    print("Возможные причины:")
-    print("  1. ME интерфейс не подключён к сети хранения")
-    print("  2. Предмет не может быть выдан через ME (NBT, особый предмет)")
-    print("  3. Проблема с PIM (не настроен на приём)")
-    print("  4. В инвентаре нет места для этого конкретного предмета")
-    print("  5. PIM находится не в том направлении относительно ME")
+    
+    -- Проверяем, может проблема в том, что предмет с NBT
+    print("  Проверка NBT:")
+    local success, result = pcall(function()
+        return me.getItemDetail(internalName, damage)
+    end)
+    if success and result then
+        print("    displayName: " .. (result.displayName or "?"))
+        print("    hasNBT: " .. tostring(result.hasNBT or false))
+        if result.hasNBT then
+            print("    ⚠️ У предмета есть NBT данные! Это может мешать.")
+        end
+    else
+        print("    Не удалось получить детали: " .. tostring(result))
+    end
     print("")
-    print("Нажмите любую клавишу для выхода...")
+    
+    print("❌ НИ ОДИН МЕТОД НЕ СРАБОТАЛ!")
+    print("")
+    print("ВОЗМОЖНЫЕ ПРИЧИНЫ:")
+    print("  1. ME интерфейс НЕ ПОДКЛЮЧЁН к сети хранения")
+    print("     - Проверь, светится ли ME интерфейс")
+    print("     - Проверь, есть ли энергия в сети")
+    print("  2. Рядом с ME интерфейсом НЕТ ИНВЕНТАРЯ")
+    print("     - Нужен сундук/ящик в направлении выдачи")
+    print("  3. PIM НЕ НАСТРОЕН на приём предметов")
+    print("  4. Предмет имеет NBT данные (зачарования и т.д.)")
+    print("")
+    print("ЧТО ДЕЛАТЬ:")
+    print("  1. Поставь сундук СВЕРХУ или СНИЗУ от ME интерфейса")
+    print("  2. Проверь, что ME интерфейс подключён к сети")
+    print("  3. Попробуй другой предмет (например minecraft:dirt)")
+    print("")
+    print("Нажми любую клавишу для выхода...")
     event.pull("key_down")
     return
 end
 
--- Если успешно
-print("")
-print("═══════════════════════════════════════════════════════════════")
-print("  ✅ ТЕСТ ЗАВЕРШЁН УСПЕШНО!")
-print("═══════════════════════════════════════════════════════════════")
+-- ============================================================
+-- 7. РЕЗУЛЬТАТЫ
+-- ============================================================
+print("7. РЕЗУЛЬТАТЫ")
 print("")
 
--- Проверяем, что предмет появился в инвентаре
-print("ПРОВЕРКА ИНВЕНТАРЯ ПОСЛЕ ВЫДАЧИ:")
-local hasItemsAfter = false
-for slot = 1, 36 do
-    local stack = pim.getStackInSlot(slot)
-    if stack and stack.size and stack.size > 0 then
-        hasItemsAfter = true
-        print("  Слот " .. slot .. ": " .. stack.name .. " x" .. stack.size)
-    end
+print("  ✅ НАЙДЕНЫ РАБОЧИЕ МЕТОДЫ:")
+for _, res in ipairs(testResults) do
+    print("    - Направление \"" .. res.method .. "\" выдало " .. res.result .. " шт.")
 end
-
-if not hasItemsAfter then
-    print("  Инвентарь пуст! Предмет не появился.")
-end
-
 print("")
-print("Нажмите любую клавишу для выхода...")
+print("  ИСПОЛЬЗУЙ В КОДЕ:")
+print("    PULL_DIRECTION = \"" .. testResults[1].method .. "\"")
+print("")
+
+print("═══════════════════════════════════════════════════════════════")
+print("  ✅ ДИАГНОСТИКА ЗАВЕРШЕНА")
+print("═══════════════════════════════════════════════════════════════")
+print("")
+
+print("Нажми любую клавишу для выхода...")
 event.pull("key_down")

@@ -29,7 +29,7 @@ os.exit = function(code)
 end
 
 -- ============================================================
--- ВРЕМЯ41
+-- ВРЕМЯ415
 -- ============================================================
 
 tmpfs = component.proxy(computer.tmpAddress())
@@ -81,6 +81,8 @@ end
 -- ============================================================
 -- ВЕБ-ИНТЕГРАЦИЯ
 -- ============================================================
+
+local WEB_URL = "https://upfront-dinginess-impulsive.ngrok-free.dev"
 
 function toJson(val)
     if type(val) == "string" then
@@ -1251,6 +1253,7 @@ function syncCurrentPlayer()
     writeDebugLog("🔄 Синхронизация игрока: " .. currentPlayer)
     
     if players[currentPlayer] then
+        -- ★★★ ЗАГРУЖАЕМ ИЗ ДАННЫХ ИГРОКА ★★★
         coinBalance = players[currentPlayer].balance or 0
         emaBalance = players[currentPlayer].emaBalance or 0
         playerTransactions = players[currentPlayer].transactions or 0
@@ -2904,6 +2907,19 @@ function performSell()
     end
     playerTransactions = playerTransactions + 1
 
+    -- ★★★ ИСПРАВЛЕНИЕ: СРАЗУ СОХРАНЯЕМ В ДАННЫХ ИГРОКА ★★★
+    if currentPlayer and players[currentPlayer] then
+        players[currentPlayer].balance = coinBalance
+        players[currentPlayer].emaBalance = emaBalance
+        players[currentPlayer].transactions = playerTransactions
+        
+        -- ★★★ НЕМЕДЛЕННОЕ СОХРАНЕНИЕ ★★★
+        saveDB()
+        writeDebugLog("💾 Баланс сохранён после продажи для " .. currentPlayer .. ": Coin=" .. coinBalance .. ", EMA=" .. emaBalance)
+    else
+        writeErrorLog("⚠️ Игрок не найден при продаже: " .. tostring(currentPlayer))
+    end
+
     addTransaction("sell", currentPlayer, sellConfirmItem.displayName, realExtracted, value, 0)
 
     sellConfirmItem._processed = true
@@ -3092,12 +3108,16 @@ function performBuy()
     emaBalance = emaBalance - totalEma
     playerTransactions = playerTransactions + 1
 
+    -- ★★★ ИСПРАВЛЕНИЕ: НЕМЕДЛЕННОЕ СОХРАНЕНИЕ ★★★
     if currentPlayer and players[currentPlayer] then
         players[currentPlayer].balance = coinBalance
         players[currentPlayer].emaBalance = emaBalance
         players[currentPlayer].transactions = playerTransactions
+        -- ★★★ НЕМЕДЛЕННОЕ СОХРАНЕНИЕ ★★★
         saveDB()
         writeDebugLog("💾 Баланс сохранён (полн.) для " .. currentPlayer .. ": Coin=" .. coinBalance .. ", EMA=" .. emaBalance)
+    else
+        writeErrorLog("⚠️ Игрок не найден при покупке: " .. tostring(currentPlayer))
     end
 
     addTransaction("buy", currentPlayer, item.displayName, extracted, totalCoin, totalEma)

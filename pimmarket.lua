@@ -2113,24 +2113,24 @@ function drawMainMenu()
         
         -- Проверяем привязку
         if boundPlayer and boundPlayer ~= "" then
-            boundInfo = "✅ Аккаунт привязан: " .. boundPlayer
+            boundInfo = "  АККАУНТ ПРИВЯЗАН: " .. boundPlayer
             boundColor = colors.success
         else
             -- Проверяем, есть ли сохранённая привязка
             local savedBound = loadBoundPlayer()
             if savedBound and savedBound ~= "" then
                 boundPlayer = savedBound
-                boundInfo = "✅ Аккаунт привязан: " .. savedBound
+                boundInfo = "  АККАУНТ ПРИВЯЗАН: " .. savedBound
                 boundColor = colors.success
             else
-                boundInfo = "❌ Аккаунт НЕ привязан"
+                boundInfo = "  АККАУНТ НЕ ПРИВЯЗАН"
                 boundColor = colors.error
             end
         end
         
         gpu.setForeground(boundColor)
         local boundX = math.floor((80 - unicode.len(boundInfo)) / 2) + 1
-        gpu.set(boundX, 7, boundInfo)
+        gpu.set(boundX, 2, boundInfo)
 
         if not playerAgreed then
             gpu.setForeground(colors.accent_secondary)
@@ -3059,7 +3059,7 @@ function showAuthPopup()
         -- Кнопка ОТВЯЗАТЬ
          local unbindBtn = {
             text = "[ ОТВЯЗАТЬ АККАУНТ ]",
-            x = popupX + 1,
+            x = popupX + 3,
             y = popupY + popupHeight - 3,
             xs = 18,
             ys = 1,
@@ -3373,7 +3373,7 @@ function unbindAccount()
             
             -- Показываем успех
             gpu.setForeground(colors.success)
-            gpu.set(25, 17, "✅ Аккаунт ОТВЯЗАН!")
+            gpu.set(28, 17, "✅ Аккаунт ОТВЯЗАН!")
             gpu.setForeground(colors.text_main)
             gpu.set(23, 18, "   Доступ к магазину ограничен")
             addLog("🔓 Аккаунт отвязан: " .. currentPlayer)

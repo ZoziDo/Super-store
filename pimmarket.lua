@@ -29,7 +29,7 @@ os.exit = function(code)
 end
 
 -- ============================================================
--- ВРЕМЯ1225
+-- ВРЕМЯ1225566
 -- ============================================================
 
 tmpfs = component.proxy(computer.tmpAddress())
@@ -3021,16 +3021,16 @@ function showAuthPopup()
     
     -- Рамка
     gpu.setForeground(0x00FFCC)
-    gpu.fill(popupX, popupY, popupWidth, 1, "═")
-    gpu.fill(popupX, popupY + popupHeight - 1, popupWidth, 1, "═")
+    gpu.fill(popupX, popupY, popupWidth, 1, "=")
+    gpu.fill(popupX, popupY + popupHeight - 1, popupWidth, 1, "=")
     for i = 1, popupHeight - 2 do
-        gpu.set(popupX, popupY + i, "║")
-        gpu.set(popupX + popupWidth - 1, popupY + i, "║")
+        gpu.set(popupX, popupY + i, "╹")
+        gpu.set(popupX + popupWidth - 1, popupY + i, "╹")
     end
-    gpu.set(popupX, popupY, "╔")
-    gpu.set(popupX + popupWidth - 1, popupY, "╗")
-    gpu.set(popupX, popupY + popupHeight - 1, "╚")
-    gpu.set(popupX + popupWidth - 1, popupY + popupHeight - 1, "╝")
+    gpu.set(popupX, popupY, "+")
+    gpu.set(popupX + popupWidth - 1, popupY, "+")
+    gpu.set(popupX, popupY + popupHeight - 1, "+")
+    gpu.set(popupX + popupWidth - 1, popupY + popupHeight - 1, "+")
     
     -- Заголовок
     gpu.setForeground(0x00FFCC)
@@ -3057,9 +3057,9 @@ function showAuthPopup()
         gpu.set(popupX + 3, popupY + 7, "   Для отвязки нажмите кнопку ниже")
         
         -- Кнопка ОТВЯЗАТЬ
-        local unbindBtn = {
+         local unbindBtn = {
             text = "[ ОТВЯЗАТЬ АККАУНТ ]",
-            x = popupX + math.floor((popupWidth - 18) / 2),
+            x = popupX + 2,
             y = popupY + popupHeight - 3,
             xs = 18,
             ys = 1,
@@ -3068,7 +3068,7 @@ function showAuthPopup()
         }
         drawFlexButton(unbindBtn)
         
-        -- Кнопка ЗАКРЫТЬ
+        -- Кнопка ЗАКРЫТЬ (справа)
         local closeBtn = {
             text = "[ ЗАКРЫТЬ ]",
             x = popupX + popupWidth - 12,
@@ -3121,10 +3121,6 @@ function showAuthPopup()
         local codeX = popupX + 6 + math.floor((popupWidth - 12 - unicode.len(displayCode)) / 2)
         gpu.set(codeX, popupY + 9, displayCode)
         gpu.setBackground(0x0A0A1A)
-        
-        -- Статус
-        gpu.setForeground(colors.error)
-        gpu.set(popupX + 3, popupY + 12, "❌ Аккаунт НЕ привязан")
         
         -- Кнопки
         local closeBtn = {
@@ -3352,11 +3348,6 @@ function unbindAccount()
         return
     end
     
-    -- Показываем статус внутри попапа
-    gpu.setForeground(colors.accent_secondary)
-    gpu.set(20, 16, "Отвязка аккаунта...")
-    os.sleep(0.5)
-    
     local json_data = toJson({
         site_user = currentPlayer
     })
@@ -3382,9 +3373,9 @@ function unbindAccount()
             
             -- Показываем успех
             gpu.setForeground(colors.success)
-            gpu.set(20, 17, "✅ Аккаунт ОТВЯЗАН!")
+            gpu.set(22, 17, "✅ Аккаунт ОТВЯЗАН!")
             gpu.setForeground(colors.text_main)
-            gpu.set(20, 18, "   Доступ к магазину ограничен")
+            gpu.set(21, 18, "   Доступ к магазину ограничен")
             addLog("🔓 Аккаунт отвязан: " .. currentPlayer)
             os.sleep(2)
             goBackToMenu()

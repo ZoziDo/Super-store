@@ -29,7 +29,7 @@ os.exit = function(code)
 end
 
 -- ============================================================
--- ВРЕМЯ11145555
+-- ВРЕМЯ1
 -- ============================================================
 
 tmpfs = component.proxy(computer.tmpAddress())
@@ -3400,9 +3400,13 @@ function applyIncrementalChanges(itemsFile, changes, itemType)
         end
         writeDebugLog("📦 buyItemsData обновлена, товаров: " .. #buyItemsData)
         
+        -- ★★★ ПРИНУДИТЕЛЬНО СБРАСЫВАЕМ КЕШ ★★★
+        cachedBuyItems = nil
+        cacheTimestamp = 0
+        
         -- ★★★ ПРИНУДИТЕЛЬНО ПЕРЕЗАГРУЖАЕМ ТОВАРЫ В МАГАЗИНЕ ★★★
+        loadBuyItems(true)
         if currentScreen == "shop_buy" then
-            loadBuyItems(true)
             drawBuyStatic()
             drawBuyItemsList()
             drawBuyButtons()

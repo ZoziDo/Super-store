@@ -1,7 +1,7 @@
 -- ============================================================
--- ★★★ ТЕСТОВЫЙ СКРИПТ ВЫДАЧИ В PIM ★★★
+-- ★★★ ТЕСТОВЫЙ СКРИПТ ВЫДАЧИ В PIM (ИСПРАВЛЕННЫЙ) ★★★
 -- Сохраните как /home/test_pim_export.lua
--- Запустите: lua /home/test_pim_export.lua
+-- Запустите: lua /home/test_pim_export.lua11111
 -- ============================================================
 
 local component = require("component")
@@ -173,6 +173,7 @@ print("5. ТЕСТОВАЯ ВЫДАЧА")
 print("")
 
 -- ★★★ ПРОБУЕМ РАЗНЫЕ СПОСОБЫ ВЫДАЧИ ★★★
+local successResult = false
 
 -- Способ 1: Стандартная выдача с направлением "up"
 print("   Способ 1: exportItem с направлением 'up'")
@@ -184,80 +185,87 @@ if success and result and type(result) == "number" and result > 0 then
     print("   Направление 'up' работает!")
     print("")
     print("   ИСПОЛЬЗУЙТЕ В КОДЕ: PULL_DIRECTION = \"up\"")
-    goto done
+    successResult = true
 else
     print("   ❌ Не работает. Результат: " .. tostring(result))
 end
 
 -- Способ 2: Выдача в слот PIM (слот 0 = весь инвентарь)
-print("")
-print("   Способ 2: exportItem в слот 0 (весь инвентарь)")
-local success, result = pcall(function()
-    return me.exportItem(fingerprint, 0, testQty)
-end)
-if success and result and type(result) == "number" and result > 0 then
-    print("   ✅ УСПЕШНО! Выдано " .. result .. " шт.")
-    print("   Способ со слотом 0 работает!")
+if not successResult then
     print("")
-    print("   ИСПОЛЬЗУЙТЕ В КОДЕ: me.exportItem(fingerprint, 0, toTake)")
-    goto done
-else
-    print("   ❌ Не работает. Результат: " .. tostring(result))
+    print("   Способ 2: exportItem в слот 0 (весь инвентарь)")
+    local success, result = pcall(function()
+        return me.exportItem(fingerprint, 0, testQty)
+    end)
+    if success and result and type(result) == "number" and result > 0 then
+        print("   ✅ УСПЕШНО! Выдано " .. result .. " шт.")
+        print("   Способ со слотом 0 работает!")
+        print("")
+        print("   ИСПОЛЬЗУЙТЕ В КОДЕ: me.exportItem(fingerprint, 0, toTake)")
+        successResult = true
+    else
+        print("   ❌ Не работает. Результат: " .. tostring(result))
+    end
 end
 
 -- Способ 3: Выдача в конкретный свободный слот
-print("")
-print("   Способ 3: exportItem в свободный слот")
-for slot = 1, 36 do
-    local stack = pim.getStackInSlot(slot)
-    if not stack or stack.size == 0 then
-        print("     Пробуем слот " .. slot)
-        local success, result = pcall(function()
-            return me.exportItem(fingerprint, slot, testQty)
-        end)
-        if success and result and type(result) == "number" and result > 0 then
-            print("   ✅ УСПЕШНО! Выдано " .. result .. " шт. в слот " .. slot)
-            print("")
-            print("   ИСПОЛЬЗУЙТЕ В КОДЕ: me.exportItem(fingerprint, slot, toTake)")
-            print("   где slot - номер свободного слота")
-            goto done
-        else
-            print("     ❌ Не работает. Результат: " .. tostring(result))
+if not successResult then
+    print("")
+    print("   Способ 3: exportItem в свободный слот")
+    for slot = 1, 36 do
+        local stack = pim.getStackInSlot(slot)
+        if not stack or stack.size == 0 then
+            print("     Пробуем слот " .. slot)
+            local success, result = pcall(function()
+                return me.exportItem(fingerprint, slot, testQty)
+            end)
+            if success and result and type(result) == "number" and result > 0 then
+                print("   ✅ УСПЕШНО! Выдано " .. result .. " шт. в слот " .. slot)
+                print("")
+                print("   ИСПОЛЬЗУЙТЕ В КОДЕ: me.exportItem(fingerprint, slot, toTake)")
+                print("   где slot - номер свободного слота")
+                successResult = true
+                break
+            else
+                print("     ❌ Не работает. Результат: " .. tostring(result))
+            end
         end
     end
 end
 
 -- Способ 4: Выдача с force = true (если есть)
-print("")
-print("   Способ 4: exportItem с force = true")
-local success, result = pcall(function()
-    -- В некоторых версиях force передаётся как 4-й параметр
-    return me.exportItem(fingerprint, "up", testQty, true)
-end)
-if success and result and type(result) == "number" and result > 0 then
-    print("   ✅ УСПЕШНО! Выдано " .. result .. " шт.")
-    goto done
-else
-    print("   ❌ Не работает. Результат: " .. tostring(result))
+if not successResult then
+    print("")
+    print("   Способ 4: exportItem с force = true")
+    local success, result = pcall(function()
+        return me.exportItem(fingerprint, "up", testQty, true)
+    end)
+    if success and result and type(result) == "number" and result > 0 then
+        print("   ✅ УСПЕШНО! Выдано " .. result .. " шт.")
+        successResult = true
+    else
+        print("   ❌ Не работает. Результат: " .. tostring(result))
+    end
 end
 
 -- Если ничего не сработало
-print("")
-print("❌ НИ ОДИН СПОСОБ НЕ СРАБОТАЛ!")
-print("")
-print("Возможные причины:")
-print("  1. ME интерфейс не подключён к сети хранения")
-print("  2. Предмет не может быть выдан через ME (NBT, особый предмет)")
-print("  3. Проблема с PIM (не настроен на приём)")
-print("  4. В инвентаре нет места для этого конкретного предмета")
-print("  5. Нужно использовать другой метод выдачи")
+if not successResult then
+    print("")
+    print("❌ НИ ОДИН СПОСОБ НЕ СРАБОТАЛ!")
+    print("")
+    print("Возможные причины:")
+    print("  1. ME интерфейс не подключён к сети хранения")
+    print("  2. Предмет не может быть выдан через ME (NBT, особый предмет)")
+    print("  3. Проблема с PIM (не настроен на приём)")
+    print("  4. В инвентаре нет места для этого конкретного предмета")
+    print("  5. Нужно использовать другой метод выдачи")
+    print("")
+    print("Нажмите любую клавишу для выхода...")
+    event.pull("key_down")
+    return
+end
 
-print("")
-print("Нажмите любую клавишу для выхода...")
-event.pull("key_down")
-return
-
-::done::
+-- Если успешно
 print("")
 print("═══════════════════════════════════════════════════════════════")
 print("  ✅ ТЕСТ ЗАВЕРШЁН УСПЕШНО!")

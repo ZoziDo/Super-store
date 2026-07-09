@@ -1,9 +1,3 @@
--- ============================================================
--- ★★★ ДИАГНОСТИЧЕСКИЙ СКРИПТ (ВЕРСИЯ БЕЗ findItem) ★★★
--- Сохраните как /home/test_export.lua
--- Запустите: lua /home/test_export.lua
--- ============================================================
-
 local component = require("component")
 local event = require("event")
 local computer = require("computer")

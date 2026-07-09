@@ -6,7 +6,7 @@ local serialization = require("serialization")
 local me = component.me_interface
 local pim = component.pim
 
-print("=== ДИАГНОСТИКА ПРЕДМЕТА ===")
+print("=== ДИАГНОСТИКА1 ПРЕДМЕТА ===")
 print("")
 
 -- Введите имя предмета

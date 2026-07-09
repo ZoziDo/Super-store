@@ -4342,45 +4342,48 @@ function main()
                 local popupHeight = 11
                 local popupX = math.floor((80 - popupWidth) / 2)
                 local popupY = 7
-                local okBtnText = "[ ПОНЯТНО ]"
-                local okBtnWidth = unicode.len(okBtnText) + 2
+                
+                -- Кнопка "ПОНЯТНО"
                 local okBtn = {
-                    x = popupX + math.floor((popupWidth - okBtnWidth) / 2),
-                    y = popupY+8,
-                    xs = okBtnWidth,
+                    x = popupX + 18,
+                    y = popupY + 8,
+                    xs = 16,
                     ys = 1
                 }
-                if isButtonClicked(okBtn, x, y) then
+                
+                -- ★★★ ПРОВЕРКА НАЖАТИЯ НА КНОПКУ ★★★
+                if x >= okBtn.x and x < okBtn.x + okBtn.xs and y >= okBtn.y and y < okBtn.y + okBtn.ys then
                     showInsufficientPopup = false
-                    currentScreen = "shop_buy"
-                    drawBuyStatic()
-                    drawBuyItemsList()
-                    drawBuyButtons()
+                    if currentShopMode == "buy" then
+                        currentScreen = "shop_buy"
+                        drawBuyStatic()
+                        drawBuyItemsList()
+                        drawBuyButtons()
+                    else
+                        currentScreen = "shop_sell"
+                        drawBuyStatic()
+                        drawBuyItemsList()
+                        drawBuyButtons()
+                    end
+                    goto continue
                 end
-                goto continue
-            end
-
-            if showPartialPopup then
-                local popupWidth = 52
-                local popupHeight = 9
-                local popupX = math.floor((80 - popupWidth) / 2)
-                local popupY = 9
-                local okBtnText = "[ ПРИНЯТЬ ]"
-                local okBtnWidth = unicode.len(okBtnText) + 2
-                local okBtn = {
-                    x = popupX + math.floor((popupWidth - okBtnWidth) / 2),
-                    y = popupY+6,
-                    xs = okBtnWidth,
-                    ys = 1
-                }
-                if isButtonClicked(okBtn, x, y) then
-                    showPartialPopup = false
-                    currentScreen = "shop_buy"
-                    drawBuyStatic()
-                    drawBuyItemsList()
-                    drawBuyButtons()
+                
+                -- ★★★ КЛИК ВНЕ ПОП-АПА - ТОЖЕ ЗАКРЫВАЕМ ★★★
+                if not (x >= popupX and x < popupX + popupWidth and y >= popupY and y < popupY + popupHeight) then
+                    showInsufficientPopup = false
+                    if currentShopMode == "buy" then
+                        currentScreen = "shop_buy"
+                        drawBuyStatic()
+                        drawBuyItemsList()
+                        drawBuyButtons()
+                    else
+                        currentScreen = "shop_sell"
+                        drawBuyStatic()
+                        drawBuyItemsList()
+                        drawBuyButtons()
+                    end
+                    goto continue
                 end
-                goto continue
             end
 
             if showInventoryFullPopup then

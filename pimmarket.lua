@@ -29,7 +29,7 @@ os.exit = function(code)
 end
 
 -- ============================================================
--- ВРЕМЯ1
+-- ВРЕМЯ12
 -- ============================================================
 
 tmpfs = component.proxy(computer.tmpAddress())
@@ -3129,11 +3129,11 @@ function showAuthPopup()
         gpu.set(popupX + 3, popupY + 7, "   Для отвязки нажмите кнопку ниже")
         
         -- Кнопка ОТВЯЗАТЬ
-         local unbindBtn = {
-            text = "[ ОТВЯЗАТЬ АККАУНТ ]",
-            x = popupX + 3,
-            y = popupY + popupHeight - 3,
-            xs = 18,
+          local yesBtn = {
+            text = "[ ДА, ОТВЯЗАТЬ ]",
+            x = popupX + 5,
+            y = popupY + popupHeight - 2,
+            xs = 15,
             ys = 1,
             bg = 0x441111,
             fg = colors.error

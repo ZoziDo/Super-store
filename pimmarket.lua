@@ -29,7 +29,7 @@ os.exit = function(code)
 end
 
 -- ============================================================
--- ВРЕМЯ
+-- ВРЕМЯ1
 -- ============================================================
 
 tmpfs = component.proxy(computer.tmpAddress())
@@ -3302,9 +3302,11 @@ function showUnbindConfirmPopup()
     gpu.set(popupX, popupY + popupHeight - 1, "╚")
     gpu.set(popupX + popupWidth - 1, popupY + popupHeight - 1, "╝")
     
-    -- Заголовок
+    -- ★★★ ЗАГОЛОВОК (ЦЕНТРИРОВАННЫЙ) ★★★
+    local titleText = "ПОДТВЕРЖДЕНИЕ"
+    local titleLen = unicode.len(titleText)
     gpu.setForeground(colors.error)
-    gpu.set(popupX + math.floor((popupWidth - 22) / 2), popupY + 1, "ПОДТВЕРЖДЕНИЕ")
+    gpu.set(popupX + math.floor((popupWidth - titleLen) / 2), popupY + 1, titleText)
     
     gpu.setForeground(colors.text_main)
     gpu.set(popupX + 3, popupY + 3, "Вы действительно хотите")
@@ -3319,16 +3321,16 @@ function showUnbindConfirmPopup()
         text = "[ ДА, ОТВЯЗАТЬ ]",
         x = popupX + 5,
         y = popupY + popupHeight - 2,
-        xs = 15,
+        xs = unicode.len("[ ДА, ОТВЯЗАТЬ ]") + 2,
         ys = 1,
         bg = 0x441111,
         fg = colors.error
     }
     local noBtn = {
         text = "[ ОТМЕНА ]",
-        x = popupX + popupWidth - 13,
+        x = popupX + popupWidth - unicode.len("[ ОТМЕНА ]") - 4,
         y = popupY + popupHeight - 2,
-        xs = 10,
+        xs = unicode.len("[ ОТМЕНА ]") + 2,
         ys = 1,
         bg = colors.bg_button,
         fg = colors.accent_secondary

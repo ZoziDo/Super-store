@@ -1,681 +1,415 @@
--- ============================================
--- ТЕСТОВЫЙ ВЕБ-СЕРВЕР ДЛЯ PIM MARKET
--- Сохраните как: /home/webtest.lua
--- ============================================
+-- ============================================================
+-- ★★★ ДИАГНОСТИЧЕСКИЙ СКРИПТ (ИСПРАВЛЕННЫЙ) ★★★
+-- Сохраните как /home/test_export.lua
+-- Запустите: lua /home/test_export.lua
+-- ============================================================
 
 local component = require("component")
-local computer = require("computer")
-local internet = require("internet")
-local serialization = require("serialization")
 local event = require("event")
+local computer = require("computer")
+local serialization = require("serialization")
 
-print("=" .. string.rep("=", 40))
-print("ТЕСТОВЫЙ ВЕБ-СЕРВЕР PIM MARKET")
-print("=" .. string.rep("=", 40))
+-- Цвета для вывода
+local colors = {
+    red = "\x1b[31m",
+    green = "\x1b[32m",
+    yellow = "\x1b[33m",
+    blue = "\x1b[34m",
+    magenta = "\x1b[35m",
+    cyan = "\x1b[36m",
+    white = "\x1b[37m",
+    reset = "\x1b[0m"
+}
 
--- Проверяем наличие internet компонента
-if not component.isAvailable("internet") then
-    print("ОШИБКА: Нет internet компонента!")
-    print("Нужна интернет-карта в компьютере")
+function printColor(text, color)
+    print((color or colors.white) .. text .. colors.reset)
+end
+
+function printHeader(text)
+    print("")
+    printColor("═══════════════════════════════════════════════════════════════", colors.cyan)
+    printColor("  " .. text, colors.cyan)
+    printColor("═══════════════════════════════════════════════════════════════", colors.cyan)
+    print("")
+end
+
+function printSuccess(text)
+    printColor("✅ " .. text, colors.green)
+end
+
+function printError(text)
+    printColor("❌ " .. text, colors.red)
+end
+
+function printWarning(text)
+    printColor("⚠️ " .. text, colors.yellow)
+end
+
+function printInfo(text)
+    printColor("📌 " .. text, colors.blue)
+end
+
+-- ============================================================
+-- 1. ПРОВЕРКА КОМПОНЕНТОВ
+-- ============================================================
+
+printHeader("1. ПРОВЕРКА КОМПОНЕНТОВ")
+
+-- Проверка PIM
+local pimAddr = nil
+for addr in component.list("pim") do
+    pimAddr = addr
+    break
+end
+
+if pimAddr then
+    printSuccess("PIM найден: " .. pimAddr)
+    local success, owner = pcall(function()
+        return component.invoke(pimAddr, "getOwner")
+    end)
+    if success and owner then
+        printInfo("Владелец PIM: " .. tostring(owner))
+    else
+        printWarning("Не удалось получить владельца PIM (это нормально, если никто не стоит)")
+    end
+else
+    printError("PIM НЕ НАЙДЕН!")
+    printInfo("Убедитесь, что PIM установлен и подключен")
+end
+
+-- Проверка ME интерфейса
+if component.isAvailable("me_interface") then
+    printSuccess("ME интерфейс доступен")
+    local me = component.me_interface
+    
+    -- ★★★ УБРАЛИ getType() ★★★
+    printInfo("ME интерфейс готов к работе")
+    
+    -- Проверяем, есть ли предметы в ME
+    local itemsSuccess, itemsResult = pcall(function()
+        return me.getItemsInNetwork()
+    end)
+    
+    if itemsSuccess and itemsResult then
+        printInfo("В ME системе: " .. #itemsResult .. " типов предметов")
+    else
+        printWarning("Не удалось получить список предметов из ME")
+    end
+else
+    printError("ME интерфейс НЕ ДОСТУПЕН!")
+    printInfo("Убедитесь, что ME интерфейс установлен и подключен к сети")
+end
+
+-- Проверка селектора
+local selector = nil
+for addr in component.list("openperipheral_selector") do
+    selector = component.proxy(addr)
+    break
+end
+if not selector then
+    for addr in component.list("item_selector") do
+        selector = component.proxy(addr)
+        break
+    end
+end
+
+if selector then
+    printSuccess("Селектор найден")
+else
+    printWarning("Селектор не найден (не критично для теста)")
+end
+
+-- ============================================================
+-- 2. ВВОД ДАННЫХ ДЛЯ ТЕСТА
+-- ============================================================
+
+printHeader("2. ВВОД ДАННЫХ ДЛЯ ТЕСТА")
+
+print("")
+print("Введите параметры предмета для проверки:")
+print("")
+print("Примеры внутренних имён:")
+print("  - GraviSuite:vajra")
+print("  - minecraft:diamond")
+print("  - IC2:itemCofeeBeans")
+print("")
+
+io.write("  Internal name: ")
+local internalName = io.read()
+internalName = internalName:match("^%s*(.-)%s*$") -- trim
+
+if not internalName or internalName == "" then
+    printError("Имя не введено, используем GraviSuite:vajra")
+    internalName = "GraviSuite:vajra"
+end
+
+io.write("  Damage (0-15, Enter для 0): ")
+local damageInput = io.read()
+local damage = 0
+if damageInput and damageInput ~= "" then
+    damage = tonumber(damageInput) or 0
+end
+
+io.write("  Количество для теста (Enter для 1): ")
+local qtyInput = io.read()
+local testQty = 1
+if qtyInput and qtyInput ~= "" then
+    testQty = tonumber(qtyInput) or 1
+end
+
+print("")
+printInfo("Тестируем предмет:")
+printInfo("  internalName: " .. internalName)
+printInfo("  damage: " .. damage)
+printInfo("  количество: " .. testQty)
+
+-- ============================================================
+-- 3. ПОИСК ПРЕДМЕТА В ME
+-- ============================================================
+
+printHeader("3. ПОИСК ПРЕДМЕТА В ME СИСТЕМЕ")
+
+if not component.isAvailable("me_interface") then
+    printError("ME интерфейс недоступен, тест прерван")
     return
 end
 
--- Тестовые данные
-local testPlayers = {
-    ["ZoziDo"] = {
-        balance = 1500.50,
-        emaBalance = 300.25,
-        transactions = 45,
-        banned = false,
-        regDate = "01.01.2024"
-    },
-    ["TestPlayer"] = {
-        balance = 500.00,
-        emaBalance = 100.00,
-        transactions = 12,
-        banned = false,
-        regDate = "15.03.2024"
-    },
-    ["BadPlayer"] = {
-        balance = 50.00,
-        emaBalance = 0,
-        transactions = 3,
-        banned = true,
-        regDate = "20.05.2024"
-    }
-}
+local me = component.me_interface
+local fingerprint = { id = internalName, dmg = damage }
 
-local testAdmins = {"ZoziDo", "Admin2"}
+-- ★★★ ПРОВЕРЯЕМ, ЕСТЬ ЛИ ПРЕДМЕТ В ME ★★★
+local findSuccess, findResult = pcall(function()
+    return me.findItem(fingerprint)
+end)
 
-local testLogs = {
-    {time = "12:30:45", text = "🚀 Сервер запущен", level = "SUCCESS"},
-    {time = "12:31:00", text = "✅ Игрок ZoziDo вошёл в систему", level = "INFO"},
-    {time = "12:31:15", text = "💰 Продажа: Алмаз x5 на 500 Coina", level = "SUCCESS"},
-    {time = "12:32:00", text = "📩 Репорт от TestPlayer: Всё работает!", level = "WARN"},
-    {time = "12:32:30", text = "❌ Ошибка подключения к терминалу", level = "ERROR"},
-    {time = "12:33:00", text = "🛒 Покупка: Зелье x3 за 150 Coina + 50 ЭМЫ", level = "SUCCESS"}
-}
-
-local testFeedbacks = {
-    {name = "ZoziDo", text = "Отличный сервер!", time = "01.01.2024 12:00"},
-    {name = "TestPlayer", text = "Всё работает отлично!", time = "15.03.2024 14:30"}
-}
-
-local testReports = {
-    {name = "TestPlayer", time = "15.03.2024 14:30", text = "Нашёл баг с продажей"},
-    {name = "Player123", time = "20.05.2024 10:00", text = "Игрок BadPlayer читерит"}
-}
-
--- Функция для создания JSON вручную (без библиотеки)
-local function toJSON(data)
-    if type(data) == "string" then
-        return '"' .. data:gsub('"', '\\"') .. '"'
-    elseif type(data) == "number" or type(data) == "boolean" then
-        return tostring(data)
-    elseif type(data) == "table" then
-        local parts = {}
-        local isArray = true
-        local count = 0
-        for k, _ in pairs(data) do
-            count = count + 1
-            if type(k) ~= "number" then isArray = false end
-        end
-        
-        if count == 0 then
-            return isArray and "[]" or "{}"
-        end
-        
-        if isArray then
-            for i = 1, #data do
-                table.insert(parts, toJSON(data[i]))
-            end
-            return "[" .. table.concat(parts, ",") .. "]"
-        else
-            for k, v in pairs(data) do
-                table.insert(parts, toJSON(k) .. ":" .. toJSON(v))
-            end
-            return "{" .. table.concat(parts, ",") .. "}"
-        end
-    end
-    return "null"
+if not findSuccess then
+    printError("Ошибка поиска: " .. tostring(findResult))
+    printInfo("Возможно, предмет не существует или неправильное имя")
+    return
 end
 
--- Функция для создания HTTP ответа
-local function createResponse(data, status)
-    status = status or 200
-    local statusText = "200 OK"
-    if status == 404 then statusText = "404 Not Found" end
-    if status == 500 then statusText = "500 Internal Server Error" end
+if not findResult then
+    printError("Предмет НЕ НАЙДЕН в ME системе!")
+    print("")
+    printWarning("Возможные причины:")
+    printWarning("  1. Неправильный internalName")
+    printWarning("  2. Неправильный damage")
+    printWarning("  3. Предмета нет в ME")
+    printWarning("  4. Предмет в ME под другим именем")
+    print("")
+    printInfo("Список доступных предметов в ME (первые 20):")
     
-    local body = ""
-    if type(data) == "table" then
-        body = toJSON(data)
+    local itemsSuccess, itemsResult = pcall(function()
+        return me.getItemsInNetwork()
+    end)
+    
+    if itemsSuccess and itemsResult then
+        for i = 1, math.min(20, #itemsResult) do
+            local item = itemsResult[i]
+            local name = item.name or "?"
+            local qty = item.size or 0
+            local dmg = item.damage or 0
+            print(string.format("  %d. %s (damage: %d) - %d шт.", i, name, dmg, qty))
+        end
+        if #itemsResult > 20 then
+            print(string.format("  ... и ещё %d предметов", #itemsResult - 20))
+        end
+    end
+    return
+end
+
+local availableQty = findResult.size or 0
+printInfo("Найдено в ME: " .. availableQty .. " шт.")
+
+if availableQty <= 0 then
+    printError("Предмет есть в системе, но количество = 0!")
+    return
+end
+
+printSuccess("✅ Предмет найден в ME системе!")
+
+-- Получаем детали предмета (если возможно)
+local detailSuccess, detailResult = pcall(function()
+    return me.getItemDetail(internalName, damage)
+end)
+
+if detailSuccess and detailResult then
+    printInfo("Детали предмета:")
+    printInfo("  displayName: " .. (detailResult.displayName or "?"))
+    printInfo("  maxSize: " .. (detailResult.maxSize or "?"))
+    printInfo("  hasNBT: " .. tostring(detailResult.hasNBT or false))
+else
+    printInfo("Детали предмета не получены (не критично)")
+end
+
+-- ============================================================
+-- 4. ТЕСТОВАЯ ВЫДАЧА
+-- ============================================================
+
+printHeader("4. ТЕСТОВАЯ ВЫДАЧА ПРЕДМЕТА")
+
+-- ★★★ ПРОВЕРЯЕМ НАПРАВЛЕНИЯ ★★★
+printInfo("Проверка доступных направлений...")
+local directions = {"up", "down", "north", "south", "west", "east"}
+local workingDirections = {}
+
+for _, dir in ipairs(directions) do
+    local testSuccess, testResult = pcall(function()
+        return me.exportItem(fingerprint, dir, 1)
+    end)
+    if testSuccess and testResult and type(testResult) == "number" and testResult > 0 then
+        table.insert(workingDirections, dir)
+        printSuccess("Направление " .. dir .. " работает! Выдано " .. testResult .. " шт.")
     else
-        body = tostring(data)
+        printWarning("Направление " .. dir .. " не работает")
     end
-    
-    local response = "HTTP/1.1 " .. statusText .. "\r\n"
-    response = response .. "Content-Type: application/json\r\n"
-    response = response .. "Access-Control-Allow-Origin: *\r\n"
-    response = response .. "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n"
-    response = response .. "Access-Control-Allow-Headers: Content-Type\r\n"
-    response = response .. "Connection: close\r\n"
-    response = response .. "Content-Length: " .. #body .. "\r\n"
-    response = response .. "\r\n"
-    response = response .. body
-    
-    return response
 end
 
--- Функция для обработки API запросов
-local function handleAPI(path)
-    print("API запрос: " .. path)
-    
-    -- GET /api/stats
-    if path == "/api/stats" then
-        return createResponse({
-            success = true,
-            totalPlayers = 3,
-            totalTransactions = 60,
-            totalReports = 2,
-            totalFeedbacks = 2,
-            totalSells = 30,
-            totalBuys = 25,
-            paused = false,
-            online = 2
-        })
-    end
-    
-    -- GET /api/players
-    if path == "/api/players" then
-        local players = {}
-        for name, data in pairs(testPlayers) do
-            table.insert(players, {
-                name = name,
-                balance = data.balance,
-                emaBalance = data.emaBalance,
-                transactions = data.transactions,
-                banned = data.banned,
-                agreed = true
-            })
-        end
-        return createResponse({
-            success = true,
-            players = players,
-            admins = testAdmins,
-            total = #players,
-            total_transactions = 60,
-            total_reports = 2,
-            online = 2,
-            paused = false
-        })
-    end
-    
-    -- GET /api/logs
-    if path == "/api/logs" then
-        return createResponse({
-            success = true,
-            logs = testLogs
-        })
-    end
-    
-    -- GET /api/admins
-    if path == "/api/admins" then
-        return createResponse({
-            success = true,
-            admins = testAdmins
-        })
-    end
-    
-    -- GET /api/feedbacks
-    if path == "/api/feedbacks" then
-        return createResponse({
-            success = true,
-            feedbacks = testFeedbacks
-        })
-    end
-    
-    -- GET /api/reports
-    if path == "/api/reports" then
-        return createResponse({
-            success = true,
-            reports = testReports
-        })
-    end
-    
-    -- POST /api/pause
-    if path == "/api/pause" then
-        return createResponse({
-            success = true,
-            paused = true
-        })
-    end
-    
-    -- POST /api/kill
-    if path == "/api/kill" then
-        return createResponse({
-            success = true,
-            sent = 1
-        })
-    end
-    
-    -- POST /api/additem
-    if path == "/api/additem" then
-        return createResponse({
-            success = true
-        })
-    end
-    
-    -- POST /api/balance
-    if path == "/api/balance" then
-        return createResponse({
-            success = true
-        })
-    end
-    
-    -- POST /api/ban
-    if path == "/api/ban" then
-        return createResponse({
-            success = true,
-            banned = true
-        })
-    end
-    
-    -- POST /api/reset
-    if path == "/api/reset" then
-        return createResponse({
-            success = true
-        })
-    end
-    
-    -- POST /api/addadmin
-    if path == "/api/addadmin" then
-        return createResponse({
-            success = true
-        })
-    end
-    
-    -- POST /api/removeadmin
-    if path == "/api/removeadmin" then
-        return createResponse({
-            success = true
-        })
-    end
-    
-    -- POST /api/update
-    if path == "/api/update" then
-        return createResponse({
-            success = true,
-            sent = 1
-        })
-    end
-    
-    -- 404
-    return createResponse({
-        error = "Unknown endpoint: " .. path
-    }, 404)
+if #workingDirections == 0 then
+    printError("❌ НЕТ РАБОЧИХ НАПРАВЛЕНИЙ!")
+    printInfo("Проверьте подключение ME интерфейса к хранилищу")
+    return
 end
 
--- ============================================
--- ЗАПУСК HTTP СЕРВЕРА
--- ============================================
+local PULL_DIRECTION = workingDirections[1]
+printInfo("Используем направление: " .. PULL_DIRECTION)
 
-local function startServer()
-    print("\n📡 Запуск HTTP сервера...")
+-- Функция для попытки выдачи с разными методами
+function testExport(methodName, methodFunc)
+    print("")
+    printInfo("Пробуем метод: " .. methodName)
     
-    -- Пробуем разные порты
-    local ports = {8080, 8888, 3000, 5000}
-    local socket = nil
+    local success, result = pcall(methodFunc)
     
-    for _, port in ipairs(ports) do
-        print("  Пробуем порт " .. port .. "...")
-        local ok, result = pcall(function()
-            return internet.socket()
-        end)
-        
-        if ok and result then
-            socket = result
-            local bindOk = pcall(function()
-                socket:listen(port)
-            end)
-            
-            if bindOk then
-                print("✅ Сервер запущен на порту " .. port)
-                print("🌐 Откройте в браузере: http://localhost:" .. port)
-                print("📋 Доступные API:")
-                print("   GET  /api/players - список игроков")
-                print("   GET  /api/logs - логи сервера")
-                print("   GET  /api/stats - статистика")
-                print("   GET  /api/admins - администраторы")
-                print("   GET  /api/feedbacks - отзывы")
-                print("   GET  /api/reports - репорты")
-                print("=" .. string.rep("=", 40))
-                break
-            else
-                print("  ❌ Не удалось занять порт " .. port)
-            end
-        end
-    end
-    
-    if not socket then
-        print("❌ Не удалось создать сервер на всех портах")
-        return
-    end
-    
-    -- Основной цикл
-    while true do
-        local ok, client = pcall(function()
-            return socket:accept(5)  -- Таймаут 5 секунд
-        end)
-        
-        if ok and client then
-            -- Обрабатываем клиента в pcall чтобы не падало
-            pcall(function()
-                -- Читаем запрос
-                local request = ""
-                local readStart = computer.uptime()
-                
-                while computer.uptime() - readStart < 2 do  -- Таймаут 2 секунды
-                    local ok2, chunk = pcall(function()
-                        return client:read(256)
-                    end)
-                    if ok2 and chunk then
-                        request = request .. chunk
-                        if #request > 2048 then break end  -- Максимум 2KB
-                    else
-                        break
-                    end
-                end
-                
-                -- Парсим HTTP запрос
-                local method = "GET"
-                local path = "/"
-                
-                if request and #request > 0 then
-                    local firstLine = request:match("([^\r\n]+)")
-                    if firstLine then
-                        local parts = {}
-                        for part in firstLine:gmatch("%S+") do
-                            table.insert(parts, part)
-                        end
-                        if parts[1] then method = parts[1] end
-                        if parts[2] then path = parts[2] end
-                    end
-                    
-                    print(string.format("📨 %s %s", method, path))
-                    
-                    -- Обрабатываем OPTIONS (CORS preflight)
-                    if method == "OPTIONS" then
-                        local response = "HTTP/1.1 200 OK\r\n"
-                        response = response .. "Access-Control-Allow-Origin: *\r\n"
-                        response = response .. "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n"
-                        response = response .. "Access-Control-Allow-Headers: Content-Type\r\n"
-                        response = response .. "Content-Length: 0\r\n"
-                        response = response .. "Connection: close\r\n"
-                        response = response .. "\r\n"
-                        pcall(function() client:write(response) end)
-                    -- Обрабатываем API запросы
-                    elseif path:match("^/api/") then
-                        local response = handleAPI(path)
-                        pcall(function() client:write(response) end)
-                    -- Отдаём index.html
-                    elseif path == "/" or path == "/index.html" then
-                        local html = [[
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PIM Market Admin</title>
-    <style>
-        body { 
-            font-family: monospace; 
-            background: #0A0A0F; 
-            color: #00E5C9; 
-            padding: 20px;
-            margin: 0;
-        }
-        .header {
-            background: #14141F;
-            padding: 20px;
-            border-radius: 10px;
-            margin-bottom: 20px;
-            border: 1px solid #00E5C9;
-        }
-        .header h1 { color: #8B5CF6; margin: 0; }
-        .status { 
-            display: inline-block;
-            padding: 5px 15px;
-            border-radius: 20px;
-            background: #00FFAA;
-            color: #000;
-            font-weight: bold;
-            margin-top: 10px;
-        }
-        .log-container {
-            background: #14141F;
-            border-radius: 10px;
-            padding: 15px;
-            height: 500px;
-            overflow-y: auto;
-            border: 1px solid #333;
-        }
-        .log-entry {
-            padding: 5px 0;
-            border-bottom: 1px solid #1F1F2E;
-            font-size: 13px;
-            line-height: 1.5;
-        }
-        .log-time { color: #555; }
-        .log-success { color: #00FFAA; }
-        .log-info { color: #00E5C9; }
-        .log-warn { color: #FFA500; }
-        .log-error { color: #FF4D7A; }
-        .log-important { color: #8B5CF6; }
-        .stats {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-            gap: 15px;
-            margin: 20px 0;
-        }
-        .stat-card {
-            background: #14141F;
-            padding: 15px;
-            border-radius: 8px;
-            border-left: 3px solid #8B5CF6;
-        }
-        .stat-label { color: #555; font-size: 12px; }
-        .stat-value { color: #F0F0FF; font-size: 24px; font-weight: bold; }
-        .btn {
-            background: #8B5CF6;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 5px;
-            cursor: pointer;
-            font-family: monospace;
-            margin: 5px;
-        }
-        .btn:hover { opacity: 0.8; }
-        .tabs {
-            display: flex;
-            gap: 10px;
-            margin: 20px 0;
-        }
-        .tab {
-            padding: 10px 20px;
-            background: #14141F;
-            border: 1px solid #333;
-            color: #555;
-            border-radius: 5px;
-            cursor: pointer;
-        }
-        .tab.active {
-            background: #8B5CF6;
-            color: white;
-            border-color: #8B5CF6;
-        }
-        .content {
-            display: none;
-            background: #14141F;
-            padding: 20px;
-            border-radius: 10px;
-            border: 1px solid #333;
-        }
-        .content.active { display: block; }
-    </style>
-</head>
-<body>
-    <div class="header">
-        <h1>🚀 PIM Market Admin</h1>
-        <div class="status" id="status">🟢 Онлайн</div>
-        <p style="color: #555; margin-top: 10px;">
-            Тестовый сервер | Данные демонстрационные
-        </p>
-    </div>
-    
-    <div class="stats" id="stats"></div>
-    
-    <div class="tabs">
-        <div class="tab active" onclick="switchTab('logs')">📋 Логи</div>
-        <div class="tab" onclick="switchTab('players')">👥 Игроки</div>
-        <div class="tab" onclick="switchTab('feedbacks')">📝 Отзывы</div>
-        <div class="tab" onclick="switchTab('reports')">📩 Репорты</div>
-    </div>
-    
-    <div id="content-logs" class="content active">
-        <div class="log-container" id="logs"></div>
-    </div>
-    
-    <div id="content-players" class="content">
-        <div id="players"></div>
-    </div>
-    
-    <div id="content-feedbacks" class="content">
-        <div id="feedbacks"></div>
-    </div>
-    
-    <div id="content-reports" class="content">
-        <div id="reports"></div>
-    </div>
-    
-    <script>
-        async function loadData() {
-            try {
-                // Загружаем логи
-                const logsResponse = await fetch('/api/logs');
-                const logsData = await logsResponse.json();
-                if (logsData.logs) {
-                    let html = '';
-                    for (const log of logsData.logs) {
-                        const colorClass = 'log-' + (log.level || 'info').toLowerCase();
-                        html += `<div class="log-entry">
-                            <span class="log-time">[${log.time}]</span>
-                            <span class="${colorClass}">${log.text}</span>
-                        </div>`;
-                    }
-                    document.getElementById('logs').innerHTML = html;
-                }
-                
-                // Загружаем статистику
-                const statsResponse = await fetch('/api/stats');
-                const statsData = await statsResponse.json();
-                document.getElementById('stats').innerHTML = `
-                    <div class="stat-card">
-                        <div class="stat-label">👥 Игроков</div>
-                        <div class="stat-value">${statsData.totalPlayers || 0}</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-label">💰 Транзакций</div>
-                        <div class="stat-value">${statsData.totalTransactions || 0}</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-label">📩 Репортов</div>
-                        <div class="stat-value">${statsData.totalReports || 0}</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-label">📝 Отзывов</div>
-                        <div class="stat-value">${statsData.totalFeedbacks || 0}</div>
-                    </div>
-                `;
-                
-                // Загружаем игроков
-                const playersResponse = await fetch('/api/players');
-                const playersData = await playersResponse.json();
-                if (playersData.players) {
-                    let html = '<table style="width:100%;border-collapse:collapse;">';
-                    html += '<tr style="color:#555;border-bottom:1px solid #333;">';
-                    html += '<th style="text-align:left;padding:10px;">Игрок</th>';
-                    html += '<th style="text-align:right;padding:10px;">Coina</th>';
-                    html += '<th style="text-align:right;padding:10px;">ЭМЫ</th>';
-                    html += '<th style="text-align:right;padding:10px;">Транз.</th>';
-                    html += '<th style="text-align:center;padding:10px;">Статус</th>';
-                    html += '</tr>';
-                    for (const player of playersData.players) {
-                        const isAdmin = playersData.admins && playersData.admins.includes(player.name);
-                        const statusColor = player.banned ? '#FF4D7A' : '#00FFAA';
-                        const statusText = player.banned ? 'Забанен' : (isAdmin ? 'Админ' : 'Активен');
-                        html += `<tr style="border-bottom:1px solid #1F1F2E;">
-                            <td style="padding:10px;">${player.name}</td>
-                            <td style="padding:10px;text-align:right;">${player.balance.toFixed(2)} ₵</td>
-                            <td style="padding:10px;text-align:right;">${player.emaBalance.toFixed(2)} ۞</td>
-                            <td style="padding:10px;text-align:right;">${player.transactions}</td>
-                            <td style="padding:10px;text-align:center;color:${statusColor};">${statusText}</td>
-                        </tr>`;
-                    }
-                    html += '</table>';
-                    document.getElementById('players').innerHTML = html;
-                }
-                
-                // Загружаем отзывы
-                const feedbacksResponse = await fetch('/api/feedbacks');
-                const feedbacksData = await feedbacksResponse.json();
-                if (feedbacksData.feedbacks) {
-                    let html = '';
-                    for (const fb of feedbacksData.feedbacks) {
-                        html += `<div style="padding:10px;border-bottom:1px solid #1F1F2E;">
-                            <div style="color:#8B5CF6;font-weight:bold;">👤 ${fb.name}</div>
-                            <div style="color:#555;font-size:12px;">[${fb.time}]</div>
-                            <div style="margin-top:5px;">${fb.text}</div>
-                        </div>`;
-                    }
-                    document.getElementById('feedbacks').innerHTML = html || '<div style="color:#555;">Нет отзывов</div>';
-                }
-                
-                // Загружаем репорты
-                const reportsResponse = await fetch('/api/reports');
-                const reportsData = await reportsResponse.json();
-                if (reportsData.reports) {
-                    let html = '';
-                    for (const report of reportsData.reports) {
-                        html += `<div style="padding:10px;border-bottom:1px solid #1F1F2E;">
-                            <div style="color:#FFA500;font-weight:bold;">📩 ${report.name}</div>
-                            <div style="color:#555;font-size:12px;">[${report.time}]</div>
-                            <div style="margin-top:5px;">${report.text}</div>
-                        </div>`;
-                    }
-                    document.getElementById('reports').innerHTML = html || '<div style="color:#555;">Нет репортов</div>';
-                }
-                
-                // Обновляем статус
-                const status = document.getElementById('status');
-                if (statsData.paused) {
-                    status.textContent = '⏸️ Пауза';
-                    status.style.background = '#FFA500';
-                } else {
-                    status.textContent = '🟢 Онлайн';
-                    status.style.background = '#00FFAA';
-                }
-                
-            } catch (e) {
-                console.error('Ошибка:', e);
-            }
-        }
-        
-        function switchTab(tab) {
-            document.querySelectorAll('.content').forEach(c => c.classList.remove('active'));
-            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-            document.getElementById('content-' + tab).classList.add('active');
-            event.target.classList.add('active');
-        }
-        
-        // Загружаем данные и обновляем каждые 5 секунд
-        loadData();
-        setInterval(loadData, 5000);
-    </script>
-</body>
-</html>]]
-                        
-                        local response = "HTTP/1.1 200 OK\r\n"
-                        response = response .. "Content-Type: text/html; charset=utf-8\r\n"
-                        response = response .. "Access-Control-Allow-Origin: *\r\n"
-                        response = response .. "Content-Length: " .. #html .. "\r\n"
-                        response = response .. "Connection: close\r\n"
-                        response = response .. "\r\n"
-                        response = response .. html
-                        pcall(function() client:write(response) end)
-                    else
-                        local response = createResponse({error = "Not found: " .. path}, 404)
-                        pcall(function() client:write(response) end)
-                    end
-                end
-                
-                pcall(function() client:close() end)
-            end)
+    if success then
+        local got = 0
+        if type(result) == "number" then
+            got = result
+        elseif type(result) == "boolean" and result == true then
+            got = testQty
+        elseif type(result) == "table" then
+            got = result.count or result.amount or result.size or 0
         end
         
-        -- Проверяем события (чтобы не зависало)
-        event.pull(0.1)
+        if got > 0 then
+            printSuccess("✅ Успешно выдано " .. got .. " шт. через " .. methodName)
+            return got
+        else
+            printWarning("⚠️ Метод " .. methodName .. " вернул " .. tostring(result) .. " (0 предметов)")
+        end
+    else
+        printError("❌ Ошибка в " .. methodName .. ": " .. tostring(result))
     end
+    
+    return 0
 end
 
--- Запускаем сервер
-local ok, err = pcall(startServer)
-if not ok then
-    print("❌ Ошибка запуска сервера:")
-    print("   " .. tostring(err))
-    print("\n💡 Возможные причины:")
-    print("  1. Нет интернет-карты в компьютере")
-    print("  2. Все порты заняты")
-    print("  3. Недостаточно памяти")
+local totalExtracted = 0
+
+-- Метод 1: Стандартный exportItem
+totalExtracted = totalExtracted + testExport("exportItem (стандартный)", function()
+    return me.exportItem(fingerprint, PULL_DIRECTION, testQty)
+end)
+
+-- Если выдано меньше чем нужно - пробуем другие методы
+if totalExtracted < testQty then
+    local remaining = testQty - totalExtracted
+    
+    -- Метод 2: exportItem с force
+    totalExtracted = totalExtracted + testExport("exportItem (force)", function()
+        return me.exportItem(fingerprint, PULL_DIRECTION, remaining, true)
+    end)
 end
+
+if totalExtracted < testQty then
+    local remaining = testQty - totalExtracted
+    
+    -- Метод 3: simulateExport + export
+    totalExtracted = totalExtracted + testExport("simulateExport", function()
+        local sim = me.simulateExport(fingerprint, PULL_DIRECTION, remaining)
+        if sim and sim.size and sim.size > 0 then
+            return me.exportItem(fingerprint, PULL_DIRECTION, math.min(remaining, sim.size))
+        end
+        return 0
+    end)
+end
+
+if totalExtracted < testQty then
+    local remaining = testQty - totalExtracted
+    
+    -- Метод 4: findItem + export по одному
+    totalExtracted = totalExtracted + testExport("findItem (по одному)", function()
+        local found = me.findItem(fingerprint)
+        if found and found.size and found.size > 0 then
+            local toTake = math.min(remaining, found.size)
+            return me.exportItem(fingerprint, PULL_DIRECTION, toTake)
+        end
+        return 0
+    end)
+end
+
+-- ============================================================
+-- 5. РЕЗУЛЬТАТЫ
+-- ============================================================
+
+printHeader("5. РЕЗУЛЬТАТЫ ТЕСТА")
+
+print("")
+if totalExtracted >= testQty then
+    printSuccess("✅ ТЕСТ УСПЕШНЫЙ!")
+    printInfo("Выдано " .. totalExtracted .. " из " .. testQty .. " шт.")
+    printInfo("Предмет выдается нормально!")
+else
+    printError("❌ ТЕСТ НЕ УДАЛСЯ!")
+    printError("Выдано только " .. totalExtracted .. " из " .. testQty .. " шт.")
+    print("")
+    printWarning("Возможные причины:")
+    printWarning("  1. Нет места в инвентаре")
+    printWarning("  2. Предмет не может быть выдан через ME (NBT, особый предмет)")
+    printWarning("  3. Неправильное направление выдачи (" .. PULL_DIRECTION .. ")")
+    printWarning("  4. Проблемы с PIM")
+    printWarning("  5. Предмет повреждён (damage не совпадает)")
+    printWarning("  6. В инвентаре нет свободных слотов")
+    
+    print("")
+    printInfo("Проверьте инвентарь:")
+    printInfo("  - Есть ли свободные слоты?")
+    printInfo("  - Не занят ли инвентарь другими предметами?")
+end
+
+-- ============================================================
+-- 6. ВСЕ ПРЕДМЕТЫ В ME (первые 20)
+-- ============================================================
+
+printHeader("6. ВСЕ ПРЕДМЕТЫ В ME (первые 20)")
+
+local itemsSuccess, itemsResult = pcall(function()
+    return me.getItemsInNetwork()
+end)
+
+if itemsSuccess and itemsResult and #itemsResult > 0 then
+    printInfo("Всего предметов в ME: " .. #itemsResult)
+    print("")
+    for i = 1, math.min(20, #itemsResult) do
+        local item = itemsResult[i]
+        local name = item.name or "?"
+        local qty = item.size or 0
+        local dmg = item.damage or 0
+        print(string.format("  %d. %s (damage: %d) - %d шт.", i, name, dmg, qty))
+    end
+    if #itemsResult > 20 then
+        print(string.format("  ... и ещё %d предметов", #itemsResult - 20))
+    end
+else
+    printWarning("В ME системе нет предметов или ошибка получения списка")
+end
+
+print("")
+printColor("═══════════════════════════════════════════════════════════════", colors.cyan)
+printColor("  ТЕСТ ЗАВЕРШЁН", colors.cyan)
+printColor("═══════════════════════════════════════════════════════════════", colors.cyan)
+print("")
+
+-- Ждём нажатие клавиши
+print("Нажмите любую клавишу для выхода...")
+event.pull("key_down")

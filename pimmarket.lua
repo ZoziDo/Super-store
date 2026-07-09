@@ -29,7 +29,7 @@ os.exit = function(code)
 end
 
 -- ============================================================
--- ВРЕМЯ1
+-- ВРЕМЯ41
 -- ============================================================
 
 tmpfs = component.proxy(computer.tmpAddress())
@@ -49,10 +49,38 @@ function getRealTimeHM()
 end
 
 -- ============================================================
--- ВЕБ-ИНТЕГРАЦИЯ
+-- ★★★ ЗАЩИТА ОТ ЗАВИСАНИЙ ИНТЕРФЕЙСА ★★★
 -- ============================================================
 
+-- ★★★ ФЛАГ: true = идёт транзакция (покупка/продажа) ★★★
+TRANSACTION_LOCK = false
 
+-- ★★★ ИНТЕРВАЛ ПРОВЕРКИ КОМАНД (секунды) ★★★
+COMMAND_CHECK_INTERVAL = 10
+
+-- ★★★ ФУНКЦИИ ДЛЯ УПРАВЛЕНИЯ БЛОКИРОВКОЙ ★★★
+function lockTransactions()
+    TRANSACTION_LOCK = true
+    writeDebugLog("🔒 Транзакции заблокированы")
+end
+
+function unlockTransactions()
+    TRANSACTION_LOCK = false
+    writeDebugLog("🔓 Транзакции разблокированы")
+    
+    -- ★★★ ПОСЛЕ РАЗБЛОКИРОВКИ СРАЗУ ПРОВЕРЯЕМ КОМАНДЫ ★★★
+    event.timer(0.5, function()
+        if not TRANSACTION_LOCK then
+            writeDebugLog("📡 Быстрая проверка команд после транзакции")
+            checkWebCommands()
+        end
+        return false
+    end)
+end
+
+-- ============================================================
+-- ВЕБ-ИНТЕГРАЦИЯ
+-- ============================================================
 
 function toJson(val)
     if type(val) == "string" then
@@ -163,8 +191,6 @@ end
 ERROR_LOG = "/home/errors.log"
 
 function writeErrorLog(msg)
-    -- Локальное логирование в файл ОТКЛЮЧЕНО (чтобы не забивать диск)
-    -- Ошибки всё равно отправляются на веб-сервер и в очередь логов
     addLogEntry(msg, "ERROR")
     sendErrorToWeb(msg, "ERROR")
 end
@@ -379,14 +405,14 @@ DB_PATH = "/home/players.db"
 STATS_PATH = "/home/global_stats.db"
 FEEDBACKS_PATH = "/home/feedbacks.db"
 REPORTS_PATH = "/home/reports.log"
-PENDING_FILE = "/home/pending_changes.lua"  -- ★ НОВЫЙ БУФЕР ИЗМЕНЕНИЙ ★
+PENDING_FILE = "/home/pending_changes.lua"
 
 admins = {}
 players = {}
 globalStats = { totalReports = 0, totalBuys = 0, totalSells = 0, totalRevenue = 0, totalBalance = 0 }
 transactions = {}
-pending_buffer = {}  -- ★ БУФЕР ДЛЯ ДЕЛЬТ ★
-retry_delay = 10     -- ★ НАЧАЛЬНАЯ ЗАДЕРЖКА ДЛЯ ОТПРАВКИ ★
+pending_buffer = {}
+retry_delay = 10
 
 -- ============================================================
 -- ФУНКЦИИ ДЛЯ БУФЕРА ИЗМЕНЕНИЙ
@@ -432,7 +458,6 @@ function add_pending_change(change)
 end
 
 function clear_pending_changes(ids)
-    -- ★★★ ЕСЛИ ID НЕ ПЕРЕДАНЫ — ОЧИЩАЕМ ВСЁ ★★★
     if not ids then
         pending_buffer = {}
         save_pending_buffer()
@@ -440,7 +465,6 @@ function clear_pending_changes(ids)
         return
     end
     
-    -- ★★★ ЕСЛИ ПЕРЕДАН ПУСТОЙ СПИСОК — ТОЖЕ ОЧИЩАЕМ ВСЁ ★★★
     if type(ids) == "table" and #ids == 0 then
         pending_buffer = {}
         save_pending_buffer()
@@ -467,6 +491,7 @@ function clear_pending_changes(ids)
         writeDebugLog("🗑️ Удалено из буфера: " .. removed_count .. " записей")
     end
 end
+
 -- ============================================================
 -- ОТПРАВКА БУФЕРА ИЗМЕНЕНИЙ НА СЕРВЕР (ДЕЛЬТА)
 -- ============================================================
@@ -474,7 +499,7 @@ end
 function send_pending_changes()
     if #pending_buffer == 0 then
         retry_delay = 10
-        return
+        return true
     end
 
     local changes_to_send = {}
@@ -487,42 +512,48 @@ function send_pending_changes()
 
     writeDebugLog("📤 Отправка дельты: " .. #changes_to_send .. " изменений")
 
-    -- ★★★ ОТПРАВЛЯЕМ ЗАПРОС ★★★
     local success, response = pcall(function()
         return internet.request(WEB_URL .. "/api/delta", json_payload, {
             ["Content-Type"] = "application/json",
-            ["Connection"] = "close"
+            ["Connection"] = "close",
+            ["Timeout"] = "5"
         })
     end)
 
-    -- ★★★ ОЧИЩАЕМ БУФЕР СРАЗУ, НЕ ДОЖИДАЯСЬ ОТВЕТА ★★★
-    pending_buffer = {}
-    save_pending_buffer()
-    writeDebugLog("🗑️ Буфер очищен (дельты отправлены)")
-
-    -- ★★★ ПЫТАЕМСЯ ПРОЧИТАТЬ ОТВЕТ (НО НЕ ЖДЁМ ЕГО) ★★★
     if success and response then
         local body = ""
+        local timeout = os.clock() + 5
         for chunk in response do
+            if os.clock() > timeout then
+                writeDebugLog("⚠️ Таймаут чтения ответа")
+                break
+            end
             body = body .. chunk
         end
+        
         local data = parseJSON(body)
         if data and data.status == "ok" then
-            writeDebugLog("✅ Дельта подтверждена сервером")
+            pending_buffer = {}
+            save_pending_buffer()
+            writeDebugLog("✅ Дельта подтверждена, буфер очищен")
             retry_delay = 10
+            return true
         else
-            writeDebugLog("⚠️ Сервер вернул ошибку, но буфер уже очищен")
+            writeDebugLog("⚠️ Ошибка сервера, буфер сохранён")
             retry_delay = math.min(retry_delay * 2, 120)
+            return false
         end
     else
-        writeDebugLog("⚠️ Ошибка соединения, но буфер уже очищен")
+        writeDebugLog("⚠️ Ошибка соединения, буфер сохранён")
         retry_delay = math.min(retry_delay * 2, 120)
+        return false
     end
 end
 
--- Запускаем таймер для периодической отправки буфера
+-- ★★★ ТАЙМЕР ОТПРАВКИ ДЕЛЬТЫ (НЕ БЛОКИРУЕТСЯ) ★★★
 event.timer(10, function()
     if #pending_buffer > 0 then
+        writeDebugLog("📤 Отправка дельты (буфер: " .. #pending_buffer .. ")")
         send_pending_changes()
     end
     return true
@@ -611,7 +642,7 @@ load_pending_buffer()
 
 -- Отложенное сохранение БД (не чаще раза в 5 секунд)
 dbDirty = false
-SAVE_DB_INTERVAL = 5
+SAVE_DB_INTERVAL = 10
 
 function saveDB()
     writeDebugLog("saveDB() – сохраняем " .. #players .. " игроков")
@@ -631,6 +662,10 @@ end
 
 function flushDB()
     if not dbDirty then return end
+    if TRANSACTION_LOCK then
+        writeDebugLog("⏳ Отложено сохранение (транзакция активна)")
+        return
+    end
     saveDB()
     dbDirty = false
 end
@@ -697,7 +732,6 @@ function addTransaction(type, playerName, item, qty, value_coin, value_ema)
     end
     saveGlobalStats()
     
-    -- Создаём запись транзакции
     local transactionRecord = {
         time = getRealTimeHM(),
         type = type,
@@ -707,7 +741,6 @@ function addTransaction(type, playerName, item, qty, value_coin, value_ema)
         ema = value_ema or 0
     }
     
-    -- Добавляем в глобальный список (для истории)
     table.insert(transactions, {
         time = transactionRecord.time,
         type = type,
@@ -719,7 +752,6 @@ function addTransaction(type, playerName, item, qty, value_coin, value_ema)
     })
     while #transactions > 100 do table.remove(transactions, 1) end
     
-    -- ★ СОЗДАЁМ ИЛИ ОБНОВЛЯЕМ ИГРОКА ★
     if playerName and playerName ~= "?" then
         if not players[playerName] then
             players[playerName] = {
@@ -747,10 +779,9 @@ function addTransaction(type, playerName, item, qty, value_coin, value_ema)
         writeErrorLog("⚠️ Некорректное имя игрока при добавлении транзакции: " .. tostring(playerName))
     end
     
-    -- ★ ДОБАВЛЯЕМ ИЗМЕНЕНИЕ В ОБЩИЙ БУФЕР ★
     local change = {
         id = "txn_" .. os.time() .. "_" .. math.random(100000),
-        type = type,  -- "buy" или "sell"
+        type = type,
         data = {
             player = playerName,
             item = item,
@@ -940,8 +971,7 @@ for _, item in ipairs(buyItemsData) do
 end
 
 -- ============================================================
--- PIM И МОДЕМ
--- ============================================================
+-- PIM И МОДЕМ-- ============================================================
 
 modem = component.modem
 modem.open(0xffef)
@@ -1865,17 +1895,14 @@ shopMenuButtons = {
 function drawWelcomeScreen()
     writeDebugLog("drawWelcomeScreen()")
     
-    -- Очистка экрана
     gpu.setBackground(colors.bg_main)
     gpu.fill(1, 1, 80, 25, " ")
     
-    -- ====================== НОВАЯ РАМКА ======================
-    local border_color = 0x4477BB      -- Голубая рамка
-    local text_color = 0x00FFCC        -- Бирюзовый текст
-    local sub_color = 0xFFFF00         -- Жёлтый подзаголовок
-    local hint_color = 0xAAAAAA        -- Серый подсказка
+    local border_color = 0x4477BB
+    local text_color = 0x00FFCC
+    local sub_color = 0xFFFF00
+    local hint_color = 0xAAAAAA
     
-    -- Рамка (вся высота экрана)
     gpu.setForeground(border_color)
     gpu.set(1, 1, "+" .. string.rep("=", 78) .. "+")
     gpu.set(1, 25, "+" .. string.rep("=", 78) .. "+")
@@ -1884,7 +1911,6 @@ function drawWelcomeScreen()
         gpu.set(80, y, "╹")
     end
     
-    -- ====================== АЛМАЗ ======================
     local diamond = {
         "             ▓▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▓            ",
         "           ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▒▒▒▒▓          ",
@@ -1905,14 +1931,13 @@ function drawWelcomeScreen()
         "                        ▒▓                      ",
     }
     
-    -- Градиент для алмаза
     local gradient = {
         0x112244, 0x223366, 0x335599, 0x4477BB,
         0x5599DD, 0x77BBFF, 0x99CCFF, 0xBBDDFF
     }
     
     local diamX = 17
-    local diamY = 3  -- ★★★ алмаз на 1 строку вниз ★★★
+    local diamY = 3
     
     for i, line in ipairs(diamond) do
         local color = gradient[math.min(math.floor((i-1) / 2) + 1, #gradient)]
@@ -1920,12 +1945,9 @@ function drawWelcomeScreen()
         gpu.set(diamX, diamY + i - 1, line)
     end
     
-    -- ====================== ТЕКСТ ======================
     local cx = 41
     
-    -- ★★★ ЕСЛИ ИГРОК УЖЕ НА PIM — ПОКАЗЫВАЕМ "АВТОРИЗАЦИЯ" ★★★
     if currentPlayer and currentPlayer ~= "" then
-        -- Режим авторизации
         gpu.setForeground(0x00FFCC)
         gpu.set(cx - 5, 21, "АВТОРИЗАЦИЯ")
         
@@ -1935,7 +1957,6 @@ function drawWelcomeScreen()
         gpu.setForeground(hint_color)
         gpu.set(cx - 10, 23, "Пожалуйста, подождите...")
     else
-        -- Обычный экран приветствия
         gpu.setForeground(text_color)
         gpu.set(cx - 2, 21, "VIP SHOP")
         
@@ -1946,7 +1967,6 @@ function drawWelcomeScreen()
         gpu.set(cx - 10, 23, "Встаньте на ПИМ для входа")
     end
     
-    -- ====================== РЕЖИМ ОБСЛУЖИВАНИЯ ======================
     if shopPaused then
         gpu.setForeground(colors.error)
         drawCenteredText(18, "РЕЖИМ ОБСЛУЖИВАНИЯ", colors.error)
@@ -1954,7 +1974,6 @@ function drawWelcomeScreen()
         drawCenteredText(20, "Пожалуйста, зайдите позже", colors.text_main)
     end
 end
-
 
 function drawMainMenu()
     writeDebugLog("drawMainMenu()")
@@ -2825,7 +2844,7 @@ function handleQuantityButtonClick(btnText)
 end
 
 -- ============================================================
--- ВЫПОЛНЕНИЕ ПОКУПКИ И ПРОДАЖИ (С ДОБАВЛЕНИЕМ В БУФЕР)
+-- ВЫПОЛНЕНИЕ ПОКУПКИ И ПРОДАЖИ (С ЗАЩИТОЙ ОТ ЗАВИСАНИЙ)
 -- ============================================================
 
 function performSell()
@@ -2837,14 +2856,23 @@ function performSell()
         return
     end
 
-    -- ★★★ ЗАЩИТА ОТ ДУБЛИРОВАНИЯ ★★★
+    -- ★★★ БЛОКИРУЕМ ТРАНЗАКЦИИ ★★★
+    if TRANSACTION_LOCK then
+        writeDebugLog("⚠️ Продажа уже выполняется")
+        showTempMessage("Подождите, транзакция выполняется...", 2)
+        return
+    end
+    lockTransactions()
+
     if sellConfirmItem and sellConfirmItem._processing then
         writeDebugLog("⚠️ Продажа уже выполняется, пропускаем")
+        unlockTransactions()
         return
     end
     
     if sellConfirmItem and sellConfirmItem._processed then
         writeDebugLog("⚠️ Продажа уже обработана, пропускаем")
+        unlockTransactions()
         return
     end
 
@@ -2853,7 +2881,6 @@ function performSell()
     drawCenteredText(17, "Выполняется пополнение...", colors.accent_main)
     os.sleep(0.2)
 
-    -- ★ ПОМЕЧАЕМ, ЧТО ПРОДАЖА НАЧАЛАСЬ ★
     sellConfirmItem._processing = true
 
     local realExtracted = extractToME(sellConfirmItem.internalName, foundAmount, sellConfirmItem.damage or 0)
@@ -2861,6 +2888,7 @@ function performSell()
         sellConfirmItem._processing = false
         drawCenteredText(17, "Не удалось изъять предметы! Проверьте инвентарь.", colors.error)
         os.sleep(2)
+        unlockTransactions()
         currentScreen = "shop_sell"
         drawBuyStatic()
         drawBuyItemsList()
@@ -2876,10 +2904,8 @@ function performSell()
     end
     playerTransactions = playerTransactions + 1
 
-    -- ★ ДОБАВЛЯЕМ ТРАНЗАКЦИЮ ★
     addTransaction("sell", currentPlayer, sellConfirmItem.displayName, realExtracted, value, 0)
 
-    -- ★ ПОМЕЧАЕМ, ЧТО ПРОДАЖА ЗАВЕРШЕНА ★
     sellConfirmItem._processed = true
     sellConfirmItem._processing = false
 
@@ -2889,6 +2915,7 @@ function performSell()
     drawCenteredText(17, "Успешно! +" .. string.format("%.2f", value) .. " " .. currencySymbol, colors.success)
     os.sleep(0.8)
 
+    unlockTransactions()
     currentScreen = "shop_sell"
     showSellPopup = false
     drawBuyStatic()
@@ -2905,8 +2932,17 @@ function performBuy()
         return
     end
 
+    -- ★★★ БЛОКИРУЕМ ТРАНЗАКЦИИ ★★★
+    if TRANSACTION_LOCK then
+        writeDebugLog("⚠️ Покупка уже выполняется")
+        showTempMessage("Подождите, транзакция выполняется...", 2)
+        return
+    end
+    lockTransactions()
+
     if not purchaseItem then
         writeErrorLog("❌ performBuy: purchaseItem = nil!")
+        unlockTransactions()
         return
     end
 
@@ -2918,6 +2954,7 @@ function performBuy()
         drawCenteredText(20, "Товар закончился! Обновление списка...", colors.error)
         os.sleep(0.8)
         loadBuyItems(true)
+        unlockTransactions()
         drawBuyStatic()
         drawBuyItemsList()
         drawBuyButtons()
@@ -2935,6 +2972,7 @@ function performBuy()
     if qty <= 0 then
         drawCenteredText(20, "Выберите количество!", colors.error)
         os.sleep(0.8)
+        unlockTransactions()
         currentScreen = "shop_buy"
         drawBuyStatic()
         drawBuyItemsList()
@@ -2948,6 +2986,7 @@ function performBuy()
         showInsufficientPopup = true
         insufficientBalanceCoin = coinBalance
         insufficientBalanceEma = emaBalance
+        unlockTransactions()
         drawPurchaseScreen()
         drawInsufficientPopup()
         return
@@ -3014,12 +3053,12 @@ function performBuy()
 
     if extracted == 0 then
         showInventoryFullPopup = true
+        unlockTransactions()
         drawPurchaseScreen()
         drawInventoryFullPopup()
         return
     end
 
-    -- ★ ЧАСТИЧНАЯ ВЫДАЧА ★
     if extracted < qty then
         local actuallySpentCoin = extracted * (item.priceCoin or 0)
         local actuallySpentEma = extracted * (item.priceEma or 0)
@@ -3043,12 +3082,12 @@ function performBuy()
         partialRefundEma = actuallySpentEma
         partialItem = item
         showPartialPopup = true
+        unlockTransactions()
         drawPurchaseScreen()
         drawPartialPopup()
         return
     end
 
-    -- ★ ПОЛНАЯ ВЫДАЧА ★
     coinBalance = coinBalance - totalCoin
     emaBalance = emaBalance - totalEma
     playerTransactions = playerTransactions + 1
@@ -3081,6 +3120,7 @@ function performBuy()
         end
     end
     os.sleep(0.8)
+    unlockTransactions()
     currentScreen = "shop_buy"
     drawBuyStatic()
     drawBuyItemsList()
@@ -3327,7 +3367,6 @@ function checkWebCommands()
             writeDebugLog("🔧 Выполняем команду: " .. (cmd.command or "unknown"))
             writeDebugLog("📨 Данные команды: " .. serialization.serialize(d))
         
-            -- ==================== ОБНОВЛЕНИЕ ИГРОКА ====================
             if cmd.command == "update_player" or cmd.command == "set_balance" then
                 local playerName = d.name or d.player
                 if not playerName then
@@ -3335,7 +3374,6 @@ function checkWebCommands()
                     goto continue
                 end
                 
-                -- ★★★ ПРИМЕНЯЕМ ИЗМЕНЕНИЕ В OC ★★★
                 if players[playerName] then
                     if d.balance then
                         players[playerName].balance = tonumber(d.balance) or 0
@@ -3346,7 +3384,6 @@ function checkWebCommands()
                     saveDBDeferred()
                     addLog("💰 Баланс обновлён: " .. playerName)
                     
-                    -- Отправляем дельту на сервер
                     local balance_change = {
                         id = "bal_" .. os.time() .. "_" .. math.random(100000),
                         type = "update_balance",
@@ -3365,7 +3402,6 @@ function checkWebCommands()
                 goto continue
             end
             
-            -- ==================== ИНКРЕМЕНТАЛЬНОЕ ОБНОВЛЕНИЕ ТОВАРОВ ====================
             if cmd.command == "save_buy_items_incremental" then
                 writeDebugLog("📥 save_buy_items_incremental получен")
                 local changes = d.changes
@@ -3404,7 +3440,6 @@ function checkWebCommands()
                 goto continue
             end
             
-            -- ==================== РЕЖИМ ОБСЛУЖИВАНИЯ ====================
             if cmd.command == "toggle_pause" then
                 if d.paused ~= nil then
                     shopPaused = d.paused
@@ -3457,7 +3492,6 @@ function checkWebCommands()
                 goto continue
             end
             
-            -- ==================== БАН / РАЗБАН ====================
             if cmd.command == "toggle_ban" then
                 local playerName = d.name
                 local banned = d.banned
@@ -3528,7 +3562,6 @@ function checkWebCommands()
                 goto continue
             end
             
-            -- ==================== УДАЛЕНИЕ ОТЗЫВА ====================
             if cmd.command == "delete_feedback" then
                 local index = d.index
                 writeDebugLog("🗑️ Удаление отзыва: индекс " .. tostring(index))
@@ -3566,7 +3599,6 @@ function checkWebCommands()
                 goto continue
             end
             
-            -- ==================== ОТМЕТКА ОТЗЫВА КАК ПРОСМОТРЕННОГО ====================
             if cmd.command == "feedback_viewed" then
                 local index = d.index
                 writeDebugLog("📌 Отметка отзыва как просмотренного: индекс " .. tostring(index))
@@ -3615,7 +3647,16 @@ function checkWebCommands()
     end
 end
 
-event.timer(10, checkWebCommands, math.huge)
+-- ★★★ ТАЙМЕР ПОЛУЧЕНИЯ КОМАНД (БЛОКИРУЕТСЯ ПРИ ТРАНЗАКЦИЯХ) ★★★
+event.timer(COMMAND_CHECK_INTERVAL, function()
+    if not TRANSACTION_LOCK then
+        writeDebugLog("📡 Получение команд с сервера...")
+        checkWebCommands()
+    else
+        writeDebugLog("⏳ Пропущен checkWebCommands (транзакция активна)")
+    end
+    return true
+end, math.huge)
 
 -- ============================================================
 -- СОГЛАШЕНИЕ (заглушка, если файл не загружен)
@@ -3667,7 +3708,7 @@ if not drawAgreementScreen then
 end
 
 -- ============================================================
--- ОСНОВНОЙ ЦИКЛ (С ДОБАВЛЕННОЙ ПРОВЕРКОЙ БАНА ПРИ ВХОДЕ)
+-- ОСНОВНОЙ ЦИКЛ
 -- ============================================================
 
 gpu.setResolution(80, 25)
@@ -3698,7 +3739,7 @@ function main()
             end
         end
 
-                if e == "touch" then
+        if e == "touch" then
             local x = tonumber(ev[3]) or 0
             local y = tonumber(ev[4]) or 0
             local playerName = ev[6] or "Неизвестный"
@@ -4205,9 +4246,8 @@ function main()
             end
 
             goto continue
-        end   -- <-- ЭТОТ END ЗАКРЫВАЕТ if e == "touch"
+        end
 
-        -- ===== ОТДЕЛЬНЫЕ ОБРАБОТЧИКИ (без elseif) =====
         if e == "scroll" and (currentScreen == "shop_buy" or currentScreen == "shop_sell") then
             local playerName = ev[6] or "Неизвестный"
             if not isPimOwner(playerName) then
@@ -4396,11 +4436,9 @@ function main()
             end
 
             if banInfo then
-            -- ★★★ ПОЛНОСТЬЮ ОЧИЩАЕМ ЭКРАН БЕЗ VIP SHOP ★★★
             gpu.setBackground(colors.bg_main)
             gpu.fill(1, 1, 80, 25, " ")
             
-            -- Рисуем баннер БЕЗ drawBigTitle()
             gpu.setForeground(colors.error)
             drawCenteredText(6, "╔══════════════════════════════════════════════════════════════╗", colors.error)
             drawCenteredText(7, "║                     ВЫ ЗАБЛОКИРОВАНЫ                         ║", colors.error)
@@ -4418,7 +4456,6 @@ function main()
             
             drawCenteredText(15, "Доступ запрещён", colors.error)
             
-            -- Рисуем нижнюю границу
             gpu.setForeground(colors.accent_secondary)
             drawCenteredText(22, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", colors.accent_secondary)
             
@@ -4480,7 +4517,6 @@ function main()
                         text = "Новый игрок: " .. currentPlayer
                     }))
                     
-                    -- ★★★ ОТПРАВЛЯЕМ ДЕЛЬТУ НА СЕРВЕР ★★★
                     local change = {
                         id = "new_" .. os.time() .. "_" .. math.random(100000),
                         type = "new_player",
@@ -4548,7 +4584,6 @@ function main()
             currentScreen = "welcome"
             shopPaused = false
             
-            -- Сброс выбранных предметов
             selectedItem = nil
             hoveredIndex = 0
             selectedIndex = 0
@@ -4557,14 +4592,12 @@ function main()
             searchActive = false
             searchInput = ""
             
-            -- Сброс покупки/продажи
             purchaseItem = nil
             purchaseQuantity = 1
             sellConfirmItem = nil
             foundAmount = 0
             showSellPopup = false
             
-            -- Сброс поп-апов
             showPartialPopup = false
             partialExtracted = 0
             partialRequested = 0
@@ -4576,21 +4609,24 @@ function main()
             insufficientBalanceEma = 0
             showInventoryFullPopup = false
             
-            -- Сброс скролла
             listScroll = 1
             horizontalScroll = 1
             
-            -- Сброс временных сообщений
             tempMessage = ""
             if tempMessageTimer then
                 event.cancel(tempMessageTimer)
                 tempMessageTimer = nil
             end
             
-            -- Очистка селектора
             pcall(updateSelectorDisplay, nil)
             pcall(selector.setSlot, 0, nil)
             pcall(selector.setSlot, 1, nil)
+            
+            -- ★★★ СБРАСЫВАЕМ БЛОКИРОВКУ ПРИ ВЫХОДЕ ★★★
+            if TRANSACTION_LOCK then
+                TRANSACTION_LOCK = false
+                writeDebugLog("🔓 Блокировка сброшена при выходе")
+            end
             
             drawWelcomeScreen()
             goto continue

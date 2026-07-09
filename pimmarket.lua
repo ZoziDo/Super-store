@@ -29,7 +29,7 @@ os.exit = function(code)
 end
 
 -- ============================================================
--- ВРЕМЯ1
+-- ВРЕМЯ122
 -- ============================================================
 
 tmpfs = component.proxy(computer.tmpAddress())
@@ -2995,7 +2995,6 @@ function showAuthPopup()
     local isBound = (boundPlayer and boundPlayer ~= "") or (savedBound and savedBound ~= "")
     
     if isBound then
-        -- ★★★ ЕСЛИ ПРИВЯЗАН - ПОКАЗЫВАЕМ ИНФОРМАЦИЮ И КНОПКУ ОТВЯЗКИ ★★★
         local displayName = boundPlayer or savedBound
         
         gpu.setForeground(colors.success)
@@ -3003,20 +3002,22 @@ function showAuthPopup()
         gpu.setForeground(colors.text_main)
         gpu.set(5, 10, "   Нажмите [ОТВЯЗАТЬ] чтобы отвязать аккаунт")
         
-        -- Кнопка отвязки (вместо поля ввода кода)
+        -- ★★★ КНОПКА ОТВЯЗКИ ПЕРЕНЕСЕНА ВНИЗ (СТРОКА 24) ★★★
         local unbindBtn = {
             text = "[ ОТВЯЗАТЬ АККАУНТ ]",
-            x = 28, y = 14,
+            x = 30,
+            y = 24,  -- ★★★ СТРОКА 24 ★★★
             xs = unicode.len("[ ОТВЯЗАТЬ АККАУНТ ]") + 2,
             ys = 1,
             bg = colors.bg_button,
             fg = colors.error
         }
-        drawFlexButton(unbindBtn)
         
-        -- Кнопки внизу
-        local backBtn = {x=10, y=24, xs=12, ys=1, text="[ НАЗАД ]", bg=colors.bg_button, fg=colors.accent_secondary}
+        -- Кнопка НАЗАД (слева)
+        local backBtn = {x=5, y=24, xs=12, ys=1, text="[ НАЗАД ]", bg=colors.bg_button, fg=colors.accent_secondary}
+        
         drawFlexButton(backBtn)
+        drawFlexButton(unbindBtn)
         drawTempMessage()
         
         -- Обработка нажатий
@@ -3221,11 +3222,14 @@ function unbindAccount()
     drawCenteredText(17, "Отвязка аккаунта...", colors.accent_secondary)
     os.sleep(0.5)
     
+    -- ★★★ ОТПРАВЛЯЕМ ЗАПРОС С ПРАВИЛЬНОЙ КОДИРОВКОЙ ★★★
+    local json_data = toJson({
+        site_user = currentPlayer
+    })
+    
     local success, response = pcall(function()
-        return internet.request(WEB_URL .. "/api/unbind_player", toJson({
-            site_user = currentPlayer
-        }), {
-            ["Content-Type"] = "application/json",
+        return internet.request(WEB_URL .. "/api/unbind_player", json_data, {
+            ["Content-Type"] = "application/json; charset=utf-8",
             ["Connection"] = "close",
             ["Timeout"] = "5"
         })
@@ -3236,6 +3240,7 @@ function unbindAccount()
         for chunk in response do
             body = body .. chunk
         end
+        -- ★★★ ПАРСИМ JSON С УЧЁТОМ КИРИЛЛИЦЫ ★★★
         local data = parseJSON(body)
         
         if data and data.success then
@@ -3246,14 +3251,15 @@ function unbindAccount()
             os.sleep(1.5)
             goBackToMenu()
         else
-            drawCenteredText(17, "❌ " .. (data and data.error or "Ошибка отвязки"), colors.error)
+            local errorMsg = (data and data.error) or "Ошибка отвязки"
+            drawCenteredText(17, "❌ " .. errorMsg, colors.error)
             os.sleep(2)
-            goBackToMenu()
+            showAuthPopup()
         end
     else
         drawCenteredText(17, "❌ Ошибка соединения с сервером", colors.error)
         os.sleep(2)
-        goBackToMenu()
+        showAuthPopup()
     end
 end
 

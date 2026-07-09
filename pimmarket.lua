@@ -29,7 +29,7 @@ os.exit = function(code)
 end
 
 -- ============================================================
--- ВРЕМЯ12
+-- ВРЕМЯ
 -- ============================================================
 
 tmpfs = component.proxy(computer.tmpAddress())
@@ -49,16 +49,12 @@ function getRealTimeHM()
 end
 
 -- ============================================================
--- ★★★ ЗАЩИТА ОТ ЗАВИСАНИЙ ИНТЕРФЕЙСА ★★★
+-- ★★★ ЗАЩИТА ОТ ЗАВИСАНИЙ ★★★
 -- ============================================================
 
--- ★★★ ФЛАГ: true = идёт транзакция (покупка/продажа) ★★★
 TRANSACTION_LOCK = false
-
--- ★★★ ИНТЕРВАЛ ПРОВЕРКИ КОМАНД (секунды) ★★★
 COMMAND_CHECK_INTERVAL = 10
 
--- ★★★ ФУНКЦИИ ДЛЯ УПРАВЛЕНИЯ БЛОКИРОВКОЙ ★★★
 function lockTransactions()
     TRANSACTION_LOCK = true
     writeDebugLog("🔒 Транзакции заблокированы")
@@ -67,8 +63,6 @@ end
 function unlockTransactions()
     TRANSACTION_LOCK = false
     writeDebugLog("🔓 Транзакции разблокированы")
-    
-    -- ★★★ ПОСЛЕ РАЗБЛОКИРОВКИ СРАЗУ ПРОВЕРЯЕМ КОМАНДЫ ★★★
     event.timer(0.5, function()
         if not TRANSACTION_LOCK then
             writeDebugLog("📡 Быстрая проверка команд после транзакции")
@@ -78,29 +72,22 @@ function unlockTransactions()
     end)
 end
 
--- ============================================================
--- ★★★ ЗАЩИТА ОТ ЗАВИСАНИЙ ПРИ ВЫХОДЕ ★★★
--- ============================================================
-
--- ★★★ ФУНКЦИЯ БЕЗОПАСНОГО ВЫХОДА ★★★
 function safeExit()
     writeDebugLog("🚪 Безопасный выход")
-    
-    -- Полный сброс состояния
     currentPlayer = nil
     currentToken = nil
     alreadyAuthorized = false
     pimOwner = nil
     currentScreen = "welcome"
     shopPaused = false
+    authCodeInput = ""
+    boundPlayer = nil
     
-    -- Сброс блокировки
     if TRANSACTION_LOCK then
         TRANSACTION_LOCK = false
         writeDebugLog("🔓 Блокировка сброшена при выходе")
     end
     
-    -- Сброс всех UI элементов
     selectedItem = nil
     hoveredIndex = 0
     selectedIndex = 0
@@ -124,12 +111,9 @@ function safeExit()
         tempMessageTimer = nil
     end
     
-    -- Обновляем селектор
     pcall(updateSelectorDisplay, nil)
     pcall(selector.setSlot, 0, nil)
     pcall(selector.setSlot, 1, nil)
-    
-    -- Возврат на экран приветствия
     drawWelcomeScreen()
 end
 
@@ -182,7 +166,7 @@ function sendToWeb(endpoint, jsonData)
 end
 
 -- ============================================================
--- ОТПРАВКА ЛОГОВ НА ВЕБ (С НАКОПЛЕНИЕМ)
+-- ЛОГИ
 -- ============================================================
 
 logQueue = {}
@@ -227,10 +211,6 @@ function addLog(text)
     addLogEntry(text, "INFO")
 end
 
--- ============================================================
--- ОТПРАВКА ОШИБОК НА ВЕБ
--- ============================================================
-
 function sendErrorToWeb(error_msg, level)
     level = level or "ERROR"
     local timestamp = getRealTimeHM()
@@ -241,10 +221,6 @@ function sendErrorToWeb(error_msg, level)
     }))
 end
 
--- ============================================================
--- ДЕТАЛЬНОЕ ЛОГИРОВАНИЕ ОШИБОК
--- ============================================================
-
 ERROR_LOG = "/home/errors.log"
 
 function writeErrorLog(msg)
@@ -253,7 +229,7 @@ function writeErrorLog(msg)
 end
 
 function writeDebugLog(msg)
-    -- Отладочные логи полностью отключены
+    -- Отладочные логи отключены
 end
 
 function safeCall(func, ...)
@@ -273,10 +249,6 @@ function safeCall(func, ...)
     return true, ok
 end
 
--- ============================================================
--- ИГНОРИРОВАНИЕ СОБЫТИЙ
--- ============================================================
-
 event.ignore("interrupted", function() end)
 event.ignore("terminate", function() end)
 
@@ -286,7 +258,7 @@ os.exit = function(code)
 end
 
 -- ============================================================
--- ПЕРЕМЕННАЯ ДЛЯ ТЕРМИНАЛОВ
+-- ТЕРМИНАЛЫ
 -- ============================================================
 
 markets = {}
@@ -462,7 +434,7 @@ DB_PATH = "/home/players.db"
 STATS_PATH = "/home/global_stats.db"
 FEEDBACKS_PATH = "/home/feedbacks.db"
 REPORTS_PATH = "/home/reports.log"
-REPORTS_FILE = "/home/reports.json"  -- ★★★ НОВЫЙ ФАЙЛ ДЛЯ РЕПОРТОВ ★★★
+REPORTS_FILE = "/home/reports.json"
 PENDING_FILE = "/home/pending_changes.lua"
 
 admins = {}
@@ -471,10 +443,6 @@ globalStats = { totalReports = 0, totalBuys = 0, totalSells = 0, totalRevenue = 
 transactions = {}
 pending_buffer = {}
 retry_delay = 10
-
--- ============================================================
--- ★★★ РАБОТА С РЕПОРТАМИ (ЛОКАЛЬНОЕ СОХРАНЕНИЕ) ★★★
--- ============================================================
 
 function loadReportsFromFile()
     if fs.exists(REPORTS_FILE) then
@@ -518,10 +486,6 @@ function addReportToLocal(name, text)
     writeDebugLog("📝 Репорт сохранён локально: " .. (name or "Аноним"))
     return reports
 end
-
--- ============================================================
--- ФУНКЦИИ ДЛЯ БУФЕРА ИЗМЕНЕНИЙ
--- ============================================================
 
 function load_pending_buffer()
     if fs.exists(PENDING_FILE) then
@@ -597,10 +561,6 @@ function clear_pending_changes(ids)
     end
 end
 
--- ============================================================
--- ОТПРАВКА БУФЕРА ИЗМЕНЕНИЙ НА СЕРВЕР (ДЕЛЬТА)
--- ============================================================
-
 function send_pending_changes()
     if #pending_buffer == 0 then
         retry_delay = 10
@@ -655,7 +615,6 @@ function send_pending_changes()
     end
 end
 
--- ★★★ ТАЙМЕР ОТПРАВКИ ДЕЛЬТЫ (НЕ БЛОКИРУЕТСЯ) ★★★
 event.timer(10, function()
     if #pending_buffer > 0 then
         writeDebugLog("📤 Отправка дельты (буфер: " .. #pending_buffer .. ")")
@@ -663,10 +622,6 @@ event.timer(10, function()
     end
     return true
 end, math.huge)
-
--- ============================================================
--- ФУНКЦИИ ДЛЯ РАБОТЫ С ФАЙЛАМИ (СОХРАНЕНИЕ)
--- ============================================================
 
 function ensureFileExists(path, defaultData)
     writeDebugLog("ensureFileExists: " .. path)
@@ -694,9 +649,8 @@ ensureFileExists(STATS_PATH, { totalReports = 0, totalBuys = 0, totalSells = 0, 
 ensureFileExists(FEEDBACKS_PATH, {})
 ensureFileExists(REPORTS_PATH, "")
 ensureFileExists(PENDING_FILE, {})
-ensureFileExists(REPORTS_FILE, {})  -- ★★★ ДОБАВЛЕНО ★★★
+ensureFileExists(REPORTS_FILE, {})
 
--- Загрузка админов
 if fs.exists(ADMINS_PATH) then
     local file = io.open(ADMINS_PATH, "r")
     if file then
@@ -715,7 +669,6 @@ if #admins == 0 then
     file:close()
 end
 
--- Загрузка игроков
 if fs.exists(DB_PATH) then
     local file = io.open(DB_PATH, "r")
     local raw = file:read("*a")
@@ -726,7 +679,6 @@ if fs.exists(DB_PATH) then
     end
 end
 
--- Загрузка статистики
 if fs.exists(STATS_PATH) then
     local file = io.open(STATS_PATH, "r")
     local raw = file:read("*a")
@@ -743,10 +695,8 @@ if fs.exists(STATS_PATH) then
     end
 end
 
--- Загрузка буфера изменений
 load_pending_buffer()
 
--- Отложенное сохранение БД (не чаще раза в 5 секунд)
 dbDirty = false
 SAVE_DB_INTERVAL = 10
 
@@ -823,10 +773,6 @@ function removeAdmin(playerName)
     return false
 end
 
--- ============================================================
--- ДОБАВЛЕНИЕ ТРАНЗАКЦИИ (С ЗАПИСЬЮ В БУФЕР)
--- ============================================================
-
 function addTransaction(type, playerName, item, qty, value_coin, value_ema)
     writeDebugLog("addTransaction: " .. type .. " " .. (playerName or "?"))
     
@@ -899,10 +845,6 @@ function addTransaction(type, playerName, item, qty, value_coin, value_ema)
     add_pending_change(change)
 end
 
--- ============================================================
--- ФУНКЦИИ ДЛЯ ТЕРМИНАЛОВ
--- ============================================================
-
 function broadcastUpdate()
     writeDebugLog("📢 Рассылка обновления терминалам")
     local msg = serialization.serialize({
@@ -921,10 +863,6 @@ function broadcastKill()
         pcall(modem.send, addr, 0xffef, msg)
     end
 end
-
--- ============================================================
--- ОТПРАВКА СТАТИСТИКИ (ПОЛНЫЙ ДАМП – РЕЗЕРВ)
--- ============================================================
 
 function sendStats()
     writeDebugLog("📊 sendStats() начат (резервный дамп)")
@@ -1043,12 +981,7 @@ function sendStats()
     sendToWeb("/api/update", jsonData)
 end
 
--- Резервный дамп раз в час (на случай, если дельта-обновления пропущены)
 event.timer(60, sendStats, math.huge)
-
--- ============================================================
--- ЗАГРУЗКА ТОВАРОВ И СОГЛАШЕНИЯ
--- ============================================================
 
 function safeDoFile(path)
     writeDebugLog("safeDoFile: " .. path)
@@ -1075,9 +1008,6 @@ for _, item in ipairs(buyItemsData) do
     local key = item.internalName .. ":" .. dmg
     buyItemMap[key] = item
 end
-
--- ============================================================
--- PIM И МОДЕМ-- ============================================================
 
 modem = component.modem
 modem.open(0xffef)
@@ -1145,6 +1075,10 @@ authStartTime = 0
 AUTH_TIMEOUT = 3
 alreadyAuthorized = false
 
+-- ★★★ ДЛЯ АУТЕНТИФИКАЦИИ ★★★
+authCodeInput = ""
+boundPlayer = nil
+
 shopItems = {}
 shopSearch = ""
 searchActive = false
@@ -1198,7 +1132,7 @@ feedbackEditMode = false
 playerHasFeedback = false
 
 -- ============================================================
--- НАДЁЖНЫЙ JSON ПАРСЕР
+-- JSON ПАРСЕР
 -- ============================================================
 
 function parseJSON(json_str)
@@ -1357,7 +1291,6 @@ function syncCurrentPlayer()
     writeDebugLog("🔄 Синхронизация игрока: " .. currentPlayer)
     
     if players[currentPlayer] then
-        -- ★★★ ЗАГРУЖАЕМ ИЗ ДАННЫХ ИГРОКА ★★★
         coinBalance = players[currentPlayer].balance or 0
         emaBalance = players[currentPlayer].emaBalance or 0
         playerTransactions = players[currentPlayer].transactions or 0
@@ -1466,7 +1399,7 @@ function showTempMessage(msg, duration)
 end
 
 -- ============================================================
--- ЗАГРУЗКА ТОВАРОВ (С КЕШИРОВАНИЕМ)
+-- ЗАГРУЗКА ТОВАРОВ
 -- ============================================================
 
 cachedBuyItems = nil
@@ -1627,7 +1560,7 @@ function extractToME(targetName, amount, targetDamage)
 end
 
 -- ============================================================
--- UI МАГАЗИНА (ПОЛНОСТЬЮ СОХРАНЁН)
+-- UI МАГАЗИНА
 -- ============================================================
 
 function drawBalanceLine(x, y)
@@ -2109,13 +2042,25 @@ function drawMainMenu()
         gpu.set(balanceX + unicode.len("Баланс: ") + unicode.len(string.format("%.2f", coin) .. " Coina ₵"), 5, " | ")
         gpu.setForeground(colors.tomato)
         gpu.set(balanceX + unicode.len("Баланс: ") + unicode.len(string.format("%.2f", coin) .. " Coina ₵") + unicode.len(" | "), 5, "ЭМЫ: " .. string.format("%.2f", ema) .. " ۞")
+        
+        -- ★★★ СТАТУС ПРИВЯЗКИ ★★★
+        local boundInfo = ""
+        if boundPlayer then
+            boundInfo = "✅ Привязан: " .. boundPlayer
+            gpu.setForeground(colors.success)
+        else
+            boundInfo = "❌ Аккаунт не привязан"
+            gpu.setForeground(colors.error)
+        end
+        local boundX = math.floor((80 - unicode.len(boundInfo)) / 2) + 1
+        gpu.set(boundX, 7, boundInfo)
 
         if not playerAgreed then
             gpu.setForeground(colors.accent_secondary)
             if showShopDenied then
-                drawCenteredText(7, "Доступ запрещён. Примите соглашение [Соглашение]", colors.error)
+                drawCenteredText(8, "Доступ запрещён. Примите соглашение [Соглашение]", colors.error)
             else
-                drawCenteredText(7, "Вы не приняли пользовательское соглашение! Нажмите [Соглашение]", colors.accent_secondary)
+                drawCenteredText(8, "Вы не приняли пользовательское соглашение! Нажмите [Соглашение]", colors.accent_secondary)
             end
         end
 
@@ -2951,7 +2896,153 @@ function handleQuantityButtonClick(btnText)
 end
 
 -- ============================================================
--- ВЫПОЛНЕНИЕ ПОКУПКИ И ПРОДАЖИ (С ЗАЩИТОЙ ОТ ЗАВИСАНИЙ)
+-- ★★★ АУТЕНТИФИКАЦИЯ (ПРИВЯЗКА АККАУНТА) ★★★
+-- ============================================================
+
+function showAuthPopup()
+    writeDebugLog("showAuthPopup()")
+    currentScreen = "auth_popup"
+    authCodeInput = authCodeInput or ""
+    
+    clear()
+    drawScreenBorder()
+    
+    drawCenteredText(4, "АУТЕНТИФИКАЦИЯ", colors.accent_secondary)
+    drawCenteredText(6, "Введите код из браузера:", colors.text_main)
+    
+    -- Поле ввода кода
+    gpu.setBackground(colors.black_fon)
+    gpu.fill(30, 9, 20, 3, " ")
+    gpu.setForeground(colors.text_bright)
+    local displayCode = authCodeInput or ""
+    if #displayCode < 6 then
+        displayCode = displayCode .. "_"
+    end
+    gpu.set(31, 10, displayCode)
+    gpu.setBackground(colors.bg_main)
+    
+    drawCenteredText(12, "Код действителен 5 минут", colors.inactive)
+    drawCenteredText(13, "Получите код на сайте в разделе 'Привязка'", colors.text_main)
+    
+    -- Кнопки
+    local backBtn = {x=20, y=24, xs=12, ys=1, text="[ НАЗАД ]", bg=colors.bg_button, fg=colors.accent_secondary}
+    local confirmBtn = {x=47, y=24, xs=15, ys=1, text="[ ПОДТВЕРДИТЬ ]", bg=colors.bg_button, fg=colors.success}
+    drawFlexButton(backBtn)
+    drawFlexButton(confirmBtn)
+    drawTempMessage()
+    
+    -- Обработка ввода
+    local isEditing = true
+    while currentScreen == "auth_popup" and isEditing do
+        local ev = {event.pull(0.5)}
+        
+        if ev[1] == "touch" then
+            local x, y = ev[3], ev[4]
+            
+            if isButtonClicked(backBtn, x, y) then
+                isEditing = false
+                goBackToMenu()
+                break
+            end
+            
+            if isButtonClicked(confirmBtn, x, y) then
+                if authCodeInput and #authCodeInput == 6 then
+                    isEditing = false
+                    verifyAuthCode(authCodeInput)
+                else
+                    drawCenteredText(15, "Введите 6-значный код!", colors.error)
+                    os.sleep(1.5)
+                    showAuthPopup()
+                end
+                break
+            end
+            
+        elseif ev[1] == "key_down" then
+            local ch = ev[3]
+            
+            if ch == 13 then -- Enter
+                if authCodeInput and #authCodeInput == 6 then
+                    isEditing = false
+                    verifyAuthCode(authCodeInput)
+                else
+                    drawCenteredText(15, "Введите 6-значный код!", colors.error)
+                    os.sleep(1.5)
+                    showAuthPopup()
+                end
+                break
+                
+            elseif ch == 8 then -- Backspace
+                authCodeInput = unicode.sub(authCodeInput or "", 1, -2)
+                showAuthPopup()
+                
+            elseif ch >= 48 and ch <= 57 then -- Цифры 0-9
+                if unicode.len(authCodeInput or "") < 6 then
+                    authCodeInput = (authCodeInput or "") .. unicode.char(ch)
+                    showAuthPopup()
+                end
+            end
+        end
+    end
+end
+
+function verifyAuthCode(code)
+    writeDebugLog("verifyAuthCode: " .. code)
+    
+    drawCenteredText(15, "Проверка кода...", colors.accent_secondary)
+    os.sleep(0.5)
+    
+    local success, response = pcall(function()
+        return internet.request(WEB_URL .. "/api/verify_auth_code", toJson({
+            code = code,
+            game_player = currentPlayer
+        }), {
+            ["Content-Type"] = "application/json",
+            ["Connection"] = "close",
+            ["Timeout"] = "5"
+        })
+    end)
+    
+    if success and response then
+        local body = ""
+        for chunk in response do
+            body = body .. chunk
+        end
+        local data = parseJSON(body)
+        
+        if data and data.success then
+            drawCenteredText(15, "✅ " .. (data.message or "Аккаунт привязан!"), colors.success)
+            drawCenteredText(16, "Теперь вы можете пользоваться магазином", colors.text_main)
+            
+            if data.player then
+                boundPlayer = data.player
+                addLog("🔗 Аккаунт привязан: " .. boundPlayer)
+            end
+            
+            syncCurrentPlayer()
+            
+            os.sleep(2)
+            goBackToMenu()
+            
+        else
+            local errorMsg = (data and data.error) or "Ошибка привязки"
+            drawCenteredText(15, "❌ " .. errorMsg, colors.error)
+            
+            if data and data.bound then
+                drawCenteredText(16, "Этот игрок уже привязан к другому аккаунту", colors.text_main)
+            end
+            
+            os.sleep(2)
+            showAuthPopup()
+        end
+    else
+        drawCenteredText(15, "❌ Ошибка соединения с сервером", colors.error)
+        os.sleep(2)
+        showAuthPopup()
+    end
+end
+
+-- ============================================================
+-- ВЫПОЛНЕНИЕ ПОКУПКИ И ПРОДАЖИ
 -- ============================================================
 
 function performSell()
@@ -2963,7 +3054,6 @@ function performSell()
         return
     end
 
-    -- ★★★ БЛОКИРУЕМ ТРАНЗАКЦИИ ★★★
     if TRANSACTION_LOCK then
         writeDebugLog("⚠️ Продажа уже выполняется")
         showTempMessage("Подождите, транзакция выполняется...", 2)
@@ -3011,13 +3101,10 @@ function performSell()
     end
     playerTransactions = playerTransactions + 1
 
-    -- ★★★ ИСПРАВЛЕНИЕ: СРАЗУ СОХРАНЯЕМ В ДАННЫХ ИГРОКА ★★★
     if currentPlayer and players[currentPlayer] then
         players[currentPlayer].balance = coinBalance
         players[currentPlayer].emaBalance = emaBalance
         players[currentPlayer].transactions = playerTransactions
-        
-        -- ★★★ НЕМЕДЛЕННОЕ СОХРАНЕНИЕ ★★★
         saveDB()
         writeDebugLog("💾 Баланс сохранён после продажи для " .. currentPlayer .. ": Coin=" .. coinBalance .. ", EMA=" .. emaBalance)
     else
@@ -3052,7 +3139,6 @@ function performBuy()
         return
     end
 
-    -- ★★★ БЛОКИРУЕМ ТРАНЗАКЦИИ ★★★
     if TRANSACTION_LOCK then
         writeDebugLog("⚠️ Покупка уже выполняется")
         showTempMessage("Подождите, транзакция выполняется...", 2)
@@ -3212,12 +3298,10 @@ function performBuy()
     emaBalance = emaBalance - totalEma
     playerTransactions = playerTransactions + 1
 
-    -- ★★★ ИСПРАВЛЕНИЕ: НЕМЕДЛЕННОЕ СОХРАНЕНИЕ ★★★
     if currentPlayer and players[currentPlayer] then
         players[currentPlayer].balance = coinBalance
         players[currentPlayer].emaBalance = emaBalance
         players[currentPlayer].transactions = playerTransactions
-        -- ★★★ НЕМЕДЛЕННОЕ СОХРАНЕНИЕ ★★★
         saveDB()
         writeDebugLog("💾 Баланс сохранён (полн.) для " .. currentPlayer .. ": Coin=" .. coinBalance .. ", EMA=" .. emaBalance)
     else
@@ -3365,14 +3449,12 @@ function applyIncrementalChanges(itemsFile, changes, itemType)
         return true
     end
 
-    -- ★★★ ФИКС КИРИЛЛИЦЫ ПЕРЕД СОХРАНЕНИЕМ ★★★
     function fixDisplayNames(items)
         local fixed_items = {}
         for _, item in ipairs(items) do
             local new_item = {}
             for k, v in pairs(item) do
                 if k == "displayName" and type(v) == "string" then
-                    -- Пытаемся раскодировать \uXXXX обратно в текст
                     local fixed = v:gsub("\\u(%x%x%x%x)", function(hex)
                         return unicode.char(tonumber(hex, 16))
                     end)
@@ -3386,7 +3468,6 @@ function applyIncrementalChanges(itemsFile, changes, itemType)
         return fixed_items
     end
     
-    -- ★★★ ПРИМЕНЯЕМ ФИКС ★★★
     if not isShopFile then
         sellItemsList = fixDisplayNames(sellItemsList)
     else
@@ -3404,7 +3485,6 @@ function applyIncrementalChanges(itemsFile, changes, itemType)
     
     local serialized
     if isShopFile then
-        -- Обновляем sellItems в fileData
         fileData.sellItems = sellItemsList
         serialized = serialization.serialize(fileData)
     else
@@ -3415,7 +3495,6 @@ function applyIncrementalChanges(itemsFile, changes, itemType)
     file:close()
     writeDebugLog("✅ Сохранено " .. appliedCount .. " изменений в " .. itemsFile)
 
-    -- ★★★ ОБНОВЛЯЕМ ДАННЫЕ В ПАМЯТИ ★★★
     if isShopFile then
         sellItems = sellItemsList
         shopData.sellItems = sellItemsList
@@ -3423,7 +3502,6 @@ function applyIncrementalChanges(itemsFile, changes, itemType)
         writeDebugLog("📦 sellItems обновлён, товаров: " .. #sellItems)
     else
         buyItemsData = sellItemsList
-        -- ★★★ ПЕРЕСОЗДАЁМ buyItemMap ★★★
         buyItemMap = {}
         for _, item in ipairs(buyItemsData) do
             local dmg = item.damage or 0
@@ -3431,12 +3509,8 @@ function applyIncrementalChanges(itemsFile, changes, itemType)
             buyItemMap[key] = item
         end
         writeDebugLog("📦 buyItemsData обновлена, товаров: " .. #buyItemsData)
-        
-        -- ★★★ ПРИНУДИТЕЛЬНО СБРАСЫВАЕМ КЕШ ★★★
         cachedBuyItems = nil
         cacheTimestamp = 0
-        
-        -- ★★★ ПРИНУДИТЕЛЬНО ПЕРЕЗАГРУЖАЕМ ТОВАРЫ В МАГАЗИНЕ ★★★
         loadBuyItems(true)
         if currentScreen == "shop_buy" then
             drawBuyStatic()
@@ -3805,7 +3879,6 @@ function checkWebCommands()
     end
 end
 
--- ★★★ ТАЙМЕР ПОЛУЧЕНИЯ КОМАНД (БЛОКИРУЕТСЯ ПРИ ТРАНЗАКЦИЯХ) ★★★
 event.timer(COMMAND_CHECK_INTERVAL, function()
     if not TRANSACTION_LOCK then
         writeDebugLog("📡 Получение команд с сервера...")
@@ -3817,7 +3890,7 @@ event.timer(COMMAND_CHECK_INTERVAL, function()
 end, math.huge)
 
 -- ============================================================
--- СОГЛАШЕНИЕ (заглушка, если файл не загружен)
+-- СОГЛАШЕНИЕ
 -- ============================================================
 
 drawAgreementScreen = nil
@@ -3923,12 +3996,16 @@ function main()
                         goto continue
                     end
                 end
+                
+                -- ★★★ КНОПКА АУТЕНТИФИКАЦИИ ★★★
+                local authBtnText = "[ АУТЕНТИФИКАЦИЯ ]"
+                if y == 24 and x >= 4 and x <= 4 + unicode.len(authBtnText) then
+                    showAuthPopup()
+                    goto continue
+                end
+                
                 if y == 24 then
-                    if x >= 4 and x <= 25 then
-                        showShopDenied = false
-                        goToReport()
-                        goto continue
-                    elseif x >= 35 and x <= 47 then
+                    if x >= 35 and x <= 47 then
                         showShopDenied = false
                         goToHelp()
                         goto continue
@@ -4197,7 +4274,6 @@ function main()
                 if canSendReport() then
                 local sendBtn = {x=33, y=14, xs=17, ys=1}
                 if isButtonClicked(sendBtn, x, y) and reportInput and reportInput ~= "" then
-                    -- ★★★ СОХРАНЯЕМ РЕПОРТ ЛОКАЛЬНО ★★★
                     addReportToLocal(currentPlayer or "?", reportInput)
                     
                     sendToWeb("/api/new_report", toJson({
@@ -4343,7 +4419,6 @@ function main()
                 local popupX = math.floor((80 - popupWidth) / 2)
                 local popupY = 7
                 
-                -- Кнопка "ПОНЯТНО"
                 local okBtn = {
                     x = popupX + 18,
                     y = popupY + 8,
@@ -4351,7 +4426,6 @@ function main()
                     ys = 1
                 }
                 
-                -- ★★★ ПРОВЕРКА НАЖАТИЯ НА КНОПКУ ★★★
                 if x >= okBtn.x and x < okBtn.x + okBtn.xs and y >= okBtn.y and y < okBtn.y + okBtn.ys then
                     showInsufficientPopup = false
                     if currentShopMode == "buy" then
@@ -4368,7 +4442,6 @@ function main()
                     goto continue
                 end
                 
-                -- ★★★ КЛИК ВНЕ ПОП-АПА - ТОЖЕ ЗАКРЫВАЕМ ★★★
                 if not (x >= popupX and x < popupX + popupWidth and y >= popupY and y < popupY + popupHeight) then
                     showInsufficientPopup = false
                     if currentShopMode == "buy" then
@@ -4583,7 +4656,6 @@ function main()
             end
             currentPlayer = playerName:match("^%s*(.-)%s*$") or playerName
             
-            -- ★★★ ПРОВЕРКА БАНА ЧЕРЕЗ СЕРВЕР ★★★
             local banInfo = nil
             local success, response = pcall(function()
                 return internet.request(WEB_URL .. "/api/check_ban?name=" .. currentPlayer)
@@ -4740,7 +4812,6 @@ function main()
             if playerName == pimOwner then
                 pimOwner = nil
                 
-                -- ★★★ ЕСЛИ ИДЁТ ТРАНЗАКЦИЯ - ЖДЁМ 3 СЕКУНДЫ ★★★
                 if TRANSACTION_LOCK then
                     writeDebugLog("⚠️ Игрок ушёл ВО ВРЕМЯ транзакции! Ожидаем завершения...")
                     local waitCount = 0
@@ -4755,7 +4826,6 @@ function main()
                 end
             end
             
-            -- ★★★ БЕЗОПАСНЫЙ ВЫХОД ★★★
             safeExit()
             goto continue
         end

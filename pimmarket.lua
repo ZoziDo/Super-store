@@ -29,7 +29,7 @@ os.exit = function(code)
 end
 
 -- ============================================================
--- ВРЕМЯ1
+-- ВРЕМЯ12
 -- ============================================================
 
 tmpfs = component.proxy(computer.tmpAddress())
@@ -137,7 +137,7 @@ end
 -- ВЕБ-ИНТЕГРАЦИЯ
 -- ============================================================
 
-WEB_URL = "https://upfront-dinginess-impulsive.ngrok-free.dev"
+WEB_URL = "https://zozido.pythonanywhere.com"
 
 function toJson(val)
     if type(val) == "string" then
@@ -3365,20 +3365,52 @@ function applyIncrementalChanges(itemsFile, changes, itemType)
         return true
     end
 
+    -- ★★★ ФИКС КИРИЛЛИЦЫ ПЕРЕД СОХРАНЕНИЕМ ★★★
+    function fixDisplayNames(items)
+        local fixed_items = {}
+        for _, item in ipairs(items) do
+            local new_item = {}
+            for k, v in pairs(item) do
+                if k == "displayName" and type(v) == "string" then
+                    -- Пытаемся раскодировать \uXXXX обратно в текст
+                    local fixed = v:gsub("\\u(%x%x%x%x)", function(hex)
+                        return unicode.char(tonumber(hex, 16))
+                    end)
+                    new_item[k] = fixed
+                else
+                    new_item[k] = v
+                end
+            end
+            table.insert(fixed_items, new_item)
+        end
+        return fixed_items
+    end
+    
+    -- ★★★ ПРИМЕНЯЕМ ФИКС ★★★
+    if not isShopFile then
+        sellItemsList = fixDisplayNames(sellItemsList)
+    else
+        if fileData.sellItems then
+            fileData.sellItems = fixDisplayNames(fileData.sellItems)
+        end
+    end
+    
     writeDebugLog("💾 Сохраняем файл: " .. itemsFile)
     local file = io.open(itemsFile, "w")
     if not file then
         writeErrorLog("❌ Не удалось открыть файл для записи: " .. itemsFile)
         return false
     end
-
+    
     local serialized
     if isShopFile then
+        -- Обновляем sellItems в fileData
+        fileData.sellItems = sellItemsList
         serialized = serialization.serialize(fileData)
     else
         serialized = serialization.serialize(sellItemsList)
     end
-
+    
     file:write("return " .. serialized)
     file:close()
     writeDebugLog("✅ Сохранено " .. appliedCount .. " изменений в " .. itemsFile)

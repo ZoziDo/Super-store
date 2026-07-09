@@ -29,7 +29,7 @@ os.exit = function(code)
 end
 
 -- ============================================================
--- ВРЕМЯ111
+-- ВРЕМЯ1114
 -- ============================================================
 
 tmpfs = component.proxy(computer.tmpAddress())
@@ -3334,6 +3334,7 @@ function applyIncrementalChanges(itemsFile, changes, itemType)
     file:close()
     writeDebugLog("✅ Сохранено " .. appliedCount .. " изменений в " .. itemsFile)
 
+    -- ★★★ ОБНОВЛЯЕМ ДАННЫЕ В ПАМЯТИ ★★★
     if isShopFile then
         sellItems = sellItemsList
         shopData.sellItems = sellItemsList
@@ -3341,6 +3342,7 @@ function applyIncrementalChanges(itemsFile, changes, itemType)
         writeDebugLog("📦 sellItems обновлён, товаров: " .. #sellItems)
     else
         buyItemsData = sellItemsList
+        -- ★★★ ПЕРЕСОЗДАЁМ buyItemMap ★★★
         buyItemMap = {}
         for _, item in ipairs(buyItemsData) do
             local dmg = item.damage or 0
@@ -3348,18 +3350,14 @@ function applyIncrementalChanges(itemsFile, changes, itemType)
             buyItemMap[key] = item
         end
         writeDebugLog("📦 buyItemsData обновлена, товаров: " .. #buyItemsData)
-    end
-
-    if currentScreen == "shop_buy" then
-        loadBuyItems(true)
-        drawBuyStatic()
-        drawBuyItemsList()
-        drawBuyButtons()
-    elseif currentScreen == "shop_sell" then
-        loadSellItems()
-        drawBuyStatic()
-        drawBuyItemsList()
-        drawBuyButtons()
+        
+        -- ★★★ ПРИНУДИТЕЛЬНО ПЕРЕЗАГРУЖАЕМ ТОВАРЫ В МАГАЗИНЕ ★★★
+        if currentScreen == "shop_buy" then
+            loadBuyItems(true)
+            drawBuyStatic()
+            drawBuyItemsList()
+            drawBuyButtons()
+        end
     end
 
     broadcastUpdate()

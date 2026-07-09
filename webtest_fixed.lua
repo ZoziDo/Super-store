@@ -4,7 +4,7 @@ local computer = require("computer")
 
 print("")
 print("═══════════════════════════════════════════════════════════════")
-print("  ТЕСТ ВЫДАЧИ ПРЕДМЕТА В PIM (ИСПРАВЛЕННЫЙ v2)")
+print("  ТЕСТ ВЫДАЧИ ПРЕДМЕТА В PIM (ИСПРАВЛЕННЫЙ v3)")
 print("═══════════════════════════════════════════════════════════════")
 print("")
 
@@ -19,16 +19,6 @@ if not component.isAvailable("me_interface") then
 end
 local me = component.me_interface
 print("✅ ME интерфейс доступен")
-
--- Выводим доступные методы
-print("")
-print("Доступные методы ME интерфейса:")
-for method in pairs(me) do
-    if type(me[method]) == "function" then
-        print("  - " .. method)
-    end
-end
-print("")
 
 -- PIM
 local pimAddr = nil
@@ -186,73 +176,43 @@ print("")
 
 local successResult = false
 
--- Способ 1: exportItem с направлением (старый способ)
-print("   Способ 1: exportItem с направлением UP")
-local success, result = pcall(function()
-    return me.exportItem(fingerprint, "UP", testQty)
-end)
-if success and result and type(result) == "number" and result > 0 then
-    print("   ✅ УСПЕШНО! Выдано " .. result .. " шт.")
-    print("   Направление 'UP' работает!")
-    print("")
-    print("   ИСПОЛЬЗУЙТЕ В КОДЕ: me.exportItem(fingerprint, \"UP\", qty)")
-    successResult = true
-else
-    print("   ❌ Не работает (exportItem). Результат: " .. tostring(result))
-end
+-- КЛЮЧЕВОЕ ОТКРЫТИЕ: используем ЧИСЛОВЫЕ коды направлений (1..7)
+-- DOWN=0, UP=1, NORTH=2, SOUTH=3, WEST=4, EAST=5, UNKNOWN=6
+local directionCodes = {
+    DOWN = 0,
+    UP = 1,
+    NORTH = 2,
+    SOUTH = 3,
+    WEST = 4,
+    EAST = 5,
+    UNKNOWN = 6
+}
 
--- Способ 2: extractItem (новый API AE2)
-if not successResult then
-    print("")
-    print("   Способ 2: extractItem")
-    local success, result = pcall(function()
-        return me.extractItem(fingerprint, testQty)
-    end)
-    if success and result and type(result) == "number" and result > 0 then
-        print("   ✅ УСПЕШНО! Выдано " .. result .. " шт.")
-        print("")
-        print("   ИСПОЛЬЗУЙТЕ В КОДЕ: me.extractItem(fingerprint, qty)")
-        successResult = true
-    else
-        print("   ❌ Не работает (extractItem). Результат: " .. tostring(result))
-    end
-end
+print("   🔍 Пробуем exportItem с числовыми кодами направлений:")
+print("")
 
--- Способ 3: Пробуем с других направлений
-if not successResult then
-    print("")
-    print("   Способ 3: Пробуем другие направления")
-    local directions = {"DOWN", "NORTH", "SOUTH", "WEST", "EAST", "UNKNOWN"}
+for dirName, dirCode in pairs(directionCodes) do
+    if successResult then break end
+    print("   Пробуем направление: " .. dirName .. " (код: " .. dirCode .. ")")
     
-    for _, dir in ipairs(directions) do
-        if successResult then break end
-        print("     Пробуем направление: " .. dir)
-        local success, result = pcall(function()
-            return me.exportItem(fingerprint, dir, testQty)
-        end)
-        if success and result and type(result) == "number" and result > 0 then
-            print("   ✅ УСПЕШНО! Выдано " .. result .. " шт. в направлении " .. dir)
-            print("")
-            print("   ИСПОЛЬЗУЙТЕ В КОДЕ: me.exportItem(fingerprint, \"" .. dir .. "\", qty)")
-            successResult = true
-        end
-    end
-end
-
--- Способ 4: exportItem через адрес PIM (если есть)
-if not successResult then
-    print("")
-    print("   Способ 4: exportItem через адрес PIM")
     local success, result = pcall(function()
-        return me.exportItem(fingerprint, pimAddr, testQty)
+        return me.exportItem(fingerprint, dirCode, testQty)
     end)
+    
     if success and result and type(result) == "number" and result > 0 then
-        print("   ✅ УСПЕШНО! Выдано " .. result .. " шт. в PIM")
+        print("   ✅ УСПЕШНО! Выдано " .. result .. " шт. в направлении " .. dirName)
         print("")
-        print("   ИСПОЛЬЗУЙТЕ В КОДЕ: me.exportItem(fingerprint, pimAddr, qty)")
+        print("   ИСПОЛЬЗУЙТЕ В КОДЕ:")
+        print("   me.exportItem(fingerprint, " .. dirCode .. ", qty)  -- " .. dirName)
+        print("   ИЛИ")
+        print("   me.exportItem(fingerprint, \"" .. dirName .. "\", qty)")
         successResult = true
     else
-        print("   ❌ Не работает (адрес PIM). Результат: " .. tostring(result))
+        if success then
+            print("     ❌ Результат: " .. tostring(result))
+        else
+            print("     ❌ Ошибка: " .. tostring(result))
+        end
     end
 end
 
@@ -267,7 +227,6 @@ if not successResult then
     print("  3. Проблема с PIM (не настроен на приём)")
     print("  4. В инвентаре нет места для этого конкретного предмета")
     print("  5. PIM находится не в том направлении относительно ME")
-    print("  6. Неправильный API метода exportItem для этой версии AE2")
     print("")
     print("Нажмите любую клавишу для выхода...")
     event.pull("key_down")

@@ -29,7 +29,7 @@ os.exit = function(code)
 end
 
 -- ============================================================
--- ВРЕМЯ2456677
+-- ВРЕМЯ1
 -- ============================================================
 
 tmpfs = component.proxy(computer.tmpAddress())
@@ -2969,6 +2969,7 @@ end
 -- ============================================================
 
 -- ★★★ НОВЫЙ ПОПАП ДЛЯ ВВОДА КОДА (с информацией) ★★★
+-- ★★★ ПОПАП АУТЕНТИФИКАЦИИ (ИСПРАВЛЕННЫЙ) ★★★
 function showAuthPopup()
     writeDebugLog("showAuthPopup()")
     currentScreen = "auth_popup"
@@ -2977,11 +2978,11 @@ function showAuthPopup()
     clear()
     drawScreenBorder()
     
-    -- Заголовок
+    -- Заголовок (сдвинут на 3 пробела влево)
     gpu.setForeground(0x00FFCC)
-    gpu.set(30, 2, "═══════════════════════════════════")
-    gpu.set(30, 3, "   🔐 АУТЕНТИФИКАЦИЯ АККАУНТА   ")
-    gpu.set(30, 4, "═══════════════════════════════════")
+    gpu.set(27, 2, "═══════════════════════════════════")
+    gpu.set(27, 3, "   🔐 АУТЕНТИФИКАЦИЯ АККАУНТА   ")
+    gpu.set(27, 4, "═══════════════════════════════════")
     
     -- Информация об игроке
     gpu.setForeground(colors.white)
@@ -2989,128 +2990,167 @@ function showAuthPopup()
     gpu.setForeground(colors.accent_main)
     gpu.set(18, 7, currentPlayer or "Неизвестно")
     
-    -- Инструкция
-    gpu.setForeground(colors.text_main)
-    gpu.set(5, 9, "📋 Введите код из браузера:")
-    gpu.setForeground(colors.inactive)
-    gpu.set(5, 10, "   (код отображается на сайте в разделе 'Привязка')")
+    -- Проверяем статус привязки
+    local savedBound = loadBoundPlayer()
+    local isBound = (boundPlayer and boundPlayer ~= "") or (savedBound and savedBound ~= "")
     
-    -- Поле ввода кода (увеличенное)
-    gpu.setBackground(colors.black_fon)
-    gpu.setForeground(0x00FFAA)
-    gpu.fill(20, 12, 40, 3, " ")
-    gpu.setBackground(colors.bg_secondary)
-    gpu.fill(21, 13, 38, 1, " ")
-    
-    gpu.setForeground(colors.text_bright)
-    local displayCode = authCodeInput or ""
-    if #displayCode < 6 then
-        displayCode = displayCode .. "_"
-    else
-        displayCode = displayCode
-    end
-    -- Центрируем код
-    local codeX = 21 + math.floor((38 - unicode.len(displayCode)) / 2)
-    gpu.set(codeX, 13, displayCode)
-    gpu.setBackground(colors.bg_main)
-    
-    -- Таймер
-    gpu.setForeground(colors.tomato)
-    gpu.set(5, 16, "⏱ Код действителен: 5:00")
-    
-    -- Статус привязки
-    if boundPlayer and boundPlayer ~= "" then
+    if isBound then
+        -- ★★★ ЕСЛИ ПРИВЯЗАН - ПОКАЗЫВАЕМ ИНФОРМАЦИЮ И КНОПКУ ОТВЯЗКИ ★★★
+        local displayName = boundPlayer or savedBound
+        
         gpu.setForeground(colors.success)
-        gpu.set(5, 18, "✅ Аккаунт уже привязан к: " .. boundPlayer)
+        gpu.set(5, 9, "✅ Аккаунт ПРИВЯЗАН к: " .. displayName)
         gpu.setForeground(colors.text_main)
-        gpu.set(5, 19, "   Если хотите перепривязать - введите новый код")
+        gpu.set(5, 10, "   Нажмите [ОТВЯЗАТЬ] чтобы отвязать аккаунт")
+        
+        -- Кнопка отвязки (вместо поля ввода кода)
+        local unbindBtn = {
+            text = "[ ОТВЯЗАТЬ АККАУНТ ]",
+            x = 28, y = 14,
+            xs = unicode.len("[ ОТВЯЗАТЬ АККАУНТ ]") + 2,
+            ys = 1,
+            bg = colors.bg_button,
+            fg = colors.error
+        }
+        drawFlexButton(unbindBtn)
+        
+        -- Кнопки внизу
+        local backBtn = {x=10, y=24, xs=12, ys=1, text="[ НАЗАД ]", bg=colors.bg_button, fg=colors.accent_secondary}
+        drawFlexButton(backBtn)
+        drawTempMessage()
+        
+        -- Обработка нажатий
+        while currentScreen == "auth_popup" do
+            local ev = {event.pull(0.5)}
+            
+            if ev[1] == "touch" then
+                local x, y = ev[3], ev[4]
+                
+                if isButtonClicked(backBtn, x, y) then
+                    goBackToMenu()
+                    break
+                end
+                
+                if isButtonClicked(unbindBtn, x, y) then
+                    unbindAccount()
+                    break
+                end
+            end
+        end
     else
+        -- ★★★ ЕСЛИ НЕ ПРИВЯЗАН - ПОКАЗЫВАЕМ ПОЛЕ ВВОДА КОДА ★★★
+        gpu.setForeground(colors.text_main)
+        gpu.set(5, 9, "📋 Введите код из браузера:")
+        gpu.setForeground(colors.inactive)
+        gpu.set(5, 10, "   (код отображается на сайте в разделе 'Привязка')")
+        
+        -- Поле ввода кода
+        gpu.setBackground(colors.black_fon)
+        gpu.setForeground(0x00FFAA)
+        gpu.fill(20, 12, 40, 3, " ")
+        gpu.setBackground(colors.bg_secondary)
+        gpu.fill(21, 13, 38, 1, " ")
+        
+        gpu.setForeground(colors.text_bright)
+        local displayCode = authCodeInput or ""
+        if #displayCode < 6 then
+            displayCode = displayCode .. "_"
+        end
+        local codeX = 21 + math.floor((38 - unicode.len(displayCode)) / 2)
+        gpu.set(codeX, 13, displayCode)
+        gpu.setBackground(colors.bg_main)
+        
+        -- Таймер
+        gpu.setForeground(colors.tomato)
+        gpu.set(5, 16, "⏱ Код действителен: 5:00")
+        
         gpu.setForeground(colors.inactive)
         gpu.set(5, 18, "❌ Аккаунт не привязан")
-    end
-    
-    -- Кнопки (перемещены вниз)
-    local backBtn = {x=10, y=24, xs=12, ys=1, text="[ НАЗАД ]", bg=colors.bg_button, fg=colors.accent_secondary}
-    local confirmBtn = {x=58, y=24, xs=15, ys=1, text="[ ПОДТВЕРДИТЬ ]", bg=colors.bg_button, fg=colors.success}
-    drawFlexButton(backBtn)
-    drawFlexButton(confirmBtn)
-    drawTempMessage()
-    
-    -- Обработка ввода
-    local isEditing = true
-    local timerSeconds = 300
-    local timerId = nil
-    
-    -- Таймер обновления
-    timerId = event.timer(1, function()
-        timerSeconds = timerSeconds - 1
-        local mins = math.floor(timerSeconds / 60)
-        local secs = timerSeconds % 60
-        gpu.setForeground(colors.tomato)
-        gpu.set(5, 16, "⏱ Код действителен: " .. string.format("%d:%02d", mins, secs))
-        if timerSeconds <= 0 then
-            gpu.setForeground(colors.error)
-            gpu.set(5, 16, "⏱ КОД ИСТЕК! Сгенерируйте новый")
-            return false
-        end
-        return true
-    end, math.huge)
-    
-    while currentScreen == "auth_popup" and isEditing do
-        local ev = {event.pull(0.5)}
         
-        if ev[1] == "touch" then
-            local x, y = ev[3], ev[4]
-            
-            if isButtonClicked(backBtn, x, y) then
-                isEditing = false
-                if timerId then event.cancel(timerId) end
-                goBackToMenu()
-                break
+        -- Кнопки
+        local backBtn = {x=10, y=24, xs=12, ys=1, text="[ НАЗАД ]", bg=colors.bg_button, fg=colors.accent_secondary}
+        local confirmBtn = {x=58, y=24, xs=15, ys=1, text="[ ПОДТВЕРДИТЬ ]", bg=colors.bg_button, fg=colors.success}
+        drawFlexButton(backBtn)
+        drawFlexButton(confirmBtn)
+        drawTempMessage()
+        
+        -- Таймер
+        local timerSeconds = 300
+        local timerId = nil
+        
+        timerId = event.timer(1, function()
+            timerSeconds = timerSeconds - 1
+            local mins = math.floor(timerSeconds / 60)
+            local secs = timerSeconds % 60
+            if timerSeconds > 0 then
+                gpu.setForeground(colors.tomato)
+                gpu.set(5, 16, "⏱ Код действителен: " .. string.format("%d:%02d", mins, secs))
+            else
+                gpu.setForeground(colors.error)
+                gpu.set(5, 16, "⏱ КОД ИСТЕК! Сгенерируйте новый")
+                return false
             end
+            return true
+        end, math.huge)
+        
+        -- Обработка ввода
+        local isEditing = true
+        while currentScreen == "auth_popup" and isEditing do
+            local ev = {event.pull(0.5)}
             
-            if isButtonClicked(confirmBtn, x, y) then
-                if authCodeInput and #authCodeInput == 6 then
+            if ev[1] == "touch" then
+                local x, y = ev[3], ev[4]
+                
+                if isButtonClicked(backBtn, x, y) then
                     isEditing = false
                     if timerId then event.cancel(timerId) end
-                    verifyAuthCode(authCodeInput)
-                else
-                    drawCenteredText(21, "Введите 6-значный код!", colors.error)
-                    os.sleep(1.5)
-                    showAuthPopup()
+                    goBackToMenu()
+                    break
                 end
-                break
-            end
-            
-        elseif ev[1] == "key_down" then
-            local ch = ev[3]
-            
-            if ch == 13 then -- Enter
-                if authCodeInput and #authCodeInput == 6 then
-                    isEditing = false
-                    if timerId then event.cancel(timerId) end
-                    verifyAuthCode(authCodeInput)
-                else
-                    drawCenteredText(21, "Введите 6-значный код!", colors.error)
-                    os.sleep(1.5)
-                    showAuthPopup()
+                
+                if isButtonClicked(confirmBtn, x, y) then
+                    if authCodeInput and #authCodeInput == 6 then
+                        isEditing = false
+                        if timerId then event.cancel(timerId) end
+                        verifyAuthCode(authCodeInput)
+                    else
+                        drawCenteredText(21, "Введите 6-значный код!", colors.error)
+                        os.sleep(1.5)
+                        showAuthPopup()
+                    end
+                    break
                 end
-                break
                 
-            elseif ch == 8 then -- Backspace
-                authCodeInput = unicode.sub(authCodeInput or "", 1, -2)
-                showAuthPopup()
+            elseif ev[1] == "key_down" then
+                local ch = ev[3]
                 
-            elseif ch >= 48 and ch <= 57 then -- Цифры 0-9
-                if unicode.len(authCodeInput or "") < 6 then
-                    authCodeInput = (authCodeInput or "") .. unicode.char(ch)
+                if ch == 13 then -- Enter
+                    if authCodeInput and #authCodeInput == 6 then
+                        isEditing = false
+                        if timerId then event.cancel(timerId) end
+                        verifyAuthCode(authCodeInput)
+                    else
+                        drawCenteredText(21, "Введите 6-значный код!", colors.error)
+                        os.sleep(1.5)
+                        showAuthPopup()
+                    end
+                    break
+                    
+                elseif ch == 8 then -- Backspace
+                    authCodeInput = unicode.sub(authCodeInput or "", 1, -2)
                     showAuthPopup()
+                    
+                elseif ch >= 48 and ch <= 57 then -- Цифры 0-9
+                    if unicode.len(authCodeInput or "") < 6 then
+                        authCodeInput = (authCodeInput or "") .. unicode.char(ch)
+                        showAuthPopup()
+                    end
                 end
             end
         end
+        
+        if timerId then event.cancel(timerId) end
     end
-    
-    if timerId then event.cancel(timerId) end
 end
 
 function verifyAuthCode(code)
@@ -3138,12 +3178,12 @@ function verifyAuthCode(code)
         local data = parseJSON(body)
         
         if data and data.success then
-            drawCenteredText(15, "✅ " .. (data.message or "Аккаунт привязан!"), colors.success)
+            -- ★★★ ИСПРАВЛЕНО СООБЩЕНИЕ ★★★
+            drawCenteredText(15, "✅ Аккаунт успешно привязан!", colors.success)
             drawCenteredText(16, "Теперь вы можете пользоваться магазином", colors.text_main)
             
             if data.player then
                 boundPlayer = data.player
-                -- ★★★ СОХРАНЯЕМ ПРИВЯЗКУ В ФАЙЛ ★★★
                 saveBoundPlayer(data.player)
                 addLog("🔗 Аккаунт привязан: " .. boundPlayer)
             end
@@ -4886,25 +4926,24 @@ function main()
                     currentScreen = "menu"
                     drawMainMenu()
                 end
-                -- ★★★ ВОССТАНАВЛИВАЕМ ПРИВЯЗКУ ★★★
-                local savedBound = loadBoundPlayer()
-                if savedBound and savedBound ~= "" then
-                    boundPlayer = savedBound
-                    writeDebugLog("🔗 Восстановлена привязка: " .. boundPlayer)
-                    local checkSuccess, checkResponse = pcall(function()
-                        return internet.request(WEB_URL .. "/api/player_binding?game_player=" .. savedBound)
-                    end)
-                    if checkSuccess and checkResponse then
-                        local body = ""
-                        for chunk in checkResponse do
-                            body = body .. chunk
-                        end
-                        local data = parseJSON(body)
-                        if not data or not data.success then
-                            boundPlayer = nil
-                            clearBoundPlayer()
-                            writeDebugLog("⚠️ Привязка на сервере не найдена")
-                        end
+                -- ★★★ ПРОВЕРЯЕМ ПРИВЯЗКУ НА СЕРВЕРЕ ★★★
+                local checkSuccess, checkResponse = pcall(function()
+                    return internet.request(WEB_URL .. "/api/player_binding?game_player=" .. currentPlayer)
+                end)
+                if checkSuccess and checkResponse then
+                    local body = ""
+                    for chunk in checkResponse do
+                        body = body .. chunk
+                    end
+                    local data = parseJSON(body)
+                    if data and data.success then
+                        boundPlayer = currentPlayer
+                        saveBoundPlayer(currentPlayer)
+                        writeDebugLog("🔗 Привязка подтверждена на сервере: " .. currentPlayer)
+                    else
+                        boundPlayer = nil
+                        clearBoundPlayer()
+                        writeDebugLog("⚠️ Привязка на сервере не найдена")
                     end
                 end
                 drawMainMenu()

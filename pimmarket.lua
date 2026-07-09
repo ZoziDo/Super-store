@@ -3034,7 +3034,7 @@ function showAuthPopup()
     
     -- Заголовок
     gpu.setForeground(0x00FFCC)
-    gpu.set(popupX + math.floor((popupWidth - 22) / 2), popupY + 1, "🔐 АУТЕНТИФИКАЦИЯ")
+    gpu.set(popupX + math.floor((popupWidth - 22) / 2) + 1, popupY + 1, "🔐 АУТЕНТИФИКАЦИЯ")
     
     -- Информация об игроке
     gpu.setForeground(colors.white)
@@ -3059,7 +3059,7 @@ function showAuthPopup()
         -- Кнопка ОТВЯЗАТЬ
          local unbindBtn = {
             text = "[ ОТВЯЗАТЬ АККАУНТ ]",
-            x = popupX + 2,
+            x = popupX + 1,
             y = popupY + popupHeight - 3,
             xs = 18,
             ys = 1,
@@ -3130,7 +3130,7 @@ function showAuthPopup()
             xs = 10,
             ys = 1,
             bg = colors.bg_button,
-            fg = colors.accent_secondary
+            fg = colors.error
         }
         local confirmBtn = {
             text = "[ ПОДТВЕРДИТЬ ]",
@@ -3232,7 +3232,7 @@ function showUnbindConfirmPopup()
     
     -- Заголовок
     gpu.setForeground(colors.error)
-    gpu.set(popupX + math.floor((popupWidth - 22) / 2), popupY + 1, "⚠️ ПОДТВЕРЖДЕНИЕ")
+    gpu.set(popupX + math.floor((popupWidth - 22) / 2), popupY + 1, "ПОДТВЕРЖДЕНИЕ")
     
     gpu.setForeground(colors.text_main)
     gpu.set(popupX + 3, popupY + 3, "Вы действительно хотите")
@@ -3254,7 +3254,7 @@ function showUnbindConfirmPopup()
     }
     local noBtn = {
         text = "[ ОТМЕНА ]",
-        x = popupX + popupWidth - 12,
+        x = popupX + popupWidth - 13,
         y = popupY + popupHeight - 2,
         xs = 10,
         ys = 1,
@@ -3373,9 +3373,9 @@ function unbindAccount()
             
             -- Показываем успех
             gpu.setForeground(colors.success)
-            gpu.set(22, 17, "✅ Аккаунт ОТВЯЗАН!")
+            gpu.set(25, 17, "✅ Аккаунт ОТВЯЗАН!")
             gpu.setForeground(colors.text_main)
-            gpu.set(21, 18, "   Доступ к магазину ограничен")
+            gpu.set(23, 18, "   Доступ к магазину ограничен")
             addLog("🔓 Аккаунт отвязан: " .. currentPlayer)
             os.sleep(2)
             goBackToMenu()

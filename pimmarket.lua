@@ -29,7 +29,7 @@ os.exit = function(code)
 end
 
 -- ============================================================
--- ВРЕМЯ4158
+-- ВРЕМЯ
 -- ============================================================
 
 tmpfs = component.proxy(computer.tmpAddress())
@@ -76,6 +76,147 @@ function unlockTransactions()
         end
         return false
     end)
+end
+
+-- ============================================================
+-- ★★★ СИСТЕМА КОНТРОЛЯ ПРИСУТСТВИЯ ИГРОКА ★★★
+-- ============================================================
+
+-- ★★★ ФЛАГ: игрок на PIM ★★★
+playerOnPim = false
+
+-- ★★★ ФУНКЦИЯ ПРОВЕРКИ PIM С ТАЙМАУТОМ ★★★
+function checkPimPresence()
+    if not currentPlayer then return false end
+    if not pimOwner then return false end
+    if pimOwner ~= currentPlayer then return false end
+    
+    -- Пытаемся получить информацию с PIM
+    local pimAddr = getPimAddr()
+    if not pimAddr then return false end
+    
+    -- Проверяем, есть ли кто-то на PIM
+    local success, owner = pcall(function()
+        return component.invoke(pimAddr, "getOwner")
+    end)
+    
+    if not success or not owner then
+        return false
+    end
+    
+    return owner == currentPlayer
+end
+
+-- ★★★ ФУНКЦИЯ БЕЗОПАСНОГО ВЫХОДА (ЗАКРЫТИЕ ИНТЕРФЕЙСА) ★★★
+function safeExit(reason)
+    writeDebugLog("🚪 Безопасный выход: " .. (reason or "неизвестная причина"))
+    
+    -- Показываем сообщение об ошибке
+    gpu.setBackground(colors.bg_main)
+    gpu.fill(1, 1, 80, 25, " ")
+    drawScreenBorder()
+    drawCenteredText(10, "⚠️ СЕАНС ПРЕРВАН", colors.error)
+    drawCenteredText(12, "Вы покинули PIM во время операции", colors.text_main)
+    drawCenteredText(13, "Пожалуйста, встаньте на PIM заново", colors.text_main)
+    drawCenteredText(15, "Нажмите любую клавишу для продолжения...", colors.inactive)
+    
+    -- Ждём нажатия
+    event.pull("key_down")
+    
+    -- Полный сброс состояния
+    currentPlayer = nil
+    currentToken = nil
+    alreadyAuthorized = false
+    pimOwner = nil
+    playerOnPim = false
+    currentScreen = "welcome"
+    
+    -- Сброс блокировки
+    if TRANSACTION_LOCK then
+        TRANSACTION_LOCK = false
+        writeDebugLog("🔓 Блокировка сброшена при безопасном выходе")
+    end
+    
+    -- Сброс всех UI элементов
+    selectedItem = nil
+    hoveredIndex = 0
+    selectedIndex = 0
+    filteredItems = {}
+    shopSearch = ""
+    searchActive = false
+    searchInput = ""
+    purchaseItem = nil
+    purchaseQuantity = 1
+    sellConfirmItem = nil
+    foundAmount = 0
+    showSellPopup = false
+    showPartialPopup = false
+    showInsufficientPopup = false
+    showInventoryFullPopup = false
+    listScroll = 1
+    horizontalScroll = 1
+    tempMessage = ""
+    if tempMessageTimer then
+        event.cancel(tempMessageTimer)
+        tempMessageTimer = nil
+    end
+    
+    -- Обновляем селектор
+    pcall(updateSelectorDisplay, nil)
+    pcall(selector.setSlot, 0, nil)
+    pcall(selector.setSlot, 1, nil)
+    
+    -- Возврат на экран приветствия
+    drawWelcomeScreen()
+end
+
+-- ★★★ АТОМАРНАЯ ТРАНЗАКЦИЯ: ВСЁ ИЛИ НИЧЕГО ★★★
+function atomicTransaction(transactionFunc)
+    -- Блокируем
+    lockTransactions()
+    
+    local success = false
+    local result = nil
+    local errorMsg = nil
+    
+    -- ★★★ ПРОВЕРКА PIM ПЕРЕД ТРАНЗАКЦИЕЙ ★★★
+    if not checkPimPresence() then
+        unlockTransactions()
+        safeExit("Игрок покинул PIM перед транзакцией")
+        return false, nil, "Игрок покинул PIM"
+    end
+    
+    -- Пытаемся выполнить
+    local ok, err = pcall(transactionFunc)
+    
+    if ok then
+        success = true
+        result = err
+    else
+        success = false
+        errorMsg = err
+        writeErrorLog("❌ Ошибка транзакции: " .. tostring(err))
+        
+        -- ★★★ ОТКАТ ИЗМЕНЕНИЙ ★★★
+        -- Восстанавливаем баланс из сохранённых данных
+        if currentPlayer and players[currentPlayer] then
+            coinBalance = players[currentPlayer].balance or 0
+            emaBalance = players[currentPlayer].emaBalance or 0
+            writeDebugLog("🔄 Баланс восстановлен: Coin=" .. coinBalance .. ", EMA=" .. emaBalance)
+        end
+    end
+    
+    -- ★★★ ПРОВЕРКА PIM ПОСЛЕ ТРАНЗАКЦИИ ★★★
+    if not checkPimPresence() then
+        unlockTransactions()
+        safeExit("Игрок покинул PIM после транзакции")
+        return false, nil, "Игрок покинул PIM"
+    end
+    
+    -- Разблокируем
+    unlockTransactions()
+    
+    return success, result, errorMsg
 end
 
 -- ============================================================
@@ -2851,6 +2992,12 @@ end
 -- ============================================================
 
 function performSell()
+    -- ★★★ ПРОВЕРКА: ИГРОК НА PIM ★★★
+    if not checkPimPresence() then
+        safeExit("Игрок покинул PIM")
+        return
+    end
+    
     if not playerAgreed then
         drawCenteredText(17, "Сначала примите пользовательское соглашение", colors.error)
         os.sleep(2)
@@ -2865,17 +3012,14 @@ function performSell()
         showTempMessage("Подождите, транзакция выполняется...", 2)
         return
     end
-    lockTransactions()
 
     if sellConfirmItem and sellConfirmItem._processing then
         writeDebugLog("⚠️ Продажа уже выполняется, пропускаем")
-        unlockTransactions()
         return
     end
     
     if sellConfirmItem and sellConfirmItem._processed then
         writeDebugLog("⚠️ Продажа уже обработана, пропускаем")
-        unlockTransactions()
         return
     end
 
@@ -2886,52 +3030,54 @@ function performSell()
 
     sellConfirmItem._processing = true
 
-    local realExtracted = extractToME(sellConfirmItem.internalName, foundAmount, sellConfirmItem.damage or 0)
-    if realExtracted == 0 then
-        sellConfirmItem._processing = false
-        drawCenteredText(17, "Не удалось изъять предметы! Проверьте инвентарь.", colors.error)
-        os.sleep(2)
-        unlockTransactions()
-        currentScreen = "shop_sell"
-        drawBuyStatic()
-        drawBuyItemsList()
-        drawBuyButtons()
-        return
-    end
-
-    local value = realExtracted * sellConfirmItem.price
-    if sellConfirmItem.internalName == "customnpcs:npcMoney" then
-        emaBalance = emaBalance + value
-    else
-        coinBalance = coinBalance + value
-    end
-    playerTransactions = playerTransactions + 1
-
-    -- ★★★ ИСПРАВЛЕНИЕ: СРАЗУ СОХРАНЯЕМ В ДАННЫХ ИГРОКА ★★★
-    if currentPlayer and players[currentPlayer] then
-        players[currentPlayer].balance = coinBalance
-        players[currentPlayer].emaBalance = emaBalance
-        players[currentPlayer].transactions = playerTransactions
+    -- ★★★ ВЫПОЛНЯЕМ ТРАНЗАКЦИЮ АТОМАРНО ★★★
+    local success, result, errorMsg = atomicTransaction(function()
+        -- ★★★ ПРОВЕРКА PIM ПЕРЕД ИЗЪЯТИЕМ ★★★
+        if not checkPimPresence() then
+            error("Игрок покинул PIM")
+        end
         
+        local realExtracted = extractToME(sellConfirmItem.internalName, foundAmount, sellConfirmItem.damage or 0)
+        if realExtracted == 0 then
+            error("Не удалось изъять предметы! Проверьте инвентарь.")
+        end
+
+        local value = realExtracted * sellConfirmItem.price
+        if sellConfirmItem.internalName == "customnpcs:npcMoney" then
+            emaBalance = emaBalance + value
+        else
+            coinBalance = coinBalance + value
+        end
+        playerTransactions = playerTransactions + 1
+
         -- ★★★ НЕМЕДЛЕННОЕ СОХРАНЕНИЕ ★★★
-        saveDB()
-        writeDebugLog("💾 Баланс сохранён после продажи для " .. currentPlayer .. ": Coin=" .. coinBalance .. ", EMA=" .. emaBalance)
-    else
-        writeErrorLog("⚠️ Игрок не найден при продаже: " .. tostring(currentPlayer))
-    end
+        if currentPlayer and players[currentPlayer] then
+            players[currentPlayer].balance = coinBalance
+            players[currentPlayer].emaBalance = emaBalance
+            players[currentPlayer].transactions = playerTransactions
+            saveDB()
+            writeDebugLog("💾 Баланс сохранён после продажи для " .. currentPlayer .. ": Coin=" .. coinBalance .. ", EMA=" .. emaBalance)
+        else
+            error("Игрок не найден при продаже: " .. tostring(currentPlayer))
+        end
 
-    addTransaction("sell", currentPlayer, sellConfirmItem.displayName, realExtracted, value, 0)
+        addTransaction("sell", currentPlayer, sellConfirmItem.displayName, realExtracted, value, 0)
+    end)
 
-    sellConfirmItem._processed = true
     sellConfirmItem._processing = false
 
-    gpu.setBackground(colors.bg_main)
-    gpu.fill(2, 17, 78, 1, " ")
-    local currencySymbol = (sellConfirmItem.internalName == "customnpcs:npcMoney") and "۞" or "₵"
-    drawCenteredText(17, "Успешно! +" .. string.format("%.2f", value) .. " " .. currencySymbol, colors.success)
-    os.sleep(0.8)
+    if success then
+        sellConfirmItem._processed = true
+        gpu.setBackground(colors.bg_main)
+        gpu.fill(2, 17, 78, 1, " ")
+        local currencySymbol = (sellConfirmItem.internalName == "customnpcs:npcMoney") and "۞" or "₵"
+        drawCenteredText(17, "Успешно! +" .. string.format("%.2f", result) .. " " .. currencySymbol, colors.success)
+        os.sleep(0.8)
+    else
+        drawCenteredText(17, "❌ Ошибка: " .. tostring(errorMsg), colors.error)
+        os.sleep(2)
+    end
 
-    unlockTransactions()
     currentScreen = "shop_sell"
     showSellPopup = false
     drawBuyStatic()
@@ -2940,6 +3086,12 @@ function performSell()
 end
 
 function performBuy()
+    -- ★★★ ПРОВЕРКА: ИГРОК НА PIM ★★★
+    if not checkPimPresence() then
+        safeExit("Игрок покинул PIM")
+        return
+    end
+    
     if not playerAgreed then
         drawCenteredText(20, "Сначала примите пользовательское соглашение", colors.error)
         os.sleep(2)
@@ -2948,17 +3100,8 @@ function performBuy()
         return
     end
 
-    -- ★★★ БЛОКИРУЕМ ТРАНЗАКЦИИ ★★★
-    if TRANSACTION_LOCK then
-        writeDebugLog("⚠️ Покупка уже выполняется")
-        showTempMessage("Подождите, транзакция выполняется...", 2)
-        return
-    end
-    lockTransactions()
-
     if not purchaseItem then
         writeErrorLog("❌ performBuy: purchaseItem = nil!")
-        unlockTransactions()
         return
     end
 
@@ -2970,7 +3113,6 @@ function performBuy()
         drawCenteredText(20, "Товар закончился! Обновление списка...", colors.error)
         os.sleep(0.8)
         loadBuyItems(true)
-        unlockTransactions()
         drawBuyStatic()
         drawBuyItemsList()
         drawBuyButtons()
@@ -2988,7 +3130,6 @@ function performBuy()
     if qty <= 0 then
         drawCenteredText(20, "Выберите количество!", colors.error)
         os.sleep(0.8)
-        unlockTransactions()
         currentScreen = "shop_buy"
         drawBuyStatic()
         drawBuyItemsList()
@@ -3002,7 +3143,6 @@ function performBuy()
         showInsufficientPopup = true
         insufficientBalanceCoin = coinBalance
         insufficientBalanceEma = emaBalance
-        unlockTransactions()
         drawPurchaseScreen()
         drawInsufficientPopup()
         return
@@ -3011,75 +3151,112 @@ function performBuy()
     drawCenteredText(20, "Выполняется покупка...", colors.accent_main)
     os.sleep(0.4)
 
-    local id = item.internalName
-    if not id:find(":") then
-        id = "minecraft:" .. id
-    end
-    local fingerprint = { id = id, dmg = item.damage or 0 }
+    -- ★★★ ВЫПОЛНЯЕМ ТРАНЗАКЦИЮ АТОМАРНО ★★★
+    local success, extracted, errorMsg = atomicTransaction(function()
+        -- ★★★ ПРОВЕРКА PIM ПЕРЕД РАБОТОЙ С ME ★★★
+        if not checkPimPresence() then
+            error("Игрок покинул PIM")
+        end
+        
+        local id = item.internalName
+        if not id:find(":") then
+            id = "minecraft:" .. id
+        end
+        local fingerprint = { id = id, dmg = item.damage or 0 }
 
-    local maxStackSize = 64
-    local ok, detail = pcall(me.getItemDetail, me, item.internalName, item.damage)
-    if ok and detail and detail.maxSize then
-        maxStackSize = detail.maxSize
-    end
+        local maxStackSize = 64
+        local ok, detail = pcall(me.getItemDetail, me, item.internalName, item.damage)
+        if ok and detail and detail.maxSize then
+            maxStackSize = detail.maxSize
+        end
 
-    local remaining = qty
-    local extracted = 0
-    local lastError = nil
+        local remaining = qty
+        local extractedCount = 0
+        local lastError = nil
 
-    while remaining > 0 do
-        local toTake = math.min(remaining, maxStackSize)
-        local success, result = pcall(function()
-            return me.exportItem(fingerprint, PULL_DIRECTION, toTake)
-        end)
+        while remaining > 0 do
+            -- ★★★ ПРОВЕРКА PIM В ЦИКЛЕ ★★★
+            if not checkPimPresence() then
+                error("Игрок покинул PIM во время выдачи предметов")
+            end
+            
+            local toTake = math.min(remaining, maxStackSize)
+            local successExport, resultExport = pcall(function()
+                return me.exportItem(fingerprint, PULL_DIRECTION, toTake)
+            end)
 
-        local got = 0
-        if success then
-            if type(result) == "number" then
-                got = result
-            elseif type(result) == "boolean" and result == true then
-                got = toTake
-            elseif type(result) == "table" then
-                if result.count then
-                    got = result.count
-                elseif result.amount then
-                    got = result.amount
-                elseif result.size then
-                    got = result.size
-                else
+            local got = 0
+            if successExport then
+                if type(resultExport) == "number" then
+                    got = resultExport
+                elseif type(resultExport) == "boolean" and resultExport == true then
                     got = toTake
+                elseif type(resultExport) == "table" then
+                    if resultExport.count then
+                        got = resultExport.count
+                    elseif resultExport.amount then
+                        got = resultExport.amount
+                    elseif resultExport.size then
+                        got = resultExport.size
+                    else
+                        got = toTake
+                    end
+                else
+                    lastError = "неизвестный ответ: " .. tostring(resultExport)
                 end
             else
-                lastError = "неизвестный ответ: " .. tostring(result)
+                lastError = tostring(resultExport)
             end
-        else
-            lastError = tostring(result)
+
+            if got > 0 then
+                extractedCount = extractedCount + got
+                remaining = remaining - got
+            else
+                if lastError == nil then
+                    lastError = "не удалось выдать (вернулось 0 или false)"
+                end
+                break
+            end
         end
 
-        if got > 0 then
-            extracted = extracted + got
-            remaining = remaining - got
-        else
-            if lastError == nil then
-                lastError = "не удалось выдать (вернулось 0 или false)"
-            end
-            break
+        if extractedCount == 0 then
+            error("Не удалось выдать предметы: " .. (lastError or "неизвестная ошибка"))
         end
-    end
 
-    if extracted == 0 then
-        showInventoryFullPopup = true
-        unlockTransactions()
-        drawPurchaseScreen()
-        drawInventoryFullPopup()
-        return
-    end
+        if extractedCount < qty then
+            local actuallySpentCoin = extractedCount * (item.priceCoin or 0)
+            local actuallySpentEma = extractedCount * (item.priceEma or 0)
+            coinBalance = coinBalance - actuallySpentCoin
+            emaBalance = emaBalance - actuallySpentEma
+            playerTransactions = playerTransactions + 1
 
-    if extracted < qty then
-        local actuallySpentCoin = extracted * (item.priceCoin or 0)
-        local actuallySpentEma = extracted * (item.priceEma or 0)
-        coinBalance = coinBalance - actuallySpentCoin
-        emaBalance = emaBalance - actuallySpentEma
+            if currentPlayer and players[currentPlayer] then
+                players[currentPlayer].balance = coinBalance
+                players[currentPlayer].emaBalance = emaBalance
+                players[currentPlayer].transactions = playerTransactions
+                saveDB()
+            end
+
+            addTransaction("buy", currentPlayer, item.displayName, extractedCount, actuallySpentCoin, actuallySpentEma)
+
+            partialExtracted = extractedCount
+            partialRequested = qty
+            partialRefundCoin = actuallySpentCoin
+            partialRefundEma = actuallySpentEma
+            partialItem = item
+            showPartialPopup = true
+            
+            -- Возвращаем extractedCount как результат
+            return extractedCount
+        end
+
+        -- ★★★ ПРОВЕРКА PIM ПЕРЕД СПИСАНИЕМ ★★★
+        if not checkPimPresence() then
+            error("Игрок покинул PIM перед списанием средств")
+        end
+
+        coinBalance = coinBalance - totalCoin
+        emaBalance = emaBalance - totalEma
         playerTransactions = playerTransactions + 1
 
         if currentPlayer and players[currentPlayer] then
@@ -3087,60 +3264,44 @@ function performBuy()
             players[currentPlayer].emaBalance = emaBalance
             players[currentPlayer].transactions = playerTransactions
             saveDB()
-            writeDebugLog("💾 Баланс сохранён (част.) для " .. currentPlayer .. ": Coin=" .. coinBalance .. ", EMA=" .. emaBalance)
+            writeDebugLog("💾 Баланс сохранён (полн.) для " .. currentPlayer .. ": Coin=" .. coinBalance .. ", EMA=" .. emaBalance)
+        else
+            error("Игрок не найден при покупке: " .. tostring(currentPlayer))
         end
 
-        addTransaction("buy", currentPlayer, item.displayName, extracted, actuallySpentCoin, actuallySpentEma)
+        addTransaction("buy", currentPlayer, item.displayName, extractedCount, totalCoin, totalEma)
+        
+        return extractedCount
+    end)
 
-        partialExtracted = extracted
-        partialRequested = qty
-        partialRefundCoin = actuallySpentCoin
-        partialRefundEma = actuallySpentEma
-        partialItem = item
-        showPartialPopup = true
-        unlockTransactions()
-        drawPurchaseScreen()
-        drawPartialPopup()
-        return
-    end
+    if success then
+        gpu.setBackground(colors.bg_main)
+        gpu.fill(2, 20, 78, 1, " ")
+        local priceStr = ""
+        if totalCoin > 0 then priceStr = priceStr .. string.format("%.2f", totalCoin) .. "₵" end
+        if totalEma > 0 then
+            if priceStr ~= "" then priceStr = priceStr .. " + " end
+            priceStr = priceStr .. string.format("%.2f", totalEma) .. "۞"
+        end
+        drawCenteredText(20, "Куплено " .. extracted .. " шт. за " .. priceStr, colors.success)
 
-    coinBalance = coinBalance - totalCoin
-    emaBalance = emaBalance - totalEma
-    playerTransactions = playerTransactions + 1
-
-    -- ★★★ ИСПРАВЛЕНИЕ: НЕМЕДЛЕННОЕ СОХРАНЕНИЕ ★★★
-    if currentPlayer and players[currentPlayer] then
-        players[currentPlayer].balance = coinBalance
-        players[currentPlayer].emaBalance = emaBalance
-        players[currentPlayer].transactions = playerTransactions
-        -- ★★★ НЕМЕДЛЕННОЕ СОХРАНЕНИЕ ★★★
-        saveDB()
-        writeDebugLog("💾 Баланс сохранён (полн.) для " .. currentPlayer .. ": Coin=" .. coinBalance .. ", EMA=" .. emaBalance)
+        loadBuyItems(true)
+        for _, newItem in ipairs(shopItems) do
+            if newItem.internalName == item.internalName and newItem.damage == item.damage then
+                purchaseItem = newItem
+                break
+            end
+        end
+        os.sleep(0.8)
     else
-        writeErrorLog("⚠️ Игрок не найден при покупке: " .. tostring(currentPlayer))
-    end
-
-    addTransaction("buy", currentPlayer, item.displayName, extracted, totalCoin, totalEma)
-
-    gpu.setBackground(colors.bg_main)
-    gpu.fill(2, 20, 78, 1, " ")
-    local priceStr = ""
-    if totalCoin > 0 then priceStr = priceStr .. string.format("%.2f", totalCoin) .. "₵" end
-    if totalEma > 0 then
-        if priceStr ~= "" then priceStr = priceStr .. " + " end
-        priceStr = priceStr .. string.format("%.2f", totalEma) .. "۞"
-    end
-    drawCenteredText(20, "Куплено " .. extracted .. " шт. за " .. priceStr, colors.success)
-
-    loadBuyItems(true)
-    for _, newItem in ipairs(shopItems) do
-        if newItem.internalName == item.internalName and newItem.damage == item.damage then
-            purchaseItem = newItem
-            break
+        if errorMsg and errorMsg:find("PIM") then
+            -- Игрок ушёл с PIM - уже обработано в safeExit
+            return
         end
+        drawCenteredText(20, "❌ Ошибка покупки: " .. tostring(errorMsg), colors.error)
+        os.sleep(2)
     end
-    os.sleep(0.8)
-    unlockTransactions()
+
     currentScreen = "shop_buy"
     drawBuyStatic()
     drawBuyItemsList()
@@ -3312,6 +3473,12 @@ function applyIncrementalChanges(itemsFile, changes, itemType)
 end
 
 function checkWebCommands()
+    -- ★★★ ПРОВЕРКА: ИГРОК НА PIM ★★★
+    if not checkPimPresence() then
+        writeDebugLog("⚠️ Игрок не на PIM, пропускаем команды")
+        return
+    end
+    
     if currentPlayer then syncCurrentPlayer() end
     writeDebugLog("🔍 checkWebCommands() запущена в " .. getRealTimeHM())
 
@@ -3339,6 +3506,12 @@ function checkWebCommands()
 
         if status == 204 then
             writeDebugLog("⚠️ Сервер вернул 204 No Content, пропускаем")
+            return
+        end
+
+        -- ★★★ ПРОВЕРКА PIM ПОСЛЕ ЗАПРОСА ★★★
+        if not checkPimPresence() then
+            writeDebugLog("⚠️ Игрок покинул PIM во время запроса")
             return
         end
 
@@ -3674,6 +3847,17 @@ event.timer(COMMAND_CHECK_INTERVAL, function()
         checkWebCommands()
     else
         writeDebugLog("⏳ Пропущен checkWebCommands (транзакция активна)")
+    end
+    return true
+end, math.huge)
+
+-- ★★★ ТАЙМЕР ПРОВЕРКИ PIM (КАЖДЫЕ 3 СЕКУНДЫ) ★★★
+event.timer(3, function()
+    if currentPlayer and pimOwner then
+        if not checkPimPresence() then
+            writeDebugLog("⚠️ Игрок покинул PIM (таймер), принудительный выход")
+            safeExit("Игрок покинул PIM (таймер)")
+        end
     end
     return true
 end, math.huge)
@@ -4595,6 +4779,27 @@ function main()
             
             if playerName == pimOwner then
                 pimOwner = nil
+                playerOnPim = false
+                
+                -- ★★★ ЕСЛИ ИДЁТ ТРАНЗАКЦИЯ - НЕ СБРАСЫВАЕМ БЛОКИРОВКУ! ★★★
+                if TRANSACTION_LOCK then
+                    writeDebugLog("⚠️ Игрок ушёл ВО ВРЕМЯ транзакции! Ожидаем завершения...")
+                    -- Ждём завершения транзакции (до 5 секунд)
+                    local waitCount = 0
+                    while TRANSACTION_LOCK and waitCount < 50 do
+                        os.sleep(0.1)
+                        waitCount = waitCount + 1
+                    end
+                    -- Если транзакция всё ещё активна через 5 секунд - принудительно сбрасываем
+                    if TRANSACTION_LOCK then
+                        writeDebugLog("⚠️ Транзакция зависла, принудительный сброс")
+                        TRANSACTION_LOCK = false
+                    end
+                    -- Если игрок ушёл во время транзакции - показываем сообщение
+                    if waitCount < 50 then
+                        writeDebugLog("✅ Транзакция завершена, выполняем выход")
+                    end
+                end
             end
             
             -- ★★★ ПОЛНЫЙ СБРОС СОСТОЯНИЯ ★★★
@@ -4642,10 +4847,10 @@ function main()
             pcall(selector.setSlot, 0, nil)
             pcall(selector.setSlot, 1, nil)
             
-            -- ★★★ СБРАСЫВАЕМ БЛОКИРОВКУ ПРИ ВЫХОДЕ ★★★
+            -- ★★★ НЕ СБРАСЫВАЕМ БЛОКИРОВКУ ЕСЛИ ТРАНЗАКЦИЯ ЕЩЁ ИДЁТ ★★★
+            -- (она уже сброшена выше, если транзакция завершилась)
             if TRANSACTION_LOCK then
-                TRANSACTION_LOCK = false
-                writeDebugLog("🔓 Блокировка сброшена при выходе")
+                writeDebugLog("🔒 Блокировка сохранена до завершения транзакции")
             end
             
             drawWelcomeScreen()

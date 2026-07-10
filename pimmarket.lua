@@ -29,7 +29,7 @@ os.exit = function(code)
 end
 
 -- ============================================================
--- ВРЕМЯ
+-- ВРЕМЯ1
 -- ============================================================
 
 tmpfs = component.proxy(computer.tmpAddress())
@@ -3422,18 +3422,19 @@ function verifyAuthCode(code)
         local data = parseJSON(body)
         
         if data and data.success then
-            -- ★★★ ИСПРАВЛЕНО СООБЩЕНИЕ ★★★
             drawCenteredText(15, "✅ Аккаунт успешно привязан!", colors.success)
             drawCenteredText(16, "Теперь вы можете пользоваться магазином", colors.text_main)
             
             if data.player then
                 boundPlayer = data.player
                 saveBoundPlayer(data.player)
+                -- ★★★ ОБНОВЛЯЕМ КЭШ ★★★
+                bindingCache.isBound = true
+                bindingCache.lastCheck = os.clock()
                 addLog("🔗 Аккаунт привязан: " .. boundPlayer)
             end
             
             syncCurrentPlayer()
-            
             os.sleep(2)
             goBackToMenu()
             
@@ -4268,6 +4269,9 @@ function checkWebCommands()
                 if currentPlayer == playerName then
                     boundPlayer = nil
                     clearBoundPlayer()
+                    -- ★★★ ОБНОВЛЯЕМ КЭШ ★★★
+                    bindingCache.isBound = false
+                    bindingCache.lastCheck = 0  -- сброс кэша
                     addLog("🔓 Аккаунт отвязан по команде сервера: " .. playerName)
                     
                     -- Обновляем интерфейс

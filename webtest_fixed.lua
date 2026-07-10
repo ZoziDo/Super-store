@@ -1,10 +1,9 @@
 -- ============================================================
--- ТЕСТ ВЫДАЧИ ПРЯМО ЧЕРЕЗ PIM (БЕЗ СУНДУКА)11
+-- ТЕСТ ВЫДАЧИ ПРЯМО ЧЕРЕЗ PIM (БЕЗ ФЛУДА)4
 -- ============================================================
 
 local component = require("component")
 local event = require("event")
-local serialization = require("serialization")
 
 function findPIM()
     for addr in component.list("pim") do
@@ -50,15 +49,12 @@ function logInventory(inv, title)
 end
 
 -- ============================================================
--- ВЫДАЧА ПРЯМО В PIM
+-- ВЫДАЧА ПРЯМО В PIM (ОДНА ПОПЫТКА)
 -- ============================================================
 
 function giveDirectToPIM(itemId, qty, damage)
-    print("\n🧪 ТЕСТ: ВЫДАЧА ПРЯМО В PIM")
+    print("\n🧪 ВЫДАЧА В PIM: " .. itemId .. " x" .. qty .. " (damage: " .. (damage or 0) .. ")")
     print("═" .. string.rep("═", 50))
-    print("  Предмет: " .. itemId)
-    print("  Количество: " .. qty)
-    print("  Damage: " .. (damage or 0))
     
     local pimAddr = findPIM()
     if not pimAddr then
@@ -72,9 +68,6 @@ function giveDirectToPIM(itemId, qty, damage)
         return false
     end
     
-    -- Логируем инвентарь ДО
-    logInventory(pimAddr, "👤 ИНВЕНТАРЬ ИГРОКА ДО:")
-    
     -- Проверяем свободные слоты
     local freeSlots = 0
     for slot = 1, 36 do
@@ -84,44 +77,28 @@ function giveDirectToPIM(itemId, qty, damage)
         end
     end
     
-    print("\n📊 Свободных слотов: " .. freeSlots)
-    
     if freeSlots == 0 then
-        print("❌ Нет свободных слотов!")
+        print("❌ Нет свободных слотов в инвентаре!")
         return false
     end
     
     -- Проверяем наличие в ME
-    print("\n🔍 Проверка ME...")
     local items = me.getItemsInNetwork()
     local available = 0
-    local itemDetails = nil
+    local hasNBT = false
     
     for _, item in ipairs(items) do
         if item.name == itemId and (item.damage or 0) == (damage or 0) then
             available = available + (item.size or 0)
-            itemDetails = item
-            print("  ✅ Найдено: " .. (item.size or 0) .. " шт.")
             if item.nbt or item.tag then
-                print("  🔹 ЕСТЬ NBT-ДАННЫЕ!")
-                -- Показываем структуру NBT
-                local nbt = item.nbt or item.tag
-                if type(nbt) == "table" then
-                    print("  📋 NBT структура:")
-                    for k, v in pairs(nbt) do
-                        print("     " .. k .. ": " .. tostring(v))
-                    end
-                end
-            end
-            if item.damage then
-                print("  🔹 Damage: " .. item.damage)
+                hasNBT = true
             end
         end
     end
     
     if available == 0 then
         print("❌ Предмет не найден в ME!")
-        print("\n💡 Попробуйте один из этих ID:")
+        print("\n💡 Доступные предметы в ME:")
         local shown = 0
         for _, item in ipairs(items) do
             if shown < 20 then
@@ -132,82 +109,48 @@ function giveDirectToPIM(itemId, qty, damage)
         return false
     end
     
-    -- Извлекаем из ME в PIM
-    print("\n⏳ Выдача в PIM...")
+    print("✅ Найдено в ME: " .. available .. " шт." .. (hasNBT and " [ЕСТЬ NBT]" or ""))
     
-    local toExtract = math.min(qty, available)
+    -- Извлекаем из ME в PIM (одна попытка)
+    local toExtract = math.min(qty, available, 64) -- максимум 64 за раз
     local fingerprint = { id = itemId, dmg = damage or 0 }
-    local extracted = 0
-    local errors = {}
     
-    while extracted < toExtract do
-        if freeSlots <= 0 then
-            print("⚠️ Закончились свободные слоты!")
-            break
-        end
-        
-        local toTake = math.min(toExtract - extracted, 64)
-        print("  Попытка выдать " .. toTake .. " шт...")
-        
-        local success, result = pcall(function()
-            return me.exportItem(fingerprint, "down", toTake)
-        end)
-        
-        if success then
-            if type(result) == "number" and result > 0 then
-                extracted = extracted + result
-                freeSlots = freeSlots - 1
-                print("  ✅ Выдано: " .. result .. " шт.")
-            elseif type(result) == "boolean" and result == true then
-                extracted = extracted + toTake
-                freeSlots = freeSlots - 1
-                print("  ✅ Выдано: " .. toTake .. " шт.")
-            elseif result == false or result == 0 then
-                print("  ⚠️ Не удалось выдать (вернулось " .. tostring(result) .. ")")
-                table.insert(errors, "Не удалось выдать: " .. tostring(result))
-                break
-            else
-                print("  ⚠️ Странный ответ: " .. tostring(result))
-                table.insert(errors, "Странный ответ: " .. tostring(result))
-            end
+    print("⏳ Выдача...")
+    
+    local success, result = pcall(function()
+        return me.exportItem(fingerprint, "down", toExtract)
+    end)
+    
+    local extracted = 0
+    
+    if success then
+        if type(result) == "number" and result > 0 then
+            extracted = result
+            print("✅ Выдано: " .. result .. " шт.")
+        elseif type(result) == "boolean" and result == true then
+            extracted = toExtract
+            print("✅ Выдано: " .. toExtract .. " шт.")
         else
-            print("  ❌ Ошибка: " .. tostring(result))
-            table.insert(errors, tostring(result))
-            break
+            print("❌ Не удалось выдать (ответ: " .. tostring(result) .. ")")
         end
+    else
+        print("❌ Ошибка: " .. tostring(result))
     end
     
-    print("\n📊 Итого выдано: " .. extracted .. " из " .. toExtract)
-    
-    -- Логируем инвентарь ПОСЛЕ
-    logInventory(pimAddr, "👤 ИНВЕНТАРЬ ИГРОКА ПОСЛЕ:")
-    
-    -- Анализ результата
     if extracted > 0 then
-        print("\n✅ УСПЕШНО!")
-        print("  Выдано " .. extracted .. " шт. в инвентарь игрока")
-        
-        -- Проверяем NBT сохранился ли
+        -- Проверяем результат
+        print("\n📊 РЕЗУЛЬТАТ:")
         for slot = 1, 36 do
             local stack = component.invoke(pimAddr, "getStackInSlot", slot)
             if stack and (stack.size or stack.qty or 0) > 0 then
                 if stack.name == itemId and (stack.damage or 0) == (damage or 0) then
                     if stack.nbt or stack.tag then
-                        print("  🔹 NBT-данные СОХРАНИЛИСЬ!")
+                        print("  ✅ NBT-данные СОХРАНИЛИСЬ!")
                     else
                         print("  ⚠️ NBT-данные ПОТЕРЯНЫ!")
                     end
                     break
                 end
-            end
-        end
-    else
-        print("\n❌ НЕ УДАЛОСЬ!")
-        print("  Не удалось выдать ни одного предмета")
-        if #errors > 0 then
-            print("  Ошибки:")
-            for _, err in ipairs(errors) do
-                print("    - " .. err)
             end
         end
     end
@@ -216,151 +159,71 @@ function giveDirectToPIM(itemId, qty, damage)
 end
 
 -- ============================================================
--- ТЕСТ С РАЗНЫМИ ДАННЫМИ
+-- ТЕСТОВЫЙ СЦЕНАРИЙ
 -- ============================================================
 
-function testWithDamage()
-    print("\n🧪 ТЕСТ: ПОИСК ПРЕДМЕТОВ С РАЗНЫМ DAMAGE")
-    print("═" .. string.rep("═", 50))
+function runTest()
+    print("\n" .. string.rep("═", 50))
+    print("🧪 ТЕСТ ВЫДАЧИ ЧЕРЕЗ PIM")
+    print(string.rep("═", 50))
     
+    -- Показываем что есть в ME
     local me = findME()
-    if not me then
-        print("❌ ME не найден!")
+    if me then
+        print("\n📦 СОДЕРЖИМОЕ ME:")
+        local items = me.getItemsInNetwork()
+        local groups = {}
+        for _, item in ipairs(items) do
+            local key = item.name .. ":" .. (item.damage or 0)
+            if not groups[key] then
+                groups[key] = { name = item.name, damage = item.damage or 0, count = 0, nbt = false }
+            end
+            groups[key].count = groups[key].count + (item.size or 0)
+            if item.nbt or item.tag then
+                groups[key].nbt = true
+            end
+        end
+        
+        local count = 0
+        for key, data in pairs(groups) do
+            if count < 30 then
+                local nbt = data.nbt and " [NBT]" or ""
+                print(string.format("  %s (damage: %d) x%d%s", 
+                    data.name, data.damage, data.count, nbt))
+                count = count + 1
+            end
+        end
+    end
+    
+    -- Запрашиваем данные
+    print("\n📝 ВВЕДИТЕ ДАННЫЕ ДЛЯ ТЕСТА:")
+    print("  (Пример: diamond_sword, bow, enchanted_book)")
+    
+    print("  ID предмета:")
+    local itemId = io.read()
+    if not itemId or itemId == "" then
+        print("❌ Отменено")
         return
     end
     
-    local items = me.getItemsInNetwork()
-    local groups = {}
-    
-    for _, item in ipairs(items) do
-        local key = item.name .. ":" .. (item.damage or 0)
-        if not groups[key] then
-            groups[key] = {
-                name = item.name,
-                damage = item.damage or 0,
-                count = 0,
-                hasNBT = false
-            }
-        end
-        groups[key].count = groups[key].count + (item.size or 0)
-        if item.nbt or item.tag then
-            groups[key].hasNBT = true
-        end
+    if not itemId:find(":") then
+        itemId = "minecraft:" .. itemId
     end
     
-    print("\n📊 Доступные предметы:")
-    for key, data in pairs(groups) do
-        local nbt = data.hasNBT and " [NBT]" or ""
-        print(string.format("  %s (damage: %d) x%d%s", 
-            data.name, data.damage, data.count, nbt))
-    end
-end
-
--- ============================================================
--- ГЛАВНОЕ МЕНЮ
--- ============================================================
-
-function main()
-    print("\n" .. string.rep("═", 50))
-    print("🧪 ТЕСТ ВЫДАЧИ ЧЕРЕЗ PIM (БЕЗ СУНДУКА)")
-    print(string.rep("═", 50))
+    print("  Количество (1-64):")
+    local qty = tonumber(io.read()) or 1
+    if qty > 64 then qty = 64 end
     
-    while true do
-        print("\nВыберите действие:")
-        print("  [1] Показать что в ME (с damage и NBT)")
-        print("  [2] Выдать предмет в PIM")
-        print("  [3] Тест: выдать с разным damage")
-        print("  [4] Показать инвентарь игрока")
-        print("  [5] Очистить инвентарь игрока")
-        print("  [Q] Выход")
-        
-        local choice = io.read()
-        
-        if choice == "1" then
-            testWithDamage()
-            
-        elseif choice == "2" then
-            print("\nВведите ID предмета (например: diamond_sword):")
-            local itemId = io.read()
-            if not itemId or itemId == "" then
-                print("❌ Отменено")
-                goto continue
-            end
-            
-            -- Добавляем minecraft: если нет
-            if not itemId:find(":") then
-                itemId = "minecraft:" .. itemId
-            end
-            
-            print("Введите количество (по умолчанию 1):")
-            local qty = tonumber(io.read()) or 1
-            
-            print("Введите damage (0 если не знаете):")
-            local damage = tonumber(io.read()) or 0
-            
-            giveDirectToPIM(itemId, qty, damage)
-            
-        elseif choice == "3" then
-            print("\n🧪 ТЕСТ С РАЗНЫМ DAMAGE")
-            print("Введите ID предмета (например: diamond_sword):")
-            local itemId = io.read()
-            if not itemId or itemId == "" then
-                print("❌ Отменено")
-                goto continue
-            end
-            
-            if not itemId:find(":") then
-                itemId = "minecraft:" .. itemId
-            end
-            
-            print("Введите количество (по умолчанию 1):")
-            local qty = tonumber(io.read()) or 1
-            
-            -- Тест с damage 0
-            print("\n📦 Тест с damage: 0")
-            giveDirectToPIM(itemId, qty, 0)
-            
-            -- Тест с damage 1 (если есть)
-            print("\n📦 Тест с damage: 1")
-            giveDirectToPIM(itemId, qty, 1)
-            
-        elseif choice == "4" then
-            local pimAddr = findPIM()
-            if pimAddr then
-                logInventory(pimAddr, "👤 ИНВЕНТАРЬ ИГРОКА")
-            else
-                print("❌ PIM не найден!")
-            end
-            
-        elseif choice == "5" then
-            local pimAddr = findPIM()
-            if not pimAddr then
-                print("❌ PIM не найден!")
-                goto continue
-            end
-            
-            print("⚠️ Очистить инвентарь игрока? (y/n):")
-            local confirm = io.read()
-            if confirm == "y" or confirm == "Y" then
-                local cleared = 0
-                for slot = 1, 36 do
-                    local stack = component.invoke(pimAddr, "getStackInSlot", slot)
-                    if stack and (stack.size or stack.qty or 0) > 0 then
-                        component.invoke(pimAddr, "pushItem", "down", slot, 999)
-                        cleared = cleared + 1
-                    end
-                end
-                print("✅ Очищено слотов: " .. cleared)
-            else
-                print("❌ Отменено")
-            end
-            
-        elseif choice == "q" or choice == "Q" then
-            print("\n👋 Выход...")
-            break
-        end
-        
-        ::continue::
+    print("  Damage (0 если не знаете):")
+    local damage = tonumber(io.read()) or 0
+    
+    -- Выдаём
+    giveDirectToPIM(itemId, qty, damage)
+    
+    -- Показываем инвентарь
+    local pimAddr = findPIM()
+    if pimAddr then
+        logInventory(pimAddr, "👤 ИНВЕНТАРЬ ИГРОКА")
     end
 end
 
@@ -368,9 +231,18 @@ end
 -- ЗАПУСК
 -- ============================================================
 
-local ok, err = pcall(main)
+print("\n" .. string.rep("═", 50))
+print("🧪 ТЕСТ ВЫДАЧИ ЧЕРЕЗ PIM (ОДНА ПОПЫТКА)")
+print(string.rep("═", 50))
+print("\nНажмите ENTER для начала...")
+io.read()
+
+local ok, err = pcall(runTest)
 if not ok then
-    print("\n❌ КРИТИЧЕСКАЯ ОШИБКА:")
+    print("\n❌ ОШИБКА:")
     print("  " .. tostring(err))
     print(debug.traceback())
 end
+
+print("\nНажмите ENTER для выхода...")
+io.read()

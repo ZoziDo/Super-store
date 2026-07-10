@@ -1,5 +1,5 @@
 -- ============================================================
--- ТЕСТ ВЫДАЧИ С ДИАГНОСТИКОЙ NBT15
+-- ДИАГНОСТИКА + ВЫДАЧА ЧЕРЕЗ СУНДУК
 -- ============================================================
 
 local component = require("component")
@@ -19,88 +19,112 @@ function findME()
     return nil
 end
 
+function findChest()
+    for addr in component.list("inventory") do
+        local inv = component.proxy(addr)
+        if inv and inv.getInventorySize and inv.getInventorySize() > 0 then
+            return inv, addr
+        end
+    end
+    return nil, nil
+end
+
 -- ============================================================
--- ПОКАЗАТЬ ДЕТАЛЬНУЮ ИНФОРМАЦИЮ О ПРЕДМЕТЕ
+-- ПОКАЗАТЬ СТРУКТУРУ ПРЕДМЕТА
 -- ============================================================
 
-function showItemDetails(itemId, damage)
+function showItemStructure(itemId, damage)
     local me = findME()
     if not me then
         print("❌ ME не найден!")
         return
     end
     
-    print("\n🔍 ДЕТАЛЬНАЯ ИНФОРМАЦИЯ О ПРЕДМЕТЕ")
+    print("\n🔍 СТРУКТУРА ПРЕДМЕТА: " .. itemId)
     print("═" .. string.rep("═", 50))
     
     local items = me.getItemsInNetwork()
-    local found = false
     
     for _, item in ipairs(items) do
         if item.name == itemId and (item.damage or 0) == (damage or 0) then
-            found = true
-            print("\n📦 Найден предмет:")
+            print("\n📦 Основные данные:")
             print("  Имя: " .. (item.name or "?"))
-            print("  DisplayName: " .. (item.displayName or "нет"))
             print("  Label: " .. (item.label or "нет"))
             print("  Damage: " .. (item.damage or 0))
             print("  Количество: " .. (item.size or 0))
             print("  MaxSize: " .. (item.maxSize or 64))
+            print("  Tier: " .. (item.tier or "нет"))
             
             -- Показываем NBT
-            local nbt = item.nbt or item.tag
-            if nbt then
-                print("\n  📋 ЕСТЬ NBT-ДАННЫЕ:")
-                if type(nbt) == "table" then
-                    for k, v in pairs(nbt) do
-                        if type(v) == "table" then
-                            print("    " .. k .. ": (таблица)")
-                            for k2, v2 in pairs(v) do
-                                print("      " .. k2 .. ": " .. tostring(v2))
-                            end
-                        else
-                            print("    " .. k .. ": " .. tostring(v))
-                        end
-                    end
-                else
-                    print("    " .. tostring(nbt))
-                end
-            else
-                print("\n  ❌ NBT-данных НЕТ")
+            print("\n📋 NBT-ДАННЫЕ:")
+            local hasNBT = false
+            
+            if item.charge then
+                hasNBT = true
+                print("  ⚡ Заряд: " .. item.charge .. " / " .. (item.maxCharge or item.charge))
             end
             
-            -- Показываем полный объект
-            print("\n  📄 Полный объект:")
-            print("  " .. serialization.serialize(item))
+            if item.enchantments then
+                hasNBT = true
+                print("  ✨ Зачарования:")
+                if type(item.enchantments) == "table" then
+                    for k, v in pairs(item.enchantments) do
+                        print("     " .. k .. ": " .. tostring(v))
+                    end
+                end
+            end
+            
+            if item.maxDamage then
+                hasNBT = true
+                print("  ❤️ Макс. урон: " .. item.maxDamage)
+            end
+            
+            if item.canProvideEnergy ~= nil then
+                hasNBT = true
+                print("  ⚡ Даёт энергию: " .. tostring(item.canProvideEnergy))
+            end
+            
+            if item.hasTag then
+                hasNBT = true
+                print("  🏷️ Имеет тег: true")
+            end
+            
+            if not hasNBT then
+                print("  ❌ NBT-данных нет")
+            end
+            
+            -- Полный объект
+            print("\n📄 Полный объект:")
+            print(serialization.serialize(item))
+            
+            return
         end
     end
     
-    if not found then
-        print("❌ Предмет не найден в ME!")
-    end
+    print("❌ Предмет не найден!")
 end
 
 -- ============================================================
--- ВЫДАЧА С ДИАГНОСТИКОЙ
+-- ВЫДАЧА ЧЕРЕЗ СУНДУК (СОХРАНЯЕТ ВСЁ)
 -- ============================================================
 
-function giveWithDiagnostic(itemId, qty, damage)
-    print("\n🧪 ВЫДАЧА: " .. itemId .. " x" .. qty)
+function giveThroughChest(itemId, qty, damage)
+    print("\n📦 ВЫДАЧА ЧЕРЕЗ СУНДУК: " .. itemId .. " x" .. qty)
     print("═" .. string.rep("═", 50))
-    
-    local pimAddr = findPIM()
-    if not pimAddr then
-        print("❌ PIM не найден!")
-        return
-    end
     
     local me = findME()
     if not me then
         print("❌ ME не найден!")
-        return
+        return false
     end
     
-    -- Проверяем наличие
+    local chest, chestAddr = findChest()
+    if not chest then
+        print("❌ Сундук не найден!")
+        return false
+    end
+    
+    -- Проверяем наличие в ME
     local items = me.getItemsInNetwork()
     local available = 0
     local itemData = nil
@@ -114,108 +138,210 @@ function giveWithDiagnostic(itemId, qty, damage)
     
     if available == 0 then
         print("❌ Предмет не найден в ME!")
-        print("\n💡 Попробуйте один из этих ID:")
-        local shown = 0
-        for _, item in ipairs(items) do
-            if shown < 20 then
-                print("  " .. item.name .. " x" .. (item.size or 0))
-                shown = shown + 1
-            end
-        end
-        return
+        return false
     end
     
     print("✅ В ME есть: " .. available .. " шт.")
     
     -- Показываем NBT
-    if itemData and (itemData.nbt or itemData.tag) then
-        print("⚠️ У предмета ЕСТЬ NBT-данные!")
-        print("  Возможно, поэтому PIM не может его выдать.")
-        print("  Попробуйте использовать сундук-буфер.")
+    if itemData.charge or itemData.enchantments or itemData.hasTag then
+        print("⚠️ У предмета есть NBT-данные (заряд, зачарования)")
+        print("  ✅ Будут сохранены при выдаче через сундук")
     end
     
-    -- Проверяем свободный слот
-    local freeSlot = nil
-    for slot = 1, 36 do
-        local stack = component.invoke(pimAddr, "getStackInSlot", slot)
-        if not stack or (stack.size or stack.qty or 0) == 0 then
-            freeSlot = slot
+    -- Извлекаем из ME
+    local toExtract = math.min(qty, available)
+    local fingerprint = { id = itemId, dmg = damage or 0 }
+    local extracted = 0
+    
+    print("\n⏳ Извлечение из ME...")
+    
+    while extracted < toExtract do
+        local toTake = math.min(toExtract - extracted, 64)
+        local success, result = pcall(function()
+            return me.exportItem(fingerprint, "down", toTake)
+        end)
+        
+        if success and result then
+            if type(result) == "number" and result > 0 then
+                extracted = extracted + result
+                print("  ✅ Извлечено: " .. result .. " шт.")
+            elseif type(result) == "boolean" and result == true then
+                extracted = extracted + toTake
+                print("  ✅ Извлечено: " .. toTake .. " шт.")
+            else
+                print("  ⚠️ Ошибка: " .. tostring(result))
+                break
+            end
+        else
+            print("  ❌ Ошибка: " .. tostring(result))
             break
         end
     end
     
-    if not freeSlot then
-        print("❌ Нет свободных слотов в инвентаре!")
-        return
+    if extracted == 0 then
+        print("❌ Не удалось извлечь из ME!")
+        return false
     end
     
-    print("✅ Свободный слот: " .. freeSlot)
+    -- Кладём в сундук (сохраняя все данные)
+    print("\n⏳ Помещение в сундук...")
     
-    -- ПРОБУЕМ РАЗНЫЕ СПОСОБЫ
-    local toTake = math.min(qty, 64)
+    local chestSize = chest.getInventorySize and chest.getInventorySize() or 27
+    local placed = 0
     
-    -- Способ 1: Стандартный
-    print("\n📌 Способ 1: Стандартная выдача")
-    local fingerprint = { id = itemId, dmg = damage or 0 }
-    
-    local success, result = pcall(function()
-        return me.exportItem(fingerprint, "down", toTake)
-    end)
-    
-    if success and result and result > 0 then
-        print("✅ УСПЕШНО! Выдано: " .. result .. " шт.")
-        return
-    else
-        print("❌ Не удалось. Ответ: " .. tostring(result))
-    end
-    
-    -- Способ 2: Без damage
-    print("\n📌 Способ 2: Без damage")
-    local fingerprint2 = { id = itemId }
-    
-    local success2, result2 = pcall(function()
-        return me.exportItem(fingerprint2, "down", toTake)
-    end)
-    
-    if success2 and result2 and result2 > 0 then
-        print("✅ УСПЕШНО! Выдано: " .. result2 .. " шт.")
-        return
-    else
-        print("❌ Не удалось. Ответ: " .. tostring(result2))
-    end
-    
-    -- Способ 3: С NBT (если есть)
-    if itemData and (itemData.nbt or itemData.tag) then
-        print("\n📌 Способ 3: С NBT-данными")
-        local fingerprint3 = { 
-            id = itemId, 
-            dmg = damage or 0,
-            nbt = itemData.nbt or itemData.tag 
-        }
+    for slot = 1, chestSize do
+        if placed >= extracted then break end
         
-        local success3, result3 = pcall(function()
-            return me.exportItem(fingerprint3, "down", toTake)
-        end)
-        
-        if success3 and result3 and result3 > 0 then
-            print("✅ УСПЕШНО! Выдано: " .. result3 .. " шт.")
-            return
-        else
-            print("❌ Не удалось. Ответ: " .. tostring(result3))
+        local stack = chest.getStackInSlot and chest.getStackInSlot(slot)
+        if not stack or (stack.size or stack.qty or 0) == 0 then
+            -- Создаём полную копию предмета со всеми данными
+            local stackData = {
+                id = itemId,
+                dmg = damage or 0,
+                size = math.min(extracted - placed, 64)
+            }
+            
+            -- Копируем все NBT-данные
+            if itemData then
+                if itemData.charge then
+                    stackData.charge = itemData.charge
+                end
+                if itemData.maxCharge then
+                    stackData.maxCharge = itemData.maxCharge
+                end
+                if itemData.enchantments then
+                    stackData.enchantments = itemData.enchantments
+                end
+                if itemData.maxDamage then
+                    stackData.maxDamage = itemData.maxDamage
+                end
+                if itemData.tier then
+                    stackData.tier = itemData.tier
+                end
+                if itemData.label then
+                    stackData.label = itemData.label
+                end
+                if itemData.hasTag then
+                    stackData.hasTag = true
+                end
+                if itemData.canProvideEnergy ~= nil then
+                    stackData.canProvideEnergy = itemData.canProvideEnergy
+                end
+                -- Копируем всё остальное
+                for k, v in pairs(itemData) do
+                    if type(k) == "string" and not stackData[k] and 
+                       k ~= "name" and k ~= "damage" and k ~= "size" and 
+                       k ~= "maxSize" and k ~= "isCraftable" and k ~= "transferLimit" then
+                        stackData[k] = v
+                    end
+                end
+            end
+            
+            local result = chest.setStackInSlot and chest.setStackInSlot(slot, stackData)
+            if result then
+                local added = stackData.size or 0
+                placed = placed + added
+                print("  ✅ Помещено в слот " .. slot .. ": " .. added .. " шт.")
+            end
         end
     end
     
-    -- ВСЁ НЕ УДАЛОСЬ
-    print("\n❌ ВСЕ СПОСОБЫ НЕ УДАЛИСЬ!")
-    print("  Предмет имеет NBT и не выдается через PIM напрямую.")
-    print("  Нужно использовать СУНДУК-БУФЕР.")
+    print("\n📊 Итого в сундуке: " .. placed .. " шт.")
     
-    -- Предлагаем показать детали
-    print("\nПоказать детальную информацию о предмете? (y/n):")
-    local show = io.read()
-    if show == "y" or show == "Y" then
-        showItemDetails(itemId, damage)
+    -- Проверяем что попало в сундук
+    print("\n🔍 Проверка сундука:")
+    for slot = 1, math.min(chestSize, 10) do
+        local stack = chest.getStackInSlot and chest.getStackInSlot(slot)
+        if stack and (stack.size or stack.qty or 0) > 0 then
+            local name = stack.label or stack.displayName or stack.name or "?"
+            local size = stack.size or stack.qty or 0
+            local hasCharge = stack.charge and " [заряд: " .. stack.charge .. "]" or ""
+            local hasEnchant = stack.enchantments and " [зачарован]" or ""
+            print("  Слот " .. slot .. ": " .. name .. " x" .. size .. hasCharge .. hasEnchant)
+        end
     end
+    
+    return placed > 0
+end
+
+-- ============================================================
+-- ВЫДАЧА ИЗ СУНДУКА В PIM
+-- ============================================================
+
+function moveFromChestToPIM()
+    print("\n📦 ПЕРЕМЕЩЕНИЕ ИЗ СУНДУКА В PIM")
+    print("═" .. string.rep("═", 50))
+    
+    local chest, chestAddr = findChest()
+    if not chest then
+        print("❌ Сундук не найден!")
+        return false
+    end
+    
+    local pimAddr = findPIM()
+    if not pimAddr then
+        print("❌ PIM не найден!")
+        return false
+    end
+    
+    -- Показываем что в сундуке
+    print("\n📦 Содержимое сундука:")
+    local chestSize = chest.getInventorySize and chest.getInventorySize() or 27
+    local count = 0
+    
+    for slot = 1, chestSize do
+        local stack = chest.getStackInSlot and chest.getStackInSlot(slot)
+        if stack and (stack.size or stack.qty or 0) > 0 then
+            count = count + 1
+            local name = stack.label or stack.displayName or stack.name or "?"
+            local size = stack.size or stack.qty or 0
+            local hasCharge = stack.charge and " [заряд: " .. stack.charge .. "]" or ""
+            print("  Слот " .. slot .. ": " .. name .. " x" .. size .. hasCharge)
+        end
+    end
+    
+    if count == 0 then
+        print("  (пусто)")
+        return false
+    end
+    
+    -- Перемещаем в PIM
+    print("\n⏳ Перемещение в PIM...")
+    local moved = 0
+    
+    for slot = 1, chestSize do
+        local stack = chest.getStackInSlot and chest.getStackInSlot(slot)
+        if stack and (stack.size or stack.qty or 0) > 0 then
+            local amount = stack.size or stack.qty or 0
+            
+            -- Ищем свободный слот в PIM
+            local targetSlot = nil
+            for ps = 1, 36 do
+                local pstack = component.invoke(pimAddr, "getStackInSlot", ps)
+                if not pstack or (pstack.size or pstack.qty or 0) == 0 then
+                    targetSlot = ps
+                    break
+                end
+            end
+            
+            if not targetSlot then
+                print("  ⚠️ Нет свободных слотов в PIM!")
+                break
+            end
+            
+            if chest.pushItem then
+                local result = chest.pushItem("up", slot, amount)
+                if type(result) == "number" and result > 0 then
+                    moved = moved + result
+                    print("  ✅ Перемещено в слот " .. targetSlot .. ": " .. result .. " шт.")
+                end
+            end
+        end
+    end
+    
+    print("\n✅ Всего перемещено: " .. moved .. " шт.")
+    return moved > 0
 end
 
 -- ============================================================
@@ -243,11 +369,20 @@ function showAllItems()
                 damage = item.damage or 0,
                 count = 0,
                 hasNBT = false,
-                maxSize = item.maxSize or 64
+                info = ""
             }
         end
         groups[key].count = groups[key].count + (item.size or 0)
-        if item.nbt or item.tag then
+        
+        if item.charge then
+            groups[key].hasNBT = true
+            groups[key].info = "заряд: " .. item.charge
+        end
+        if item.enchantments then
+            groups[key].hasNBT = true
+            groups[key].info = groups[key].info .. " [зачарован]"
+        end
+        if item.hasTag then
             groups[key].hasNBT = true
         end
     end
@@ -256,12 +391,9 @@ function showAllItems()
     for key, data in pairs(groups) do
         i = i + 1
         local nbt = data.hasNBT and " [ЕСТЬ NBT]" or ""
-        local sizeInfo = ""
-        if data.maxSize and data.maxSize < 64 then
-            sizeInfo = " (max: " .. data.maxSize .. ")"
-        end
+        local info = data.info ~= "" and " (" .. data.info .. ")" or ""
         print(string.format("  %d. %s (damage: %d) x%d%s%s", 
-            i, data.name, data.damage, data.count, nbt, sizeInfo))
+            i, data.name, data.damage, data.count, nbt, info))
     end
     
     print("\nВсего групп: " .. i)
@@ -273,15 +405,16 @@ end
 
 function main()
     print("\n" .. string.rep("═", 50))
-    print("🧪 ТЕСТ ВЫДАЧИ С ДИАГНОСТИКОЙ NBT")
+    print("🧪 ВЫДАЧА NBT-ПРЕДМЕТОВ ЧЕРЕЗ СУНДУК")
     print(string.rep("═", 50))
     
     while true do
         print("\nВыберите действие:")
         print("  [1] Показать все предметы в ME")
-        print("  [2] Выдать предмет (с диагностикой)")
-        print("  [3] Показать детали предмета")
-        print("  [4] Очистить инвентарь")
+        print("  [2] Показать структуру предмета")
+        print("  [3] Выдать в сундук (с NBT)")
+        print("  [4] Переместить из сундука в PIM")
+        print("  [5] ВСЁ СРАЗУ (выдать + переместить)")
         print("  [Q] Выход")
         
         local choice = io.read()
@@ -297,14 +430,10 @@ function main()
                 goto continue
             end
             
-            print("Введите количество (1-64):")
-            local qty = tonumber(io.read()) or 1
-            if qty > 64 then qty = 64 end
-            
             print("Введите damage (0 если не знаете):")
             local damage = tonumber(io.read()) or 0
             
-            giveWithDiagnostic(itemId, qty, damage)
+            showItemStructure(itemId, damage)
             
         elseif choice == "3" then
             print("\nВведите ID предмета:")
@@ -314,30 +443,35 @@ function main()
                 goto continue
             end
             
+            print("Введите количество:")
+            local qty = tonumber(io.read()) or 1
+            
             print("Введите damage (0 если не знаете):")
             local damage = tonumber(io.read()) or 0
             
-            showItemDetails(itemId, damage)
+            giveThroughChest(itemId, qty, damage)
             
         elseif choice == "4" then
-            local pimAddr = findPIM()
-            if not pimAddr then
-                print("❌ PIM не найден!")
+            moveFromChestToPIM()
+            
+        elseif choice == "5" then
+            print("\n🚀 ВЫДАЧА + ПЕРЕМЕЩЕНИЕ")
+            print("Введите ID предмета:")
+            local itemId = io.read()
+            if not itemId or itemId == "" then
+                print("❌ Отменено")
                 goto continue
             end
             
-            print("⚠️ Очистить инвентарь? (y/n):")
-            local confirm = io.read()
-            if confirm == "y" or confirm == "Y" then
-                local count = 0
-                for slot = 1, 36 do
-                    local stack = component.invoke(pimAddr, "getStackInSlot", slot)
-                    if stack and (stack.size or stack.qty or 0) > 0 then
-                        component.invoke(pimAddr, "pushItem", "down", slot, 999)
-                        count = count + 1
-                    end
-                end
-                print("✅ Очищено слотов: " .. count)
+            print("Введите количество:")
+            local qty = tonumber(io.read()) or 1
+            
+            print("Введите damage (0 если не знаете):")
+            local damage = tonumber(io.read()) or 0
+            
+            if giveThroughChest(itemId, qty, damage) then
+                print("\n✅ Предметы в сундуке. Перемещаем в PIM...")
+                moveFromChestToPIM()
             end
             
         elseif choice == "q" or choice == "Q" then

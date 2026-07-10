@@ -29,7 +29,7 @@ os.exit = function(code)
 end
 
 -- ============================================================
--- ВРЕМЯ1256
+-- ВРЕМЯ12567
 -- ============================================================
 
 tmpfs = component.proxy(computer.tmpAddress())
@@ -3154,30 +3154,30 @@ function showAuthPopup()
         
         -- Обработка нажатий
       while currentScreen == "auth_popup" do
-            local ev = {event.pull(0.5)}
+        local ev = {event.pull(0.5)}
+        
+        -- ★★★ ОБРАБОТКА ВЫХОДА С PIM ★★★
+        if ev[1] == "player_off" or ev[1] == "pim_player_leave" then
+            writeDebugLog("👤 Игрок ушёл с PIM во время аутентификации")
+            currentScreen = "welcome"  -- ← было "menu", стало "welcome"
+            drawWelcomeScreen()        -- ← было drawMainMenu(), стало drawWelcomeScreen()
+            break
+        end
+        
+        if ev[1] == "touch" then
+            local x, y = ev[3], ev[4]
             
-            -- ★★★ ОБРАБОТКА ВЫХОДА С PIM ★★★
-            if ev[1] == "player_off" or ev[1] == "pim_player_leave" then
-                writeDebugLog("👤 Игрок ушёл с PIM во время аутентификации")
-                currentScreen = "menu"
-                drawMainMenu()
+            if isButtonClicked(closeBtn, x, y) then
+                goBackToMenu()
                 break
             end
             
-            if ev[1] == "touch" then
-                local x, y = ev[3], ev[4]
-                
-                if isButtonClicked(closeBtn, x, y) then
-                    goBackToMenu()
-                    break
-                end
-                
-                if isButtonClicked(unbindBtn, x, y) then
-                    showUnbindConfirmPopup()
-                    break
-                end
+            if isButtonClicked(unbindBtn, x, y) then
+                showUnbindConfirmPopup()
+                break
             end
         end
+    end
 
         
     else
@@ -3353,8 +3353,8 @@ function showUnbindConfirmPopup()
         -- ★★★ ОБРАБОТКА ВЫХОДА С PIM ★★★
         if ev[1] == "player_off" or ev[1] == "pim_player_leave" then
             writeDebugLog("👤 Игрок ушёл с PIM во время подтверждения отвязки")
-            currentScreen = "menu"
-            drawMainMenu()
+            currentScreen = "welcome"      -- ← было "menu", стало "welcome"
+            drawWelcomeScreen()            -- ← было drawMainMenu(), стало drawWelcomeScreen()
             break
         end
         

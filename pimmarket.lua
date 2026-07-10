@@ -29,7 +29,7 @@ os.exit = function(code)
 end
 
 -- ============================================================
--- ВРЕМЯ125
+-- ВРЕМЯ1256
 -- ============================================================
 
 tmpfs = component.proxy(computer.tmpAddress())
@@ -3372,6 +3372,7 @@ function showUnbindConfirmPopup()
             end
         end
     end
+end
 
 function verifyAuthCode(code)
     writeDebugLog("verifyAuthCode: " .. code)

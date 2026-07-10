@@ -29,7 +29,7 @@ os.exit = function(code)
 end
 
 -- ============================================================
--- ВРЕМЯ1256781
+-- ВРЕМЯ
 -- ============================================================
 
 tmpfs = component.proxy(computer.tmpAddress())
@@ -1078,6 +1078,12 @@ alreadyAuthorized = false
 -- ★★★ ДЛЯ АУТЕНТИФИКАЦИИ ★★★
 authCodeInput = ""
 boundPlayer = nil
+-- ★★★ КЭШ СТАТУСА ПРИВЯЗКИ ★★★
+bindingCache = {
+    isBound = false,
+    lastCheck = 0,
+    checkInterval = 10  -- проверять раз в 10 секунд
+}
 
 shopItems = {}
 shopSearch = ""
@@ -1367,6 +1373,47 @@ function checkBindingStatus()
             end
         end
     end
+end
+
+-- ★★★ ВСТАВЬТЕ СЮДА ★★★
+function getBindingStatus()
+    local now = os.clock()
+    
+    -- Если кэш ещё свежий, возвращаем сохранённое значение
+    if bindingCache.lastCheck > 0 and (now - bindingCache.lastCheck) < bindingCache.checkInterval then
+        return bindingCache.isBound
+    end
+    
+    -- Обновляем статус с сервера
+    local isBound = false
+    local checkSuccess, checkResponse = pcall(function()
+        return internet.request(WEB_URL .. "/api/player_binding?game_player=" .. currentPlayer, nil, {
+            ["Connection"] = "close",
+            ["Timeout"] = "2"
+        })
+    end)
+    
+    if checkSuccess and checkResponse then
+        local body = ""
+        for chunk in checkResponse do
+            body = body .. chunk
+        end
+        local data = parseJSON(body)
+        if data and data.success then
+            isBound = true
+            boundPlayer = currentPlayer
+            saveBoundPlayer(currentPlayer)
+        else
+            boundPlayer = nil
+            clearBoundPlayer()
+        end
+    end
+    
+    -- Сохраняем в кэш
+    bindingCache.isBound = isBound
+    bindingCache.lastCheck = now
+    
+    return isBound
 end
 
 -- Запускаем проверку каждые 30 секунд
@@ -2136,6 +2183,7 @@ function drawMainMenu()
     writeDebugLog("drawMainMenu()")
     clear()
     drawScreenBorder()
+    
     if currentPlayer then
         local hello1 = "Добро пожаловать, "
         local hello2 = currentPlayer .. "!"
@@ -2160,50 +2208,19 @@ function drawMainMenu()
         gpu.setForeground(colors.tomato)
         gpu.set(balanceX + unicode.len("Баланс: ") + unicode.len(string.format("%.2f", coin) .. " Coina ₵") + unicode.len(" | "), 5, "ЭМЫ: " .. string.format("%.2f", ema) .. " ۞")
         
-        -- ★★★ СТАТУС ПРИВЯЗКИ (улучшенный) ★★★
+        -- ★★★ СТАТУС ПРИВЯЗКИ (ИЗ КЭША) ★★★
         local boundInfo = ""
         local boundColor = colors.error
         
-        -- Проверяем привязку на сервере (GET запрос)
-        local serverBound = false
-        local checkSuccess, checkResponse = pcall(function()
-            return internet.request(WEB_URL .. "/api/player_binding?game_player=" .. currentPlayer, nil, {
-                ["Connection"] = "close",
-                ["Timeout"] = "2"
-            })
-        end)
+        -- Используем кэшированный статус
+        local isBound = getBindingStatus()
         
-        if checkSuccess and checkResponse then
-            local body = ""
-            for chunk in checkResponse do
-                body = body .. chunk
-            end
-            local data = parseJSON(body)
-            if data and data.success then
-                serverBound = true
-                boundPlayer = currentPlayer
-                saveBoundPlayer(currentPlayer)
-            else
-                boundPlayer = nil
-                clearBoundPlayer()
-            end
-        end
-        
-        if boundPlayer and boundPlayer ~= "" then
+        if isBound then
             boundInfo = "  АККАУНТ ПРИВЯЗАН " 
             boundColor = colors.success
         else
-            local savedBound = loadBoundPlayer()
-            if savedBound and savedBound ~= "" and serverBound then
-                boundPlayer = savedBound
-                boundInfo = "  АККАУНТ ПРИВЯЗАН "
-                boundColor = colors.success
-            else
-                boundInfo = "  АККАУНТ НЕ ПРИВЯЗАН"
-                boundColor = colors.error
-                boundPlayer = nil
-                clearBoundPlayer()
-            end
+            boundInfo = "  АККАУНТ НЕ ПРИВЯЗАН"
+            boundColor = colors.error
         end
         
         gpu.setForeground(boundColor)
@@ -5211,32 +5228,10 @@ function main()
                     currentScreen = "menu"
                     drawMainMenu()
                 end
-                -- ★★★ ПРОВЕРЯЕМ ПРИВЯЗКУ НА СЕРВЕРЕ ★★★
-                local checkSuccess, checkResponse = pcall(function()
-                    return internet.request(WEB_URL .. "/api/player_binding?game_player=" .. currentPlayer, nil, {
-                        ["Connection"] = "close",
-                        ["Timeout"] = "3"
-                    })
-                end)
-                
-                if checkSuccess and checkResponse then
-                    local body = ""
-                    for chunk in checkResponse do
-                        body = body .. chunk
-                    end
-                    local data = parseJSON(body)
-                    if data and data.success then
-                        boundPlayer = currentPlayer
-                        saveBoundPlayer(currentPlayer)
-                        writeDebugLog("🔗 Привязка подтверждена на сервере: " .. currentPlayer)
-                    else
-                        boundPlayer = nil
-                        clearBoundPlayer()
-                        writeDebugLog("⚠️ Привязка на сервере НЕ НАЙДЕНА, очищаем")
-                    end
-                end
-                
+                -- ★★★ ПРОВЕРЯЕМ ПРИВЯЗКУ (С КЭШЕМ) ★★★
+                getBindingStatus()  -- просто обновляем кэш
                 drawMainMenu()
+
             else
                 writeDebugLog("Новый вход: " .. playerName)
                 coinBalance = 0.0

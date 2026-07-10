@@ -29,7 +29,7 @@ os.exit = function(code)
 end
 
 -- ============================================================
--- ВРЕМЯ12
+-- ВРЕМЯ125
 -- ============================================================
 
 tmpfs = component.proxy(computer.tmpAddress())
@@ -3129,11 +3129,11 @@ function showAuthPopup()
         gpu.set(popupX + 3, popupY + 7, "   Для отвязки нажмите кнопку ниже")
         
         -- Кнопка ОТВЯЗАТЬ
-          local yesBtn = {
-            text = "[ ДА, ОТВЯЗАТЬ ]",
+          local unbindBtn = {
+            text = "[ ОТВЯЗАТЬ ]",
             x = popupX + 5,
-            y = popupY + popupHeight - 2,
-            xs = 15,
+            y = popupY + popupHeight - 3,
+            xs = unicode.len("[ ОТВЯЗАТЬ ]") + 2,
             ys = 1,
             bg = 0x441111,
             fg = colors.error
@@ -3153,8 +3153,16 @@ function showAuthPopup()
         drawFlexButton(closeBtn)
         
         -- Обработка нажатий
-        while currentScreen == "auth_popup" do
+      while currentScreen == "auth_popup" do
             local ev = {event.pull(0.5)}
+            
+            -- ★★★ ОБРАБОТКА ВЫХОДА С PIM ★★★
+            if ev[1] == "player_off" or ev[1] == "pim_player_leave" then
+                writeDebugLog("👤 Игрок ушёл с PIM во время аутентификации")
+                currentScreen = "menu"
+                drawMainMenu()
+                break
+            end
             
             if ev[1] == "touch" then
                 local x, y = ev[3], ev[4]
@@ -3165,12 +3173,12 @@ function showAuthPopup()
                 end
                 
                 if isButtonClicked(unbindBtn, x, y) then
-                    -- ★★★ ПОКАЗЫВАЕМ ПРЕДУПРЕЖДЕНИЕ ПЕРЕД ОТВЯЗКОЙ ★★★
                     showUnbindConfirmPopup()
                     break
                 end
             end
         end
+
         
     else
         -- ★★★ ЕСЛИ НЕ ПРИВЯЗАН ★★★
@@ -3342,6 +3350,14 @@ function showUnbindConfirmPopup()
     while true do
         local ev = {event.pull(0.5)}
         
+        -- ★★★ ОБРАБОТКА ВЫХОДА С PIM ★★★
+        if ev[1] == "player_off" or ev[1] == "pim_player_leave" then
+            writeDebugLog("👤 Игрок ушёл с PIM во время подтверждения отвязки")
+            currentScreen = "menu"
+            drawMainMenu()
+            break
+        end
+        
         if ev[1] == "touch" then
             local x, y = ev[3], ev[4]
             
@@ -3356,7 +3372,6 @@ function showUnbindConfirmPopup()
             end
         end
     end
-end
 
 function verifyAuthCode(code)
     writeDebugLog("verifyAuthCode: " .. code)

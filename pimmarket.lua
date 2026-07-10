@@ -3082,7 +3082,7 @@ function showAuthPopup()
     -- Рисуем попап
     local popupWidth = 50
     local popupHeight = 16
-    local popupX = math.floor((80 - popupWidth) / 2)
+    local popupX = math.floor((80 - popupWidth) / 2) + 1
     local popupY = math.floor((25 - popupHeight) / 2)
     
     -- Затемняем фон
@@ -3288,7 +3288,7 @@ function showUnbindConfirmPopup()
     
     local popupWidth = 46
     local popupHeight = 10
-    local popupX = math.floor((80 - popupWidth) / 2)
+    local popupX = math.floor((80 - popupWidth) / 2) + 1
     local popupY = math.floor((25 - popupHeight) / 2)
     
     -- Затемняем фон

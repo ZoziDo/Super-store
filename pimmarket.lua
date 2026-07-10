@@ -3143,7 +3143,7 @@ function showAuthPopup()
         -- Кнопка ЗАКРЫТЬ (справа)
         local closeBtn = {
             text = "[ ЗАКРЫТЬ ]",
-            x = popupX + popupWidth - 12,
+            x = popupX + popupWidth - 13,
             y = popupY + popupHeight - 3,
             xs = 10,
             ys = 1,

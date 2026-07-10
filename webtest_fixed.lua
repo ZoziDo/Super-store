@@ -1,291 +1,614 @@
+-- ============================================================
+-- ВРЕМЕННЫЙ СКРИПТ ВЫДАЧИ ПРЕДМЕТОВ ЧЕРЕЗ СУНДУК
+-- Решает проблему с NBT-предметами (заряд, enchant и т.д.)
+-- ============================================================
+
 local component = require("component")
 local event = require("event")
-local computer = require("computer")
+local gpu = component.gpu
+local unicode = require("unicode")
+local serialization = require("serialization")
 
-print("")
-print("═══════════════════════════════════════════════════════════════")
-print("  ТЕСТ1 ВЫДАЧИ NBT ПРЕДМЕТОВ ЧЕРЕЗ ME INTERFACE + PIM")
-print("═══════════════════════════════════════════════════════════════")
-print("")
+-- Настройки
+CHEST_SLOTS = 27  -- 27 для обычного сундука, 54 для двойного
+PIM_SLOTS = 36    -- слоты игрока
+PUSH_DIRECTION = "down"
+PULL_DIRECTION = "up"
 
--- 1. Проверяем компоненты
-print("1. ПРОВЕРКА КОМПОНЕНТОВ")
-print("")
+-- ============================================================
+-- ПОИСК УСТРОЙСТВ
+-- ============================================================
 
--- ME интерфейс
-if not component.isAvailable("me_interface") then
-    print("❌ ME интерфейс НЕ ДОСТУПЕН!")
-    return
-end
-local me = component.me_interface
-print("✅ ME интерфейс доступен")
-
--- PIM
-local pimAddr = nil
-for addr in component.list("pim") do
-    pimAddr = addr
-    break
-end
-if not pimAddr then
-    print("❌ PIM НЕ НАЙДЕН!")
-    return
-end
-local pim = component.proxy(pimAddr)
-print("✅ PIM найден: " .. pimAddr)
-
-print("")
-print("2. ВВОД ДАННЫХ")
-print("")
-
-io.write("  Internal name (например GraviSuite:vajra): ")
-local internalName = io.read()
-internalName = internalName:match("^%s*(.-)%s*$")
-
-if not internalName or internalName == "" then
-    print("   Используем GraviSuite:vajra")
-    internalName = "GraviSuite:vajra"
-end
-
-io.write("  Damage (Enter для 0): ")
-local dmgInput = io.read()
-local damage = 0
-if dmgInput and dmgInput ~= "" then
-    damage = tonumber(dmgInput) or 0
-end
-
-io.write("  Количество (Enter для 1): ")
-local qtyInput = io.read()
-local testQty = 1
-if qtyInput and qtyInput ~= "" then
-    testQty = tonumber(qtyInput) or 1
-end
-
-print("")
-print("   Тестируем: " .. internalName .. " (damage: " .. damage .. ") x" .. testQty)
-print("")
-
--- 3. Проверяем наличие предмета в ME
-print("3. ПОИСК В ME")
-print("")
-
-local fingerprint = { id = internalName, dmg = damage }
-local items = me.getItemsInNetwork()
-local foundItem = nil
-
-for _, item in ipairs(items) do
-    if item.name == internalName and (item.damage or 0) == damage then
-        foundItem = item
-        break
+function findChest()
+    -- Ищем любой инвентарь
+    for addr in component.list("inventory") do
+        local inv = component.proxy(addr)
+        if inv and inv.getInventorySize and inv.getInventorySize() > 0 then
+            writeDebugLog("✅ Найден сундук: " .. addr)
+            return inv, addr
+        end
     end
-end
-
-if not foundItem then
-    print("❌ Предмет НЕ НАЙДЕН в ME системе!")
-    print("")
-    print("   Похожие предметы в ME:")
-    local count = 0
-    for _, item in ipairs(items) do
-        if string.find(item.name, internalName:match("[^:]+$") or "") then
-            count = count + 1
-            if count <= 10 then
-                print("     " .. item.name .. " (damage: " .. (item.damage or 0) .. ") - " .. (item.size or 0) .. " шт.")
+    
+    -- Ищем конкретные типы сундуков
+    local chestTypes = {
+        "minecraft:chest", 
+        "minecraft:trapped_chest",
+        "minecraft:ender_chest",
+        "minecraft:barrel",
+        "minecraft:shulker_box"
+    }
+    
+    for _, typeName in ipairs(chestTypes) do
+        for addr in component.list(typeName) do
+            local chest = component.proxy(addr)
+            if chest then
+                writeDebugLog("✅ Найден сундук: " .. typeName)
+                return chest, addr
             end
         end
     end
-    if count == 0 then
-        print("     Нет похожих предметов.")
-    end
-    return
+    
+    print("❌ Сундук не найден!")
+    return nil, nil
 end
 
-print("✅ Предмет найден!")
-print("   Количество в ME: " .. (foundItem.size or 0) .. " шт.")
+function findPIM()
+    for addr in component.list("pim") do
+        return addr
+    end
+    return nil
+end
 
-if (foundItem.size or 0) < testQty then
-    print("⚠️ В ME меньше предметов чем нужно!")
-    testQty = foundItem.size or 0
-    if testQty == 0 then
-        print("❌ Нет предметов для теста")
+function findME()
+    for addr in component.list("me_interface") do
+        return component.proxy(addr)
+    end
+    return nil
+end
+
+-- ============================================================
+-- РАБОТА С ИНВЕНТАРЁМ
+-- ============================================================
+
+function getPIMInventory()
+    local pimAddr = findPIM()
+    if not pimAddr then return {} end
+    
+    local inventory = {}
+    for slot = 1, PIM_SLOTS do
+        local stack = component.invoke(pimAddr, "getStackInSlot", slot)
+        if stack and (stack.size or stack.qty or 0) > 0 then
+            table.insert(inventory, {
+                slot = slot,
+                name = stack.name or "unknown",
+                damage = stack.damage or 0,
+                size = stack.size or stack.qty or 0,
+                nbt = stack.nbt or stack.tag or nil,
+                displayName = stack.displayName or stack.label or stack.name or "?"
+            })
+        end
+    end
+    return inventory
+end
+
+function getChestInventory(chest)
+    if not chest then return {} end
+    
+    local size = chest.getInventorySize and chest.getInventorySize() or CHEST_SLOTS
+    local inventory = {}
+    
+    for slot = 1, size do
+        local stack = chest.getStackInSlot and chest.getStackInSlot(slot)
+        if stack and (stack.size or stack.qty or 0) > 0 then
+            table.insert(inventory, {
+                slot = slot,
+                name = stack.name or "unknown",
+                damage = stack.damage or 0,
+                size = stack.size or stack.qty or 0,
+                nbt = stack.nbt or stack.tag or nil,
+                displayName = stack.displayName or stack.label or stack.name or "?"
+            })
+        end
+    end
+    return inventory
+end
+
+function moveFromChestToPIM(chest, chestSlot, amount)
+    local pimAddr = findPIM()
+    if not pimAddr then return 0 end
+    
+    -- Ищем свободный слот в PIM
+    local targetSlot = nil
+    for slot = 1, PIM_SLOTS do
+        local stack = component.invoke(pimAddr, "getStackInSlot", slot)
+        if not stack or (stack.size or stack.qty or 0) == 0 then
+            targetSlot = slot
+            break
+        end
+    end
+    
+    if not targetSlot then
+        print("⚠️ Нет свободных слотов в инвентаре!")
+        return 0
+    end
+    
+    -- Перемещаем из сундука в PIM
+    local moved = 0
+    if chest.pushItem then
+        moved = chest.pushItem(PULL_DIRECTION, chestSlot, amount)
+    elseif chest.moveItem then
+        moved = chest.moveItem(chestSlot, "pim", targetSlot, amount)
+    else
+        print("❌ Не удаётся переместить предмет!")
+        return 0
+    end
+    
+    return moved
+end
+
+function moveFromPIMToChest(pimSlot, amount)
+    local pimAddr = findPIM()
+    if not pimAddr then return 0 end
+    
+    local chest, chestAddr = findChest()
+    if not chest then return 0 end
+    
+    -- Ищем свободный слот в сундуке
+    local chestSize = chest.getInventorySize and chest.getInventorySize() or CHEST_SLOTS
+    local targetSlot = nil
+    for slot = 1, chestSize do
+        local stack = chest.getStackInSlot and chest.getStackInSlot(slot)
+        if not stack or (stack.size or stack.qty or 0) == 0 then
+            targetSlot = slot
+            break
+        end
+    end
+    
+    if not targetSlot then
+        print("⚠️ Сундук полон!")
+        return 0
+    end
+    
+    -- Перемещаем из PIM в сундук
+    local moved = component.invoke(pimAddr, "pushItem", PUSH_DIRECTION, pimSlot, amount)
+    return moved
+end
+
+-- ============================================================
+-- ОСНОВНЫЕ ФУНКЦИИ
+-- ============================================================
+
+function printInventory(title, inventory)
+    print("\n📦 " .. title .. ":")
+    print("═" .. string.rep("═", 50))
+    
+    if #inventory == 0 then
+        print("   (пусто)")
         return
     end
-    print("   Тестируем с " .. testQty .. " шт.")
-end
-
-print("")
-print("4. ПРОВЕРКА ИНВЕНТАРЯ PIM")
-print("")
-
-local freeSlots = 0
-for slot = 1, 36 do
-    local stack = pim.getStackInSlot(slot)
-    if not stack or not stack.size or stack.size == 0 then
-        freeSlots = freeSlots + 1
+    
+    for _, item in ipairs(inventory) do
+        local display = item.displayName or item.name or "?"
+        local damage = item.damage or 0
+        local hasNBT = item.nbt and " [NBT]" or ""
+        print(string.format("   %2d. %s x%d (damage: %d)%s", 
+            item.slot, 
+            display, 
+            item.size, 
+            damage,
+            hasNBT
+        ))
     end
 end
 
-print("   Свободных слотов в PIM: " .. freeSlots)
-
-if freeSlots == 0 then
-    print("❌ ИНВЕНТАРЬ ПОЛОН! Освободите место.")
-    print("   Нажмите любую клавишу для выхода...")
-    event.pull("key_down")
-    return
+function showStatus()
+    gpu.setBackground(0x0A0A0F)
+    gpu.fill(1, 1, 80, 25, " ")
+    
+    gpu.setForeground(0x00E5C9)
+    gpu.set(1, 1, "═" .. string.rep("═", 78))
+    gpu.setForeground(0xFFFFFF)
+    gpu.set(20, 2, "🔄 ВРЕМЕННЫЙ СКРИПТ ВЫДАЧИ ПРЕДМЕТОВ")
+    gpu.setForeground(0x00E5C9)
+    gpu.set(1, 3, "═" .. string.rep("═", 78))
+    
+    gpu.setForeground(0xAAAAAA)
+    gpu.set(2, 5, "[1] Показать инвентарь PIM")
+    gpu.set(2, 6, "[2] Показать содержимое сундука")
+    gpu.set(2, 7, "[3] Переместить ВСЁ из сундука в PIM")
+    gpu.set(2, 8, "[4] Переместить ВСЁ из PIM в сундук")
+    gpu.set(2, 9, "[5] Выдать предмет из ME в сундук (с NBT)")
+    gpu.set(2, 10, "[6] Выдать предмет из ME в PIM (прямая выдача)")
+    gpu.set(2, 11, "[7] Очистить инвентарь PIM (всё в сундук)")
+    gpu.set(2, 12, "[8] Очистить сундук (всё в ME)")
+    gpu.set(2, 13, "[9] Проверить NBT-предметы в PIM")
+    gpu.set(2, 14, "[0] Показать это меню")
+    
+    gpu.setForeground(0xFF4444)
+    gpu.set(2, 16, "[Q] ВЫХОД")
+    
+    gpu.setForeground(0x00E5C9)
+    gpu.set(1, 25, "═" .. string.rep("═", 78))
 end
 
-print("")
-print("5. ТЕСТОВАЯ ВЫДАЧА ЧЕРЕЗ ME INTERFACE")
-print("")
-
--- Пробуем все направления (1-7)
--- 1=DOWN, 2=UP, 3=NORTH, 4=SOUTH, 5=WEST, 6=EAST, 7=UNKNOWN
-local directions = {
-    {code = 1, name = "DOWN"},
-    {code = 2, name = "UP"},
-    {code = 3, name = "NORTH"},
-    {code = 4, name = "SOUTH"},
-    {code = 5, name = "WEST"},
-    {code = 6, name = "EAST"},
-    {code = 7, name = "UNKNOWN"},
-}
-
-local successDirection = nil
-local extracted = 0
-
-print("   🔍 Пробуем exportItem с разными направлениями:")
-print("")
-
-for _, dir in ipairs(directions) do
-    if extracted == 0 then
-        print("   Пробуем направление: " .. dir.name .. " (код: " .. dir.code .. ")")
-        
-        local success, result = pcall(function()
-            return me.exportItem(fingerprint, dir.code, testQty)
-        end)
-        
-        if success then
-            if result and type(result) == "number" and result > 0 then
-                print("   ✅ УСПЕШНО! Выдано " .. result .. " шт. в направлении " .. dir.name)
-                extracted = result
-                successDirection = dir.name
-            else
-                print("     ❌ Результат: " .. tostring(result))
+function clearPIMToChest()
+    local pimAddr = findPIM()
+    if not pimAddr then 
+        print("❌ PIM не найден!")
+        return 
+    end
+    
+    local chest, chestAddr = findChest()
+    if not chest then 
+        print("❌ Сундук не найден!")
+        return 
+    end
+    
+    local moved = 0
+    for slot = 1, PIM_SLOTS do
+        local stack = component.invoke(pimAddr, "getStackInSlot", slot)
+        if stack and (stack.size or stack.qty or 0) > 0 then
+            local amount = stack.size or stack.qty or 0
+            local result = component.invoke(pimAddr, "pushItem", PUSH_DIRECTION, slot, amount)
+            if type(result) == "number" and result > 0 then
+                moved = moved + result
             end
-        else
-            print("     ⚠️ Ошибка: " .. tostring(result))
         end
     end
+    
+    print("✅ Перемещено " .. moved .. " предметов из PIM в сундук")
 end
 
--- Если не сработало через exportItem, пробуем другие методы
-if extracted == 0 then
-    print("")
-    print("   🔍 Пробуем альтернативные методы:")
-    print("")
-    
-    -- Метод 1: через exportItem с другим форматом
-    print("   1. exportItem с форматом {id=..., dmg=...}:")
-    local success, result = pcall(function()
-        return me.exportItem({id = internalName, dmg = damage}, 2, testQty)
-    end)
-    if success and result and result > 0 then
-        print("   ✅ УСПЕШНО! Выдано " .. result .. " шт.")
-        extracted = result
-        successDirection = "UP (альтернативный)"
-    else
-        print("     ❌ " .. tostring(result))
+function clearChestToME()
+    local chest, chestAddr = findChest()
+    if not chest then 
+        print("❌ Сундук не найден!")
+        return 
     end
     
-    -- Метод 2: через pushItem в PIM напрямую
-    if extracted == 0 then
-        print("")
-        print("   2. Прямая отправка в PIM (pushItem):")
-        -- Сначала пробуем выдать в ME интерфейс
-        local ok, items = pcall(function()
-            return me.getItemsInNetwork()
+    local me = findME()
+    if not me then
+        print("❌ ME интерфейс не найден!")
+        return
+    end
+    
+    local chestSize = chest.getInventorySize and chest.getInventorySize() or CHEST_SLOTS
+    local moved = 0
+    
+    for slot = 1, chestSize do
+        local stack = chest.getStackInSlot and chest.getStackInSlot(slot)
+        if stack and (stack.size or stack.qty or 0) > 0 then
+            local name = stack.name or ""
+            local damage = stack.damage or 0
+            local amount = stack.size or stack.qty or 0
+            
+            local success, result = pcall(function()
+                return me.importItem({id = name, dmg = damage}, "down", amount)
+            end)
+            
+            if success and result then
+                moved = moved + amount
+            end
+        end
+    end
+    
+    print("✅ Перемещено " .. moved .. " предметов из сундука в ME")
+end
+
+function giveFromMEtoChest()
+    print("\n📦 ВЫДАЧА ПРЕДМЕТА ИЗ ME В СУНДУК")
+    print("Введите ID предмета (например: minecraft:diamond_sword):")
+    
+    local itemId = io.read()
+    if not itemId or itemId == "" then
+        print("❌ Отменено")
+        return
+    end
+    
+    print("Введите количество:")
+    local qty = tonumber(io.read()) or 1
+    
+    print("Введите damage (0 если нет):")
+    local damage = tonumber(io.read()) or 0
+    
+    local me = findME()
+    if not me then
+        print("❌ ME интерфейс не найден!")
+        return
+    end
+    
+    local chest, chestAddr = findChest()
+    if not chest then 
+        print("❌ Сундук не найден!")
+        return 
+    end
+    
+    -- Проверяем наличие предмета в ME
+    local items = me.getItemsInNetwork()
+    local available = 0
+    for _, item in ipairs(items) do
+        if item.name == itemId and (item.damage or 0) == damage then
+            available = available + (item.size or 0)
+        end
+    end
+    
+    if available == 0 then
+        print("❌ Предмет не найден в ME системе!")
+        return
+    end
+    
+    local toExtract = math.min(qty, available)
+    print("📊 Доступно: " .. available .. ", будет выдано: " .. toExtract)
+    
+    -- Извлекаем из ME
+    local fingerprint = { id = itemId, dmg = damage }
+    local extracted = 0
+    
+    while extracted < toExtract do
+        local toTake = math.min(toExtract - extracted, 64)
+        local success, result = pcall(function()
+            return me.exportItem(fingerprint, "down", toTake)
         end)
         
-        if ok and items then
-            for _, item in ipairs(items) do
-                if item.name == internalName and (item.damage or 0) == damage then
-                    local success, result = pcall(function()
-                        return pim.pushItem(PIM_DIRECTION, 1, item.size)
-                    end)
-                    if success and result and result > 0 then
-                        print("   ✅ УСПЕШНО! Отправлено " .. result .. " шт. в PIM")
-                        extracted = result
-                        successDirection = "pushItem"
-                    else
-                        print("     ❌ " .. tostring(result))
-                    end
-                    break
+        if success and result then
+            if type(result) == "number" then
+                extracted = extracted + result
+            elseif type(result) == "boolean" and result == true then
+                extracted = extracted + toTake
+            end
+        else
+            print("⚠️ Ошибка при извлечении: " .. tostring(result))
+            break
+        end
+    end
+    
+    print("✅ Извлечено из ME: " .. extracted)
+    
+    -- Кладём в сундук (если есть что)
+    if extracted > 0 then
+        local chestSize = chest.getInventorySize and chest.getInventorySize() or CHEST_SLOTS
+        local placed = 0
+        
+        for slot = 1, chestSize do
+            if placed >= extracted then break end
+            
+            local stack = chest.getStackInSlot and chest.getStackInSlot(slot)
+            if not stack or (stack.size or stack.qty or 0) == 0 then
+                -- Создаём стак для сундука
+                local stackData = {
+                    id = itemId,
+                    dmg = damage,
+                    size = math.min(extracted - placed, 64)
+                }
+                -- Пытаемся положить
+                local result = chest.setStackInSlot and chest.setStackInSlot(slot, stackData)
+                if result then
+                    placed = placed + (stackData.size or 0)
                 end
             end
         end
+        
+        print("✅ Помещено в сундук: " .. placed)
+        
+        -- Если не всё поместилось, возвращаем в ME
+        if placed < extracted then
+            local returned = extracted - placed
+            local success, result = pcall(function()
+                return me.importItem(fingerprint, "down", returned)
+            end)
+            if success then
+                print("↩️ Возвращено в ME: " .. returned)
+            end
+        end
     end
 end
 
--- Если ничего не сработало
-if extracted == 0 then
-    print("")
-    print("❌ НИ ОДИН СПОСОБ НЕ СРАБОТАЛ!")
-    print("")
-    print("📋 ВОЗМОЖНЫЕ ПРИЧИНЫ:")
-    print("  1. NBT предметы не могут быть выданы через PIM")
-    print("  2. PIM не правильно подключён к ME сети")
-    print("  3. Нет кабеля между ME интерфейсом и PIM")
-    print("")
-    print("⚙️ РЕШЕНИЕ:")
-    print("  1. Используй ME интерфейс + сундук для NBT предметов")
-    print("  2. Поставь сундук за ME интерфейсом (невидимый для игрока)")
-    print("  3. В сундук выдавай предмет, потом забирай в PIM")
-    print("")
-    print("Нажмите любую клавишу для выхода...")
-    event.pull("key_down")
-    return
+function giveFromMEtoPIM()
+    print("\n📦 ВЫДАЧА ПРЕДМЕТА ИЗ ME В PIM (ПРЯМАЯ)")
+    print("Введите ID предмета (например: minecraft:diamond_sword):")
+    
+    local itemId = io.read()
+    if not itemId or itemId == "" then
+        print("❌ Отменено")
+        return
+    end
+    
+    print("Введите количество:")
+    local qty = tonumber(io.read()) or 1
+    
+    print("Введите damage (0 если нет):")
+    local damage = tonumber(io.read()) or 0
+    
+    local me = findME()
+    if not me then
+        print("❌ ME интерфейс не найден!")
+        return
+    end
+    
+    local pimAddr = findPIM()
+    if not pimAddr then
+        print("❌ PIM не найден!")
+        return
+    end
+    
+    -- Проверяем место в PIM
+    local freeSlots = 0
+    for slot = 1, PIM_SLOTS do
+        local stack = component.invoke(pimAddr, "getStackInSlot", slot)
+        if not stack or (stack.size or stack.qty or 0) == 0 then
+            freeSlots = freeSlots + 1
+        end
+    end
+    
+    if freeSlots == 0 then
+        print("❌ Нет свободных слотов в PIM!")
+        return
+    end
+    
+    print("📊 Свободных слотов в PIM: " .. freeSlots)
+    
+    -- Извлекаем из ME
+    local fingerprint = { id = itemId, dmg = damage }
+    local extracted = 0
+    
+    while extracted < qty do
+        if freeSlots <= 0 then
+            print("⚠️ Закончились свободные слоты!")
+            break
+        end
+        
+        local toTake = math.min(qty - extracted, 64)
+        local success, result = pcall(function()
+            return me.exportItem(fingerprint, "down", toTake)
+        end)
+        
+        if success and result then
+            if type(result) == "number" then
+                extracted = extracted + result
+                freeSlots = freeSlots - 1
+            elseif type(result) == "boolean" and result == true then
+                extracted = extracted + toTake
+                freeSlots = freeSlots - 1
+            end
+        else
+            print("⚠️ Ошибка при извлечении: " .. tostring(result))
+            break
+        end
+    end
+    
+    print("✅ Выдано в PIM: " .. extracted)
 end
 
--- Если успешно
-print("")
-print("═══════════════════════════════════════════════════════════════")
-print("  ✅ ТЕСТ ЗАВЕРШЁН УСПЕШНО!")
-print("═══════════════════════════════════════════════════════════════")
-print("")
-print("✅ РАБОТАЮЩЕЕ НАПРАВЛЕНИЕ: " .. successDirection)
-print("✅ ВЫДАНО: " .. extracted .. " шт.")
-print("")
-
--- Проверяем инвентарь PIM
-print("ПРОВЕРКА ИНВЕНТАРЯ PIM ПОСЛЕ ВЫДАЧИ:")
-local hasItemsAfter = false
-for slot = 1, 36 do
-    local stack = pim.getStackInSlot(slot)
-    if stack and stack.size and stack.size > 0 then
-        hasItemsAfter = true
-        print("  Слот " .. slot .. ": " .. stack.name .. " x" .. stack.size)
+function checkNBTItems()
+    local pimAddr = findPIM()
+    if not pimAddr then
+        print("❌ PIM не найден!")
+        return
+    end
+    
+    print("\n🔍 ПРОВЕРКА NBT-ПРЕДМЕТОВ В PIM")
+    print("═" .. string.rep("═", 50))
+    
+    local found = 0
+    for slot = 1, PIM_SLOTS do
+        local stack = component.invoke(pimAddr, "getStackInSlot", slot)
+        if stack and (stack.size or stack.qty or 0) > 0 then
+            local hasNBT = stack.nbt or stack.tag
+            if hasNBT then
+                found = found + 1
+                local name = stack.displayName or stack.label or stack.name or "?"
+                local size = stack.size or stack.qty or 0
+                local damage = stack.damage or 0
+                print(string.format("   %2d. %s x%d (damage: %d) [ЕСТЬ NBT]",
+                    slot, name, size, damage))
+            end
+        end
+    end
+    
+    if found == 0 then
+        print("✅ NBT-предметов не найдено")
+    else
+        print("\n⚠️ Найдено NBT-предметов: " .. found)
+        print("   Эти предметы могут не выдаваться через PIM напрямую!")
+        print("   Используйте функцию [5] для выдачи через сундук")
     end
 end
 
-if not hasItemsAfter then
-    print("  ⚠️ Инвентарь пуст! Предмет не появился в PIM.")
-else
-    print("  ✅ Предмет успешно появился в инвентаре PIM!")
+-- ============================================================
+-- ОСНОВНОЙ ЦИКЛ
+-- ============================================================
+
+function main()
+    gpu.setResolution(80, 25)
+    showStatus()
+    
+    print("\n🔄 Временный скрипт запущен")
+    print("   Используйте цифровые клавиши для управления")
+    
+    while true do
+        local ev = {event.pull(0.5)}
+        
+        if ev[1] == "key_down" then
+            local key = ev[3]
+            
+            -- Цифровые клавиши
+            if key == 49 then  -- 1
+                local inv = getPIMInventory()
+                printInventory("Инвентарь PIM", inv)
+                
+            elseif key == 50 then  -- 2
+                local chest, addr = findChest()
+                if chest then
+                    local inv = getChestInventory(chest)
+                    printInventory("Сундук (адрес: " .. addr .. ")", inv)
+                end
+                
+            elseif key == 51 then  -- 3
+                print("\n📦 Перемещение из сундука в PIM...")
+                local chest, addr = findChest()
+                if chest then
+                    local inv = getChestInventory(chest)
+                    local moved = 0
+                    for _, item in ipairs(inv) do
+                        local result = moveFromChestToPIM(chest, item.slot, item.size)
+                        if result > 0 then
+                            moved = moved + result
+                        end
+                    end
+                    print("✅ Перемещено в PIM: " .. moved)
+                end
+                
+            elseif key == 52 then  -- 4
+                print("\n📦 Перемещение из PIM в сундук...")
+                local inv = getPIMInventory()
+                local moved = 0
+                for _, item in ipairs(inv) do
+                    local result = moveFromPIMToChest(item.slot, item.size)
+                    if result > 0 then
+                        moved = moved + result
+                    end
+                end
+                print("✅ Перемещено в сундук: " .. moved)
+                
+            elseif key == 53 then  -- 5
+                giveFromMEtoChest()
+                
+            elseif key == 54 then  -- 6
+                giveFromMEtoPIM()
+                
+            elseif key == 55 then  -- 7
+                clearPIMToChest()
+                
+            elseif key == 56 then  -- 8
+                clearChestToME()
+                
+            elseif key == 57 then  -- 9
+                checkNBTItems()
+                
+            elseif key == 48 then  -- 0
+                showStatus()
+                
+            elseif key == 81 or key == 113 then  -- Q
+                print("\n👋 Выход...")
+                break
+            end
+            
+            showStatus()
+            
+        elseif ev[1] == "touch" then
+            -- Для удобства можно добавить обработку нажатий
+            -- Но для простоты оставляем только клавиши
+        end
+    end
 end
 
-print("")
-print("═══════════════════════════════════════════════════════════════")
-print("  КОД ДЛЯ ИСПОЛЬЗОВАНИЯ В ОСНОВНОМ СКРИПТЕ:")
-print("═══════════════════════════════════════════════════════════════")
-print("")
-if successDirection == "pushItem" then
-    print("  -- Через прямой push в PIM")
-    print("  pim.pushItem(direction, slot, count)")
-else
-    print("  -- Через ME интерфейс")
-    print("  local me = component.me_interface")
-    print("  local fingerprint = { id = '" .. internalName .. "', dmg = " .. damage .. " }")
-    print("  me.exportItem(fingerprint, " .. dirCode .. ", count)")
-    print("  -- Где " .. dirCode .. " = " .. successDirection)
+-- ============================================================
+-- ЗАПУСК
+-- ============================================================
+
+-- Запускаем с защитой от ошибок
+local ok, err = pcall(main)
+if not ok then
+    print("❌ Ошибка: " .. tostring(err))
+    print(debug.traceback())
 end
-print("")
-print("Нажмите любую клавишу для выхода...")
-event.pull("key_down")

@@ -29,7 +29,7 @@ os.exit = function(code)
 end
 
 -- ============================================================
--- ВРЕМЯ12567
+-- ВРЕМЯ125678
 -- ============================================================
 
 tmpfs = component.proxy(computer.tmpAddress())
@@ -370,6 +370,34 @@ function drawScreenBorder()
     gpu.set(left, bottom, "└")
     gpu.set(right, bottom, "┘")
 end
+
+-- ★★★ ВСТАВЬТЕ СЮДА ★★★
+function drawRedSideBorders()
+    local left = 1
+    local right = 80
+    local top = 1
+    local bottom = 24
+    local red = 0xFF0000
+    
+    gpu.setForeground(red)
+    
+    -- Левая толстая линия (2 символа шириной)
+    gpu.fill(left, top + 1, 2, bottom - top - 1, "█")
+    
+    -- Правая толстая линия (2 символа шириной)
+    gpu.fill(right - 1, top + 1, 2, bottom - top - 1, "█")
+    
+    -- Углы
+    gpu.set(left, top, "█")
+    gpu.set(left + 1, top, "█")
+    gpu.set(left, bottom, "█")
+    gpu.set(left + 1, bottom, "█")
+    gpu.set(right - 1, top, "█")
+    gpu.set(right, top, "█")
+    gpu.set(right - 1, bottom, "█")
+    gpu.set(right, bottom, "█")
+end
+-- ★★★ ДО СЮДА ★★★
 
 function drawTempMessage()
     if tempMessage ~= "" and tempMessage then
@@ -1730,6 +1758,7 @@ function drawBuyStatic()
     writeDebugLog("drawBuyStatic()")
     clear()
     drawScreenBorder()
+    drawRedSideBorders()
     drawBalanceLine(3, 1)
 
     if currentShopMode == "buy" then
@@ -2048,6 +2077,7 @@ function drawWelcomeScreen()
     
     gpu.setBackground(colors.bg_main)
     gpu.fill(1, 1, 80, 25, " ")
+    drawRedSideBorders() 
     
     local border_color = 0x4477BB
     local text_color = 0x00FFCC
@@ -2128,6 +2158,7 @@ end
 
 function drawMainMenu()
     writeDebugLog("drawMainMenu()")
+    drawRedSideBorders()
     clear()
     drawScreenBorder()
     if currentPlayer then
@@ -2231,6 +2262,7 @@ function drawShopMenu()
     writeDebugLog("drawShopMenu()")
     clear()
     drawScreenBorder()
+    drawRedSideBorders()
     drawCenteredText(6, "МАГАЗИН", colors.accent_secondary)
     if not playerAgreed then
         drawCenteredText(9, "Доступ запрещён.", colors.error)
@@ -2266,6 +2298,7 @@ function drawAccount(data)
     writeDebugLog("drawAccount()")
     clear()
     drawScreenBorder()
+    drawRedSideBorders()
     drawCenteredText(10, (currentPlayer or "Игрок") .. ":", colors.text_bright)
     
     local coin = (data and data.balance) or coinBalance or 0.0

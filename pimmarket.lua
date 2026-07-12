@@ -29,7 +29,7 @@ os.exit = function(code)
 end
 
 -- ============================================================
--- ВРЕМЯ12345678
+-- ВРЕМЯ123456789
 -- ============================================================
 
 tmpfs = component.proxy(computer.tmpAddress())
@@ -87,6 +87,7 @@ function unlockTransactions()
 end
 
 function safeExit()
+    writeErrorLog("🔴 Терминал #1 (PIM MARKET) остановлен")
     writeDebugLog("🚪 Безопасный выход")
     currentPlayer = nil
     currentToken = nil
@@ -170,12 +171,15 @@ function toJson(val)
 end
 
 function sendToWeb(endpoint, jsonData)
-    pcall(function()
+    local success = pcall(function()
         internet.request(WEB_URL .. endpoint, jsonData, {
             ["Content-Type"] = "application/json",
             ["Connection"] = "close"
         })
     end)
+    if not success then
+        writeErrorLog("❌ Ошибка отправки на сервер: " .. endpoint)
+    end
 end
 
 -- ============================================================
@@ -1703,9 +1707,9 @@ function loadBuyItems(forceRefresh)
         writeDebugLog("loadBuyItems: использован кеш (" .. #shopItems .. " товаров)")
         return
     end
-    
+
     if not component.isAvailable("me_interface") then 
-        writeErrorLog("❌ ME интерфейс недоступен!")
+        writeErrorLog("❌ ❌ ME интерфейс недоступен для загрузки товаров")
         return 
     end
     local me = component.me_interface
@@ -4577,6 +4581,30 @@ function checkWebCommands()
                 goto continue
             end
             
+            -- ★★★ ДОБАВЬ ЭТОТ БЛОК ★★★
+            if cmd.command == "terminal_control" then
+                local action = d.action
+                writeDebugLog("📥 Получена команда управления терминалом: " .. action)
+                
+                if action == "shutdown" then
+                    writeErrorLog("⏻ Терминал #1 выключается по команде с сайта")
+                    sendResult(true, "Терминал выключается...")
+                    os.sleep(0.5)
+                    os.exit(0)
+                elseif action == "reboot" then
+                    writeErrorLog("🔄 Терминал #1 перезагружается по команде с сайта")
+                    sendResult(true, "Терминал перезагружается...")
+                    os.sleep(0.5)
+                    computer.reboot()
+                elseif action == "refresh" then
+                    sendStats()
+                    sendResult(true, "Данные обновлены")
+                else
+                    sendResult(false, "Неизвестное действие: " .. tostring(action))
+                end
+                goto continue
+            end
+            
             -- ★★★ КОМАНДА ОТВЯЗКИ (ПРАВИЛЬНОЕ МЕСТО - ПОСЛЕ toggle_ban) ★★★
             if cmd.command == "unbind_player" then
                 local playerName = d.player
@@ -4761,6 +4789,8 @@ MOUSE_DEBOUNCE = 0.05
 function main()
     writeDebugLog("🚀 main() запущен")
     drawWelcomeScreen()
+    
+    writeErrorLog("🟢 Терминал #1 (PIM MARKET) запущен")
 
     while true do
         local ev = {event.pull(0.5)}

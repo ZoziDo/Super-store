@@ -12,6 +12,69 @@ local math = require("math")
 local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
+-- ============================================================
+-- ★★★ АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА ★★★
+-- ============================================================
+
+local function setupAutoStart()
+    local fs = require("filesystem")
+    local io = require("io")
+    local os = require("os")
+    
+    -- 1. Создаём startup.lua
+    local startupFile = "/home/startup.lua"
+    if not fs.exists(startupFile) then
+        writeErrorLog("📝 Создаём автозапуск: " .. startupFile)
+        local file = io.open(startupFile, "w")
+        if file then
+            file:write([[
+-- Автозапуск PIM MARKET
+local shell = require("shell")
+local computer = require("computer")
+
+-- Ждём загрузки всех компонентов
+os.sleep(3)
+
+-- Запускаем магазин в фоновом режиме
+shell.execute("lua /home/pimmarket.lua &")
+
+print("✅ PIM MARKET запущен")
+]])
+            file:close()
+            writeErrorLog("✅ Автозапуск создан")
+            return true
+        end
+    end
+    
+    -- 2. Создаём .shrc как запасной вариант
+    local shrcFile = "/home/.shrc"
+    if not fs.exists(shrcFile) then
+        local file = io.open(shrcFile, "w")
+        if file then
+            file:write("-- Автозапуск PIM MARKET\n")
+            file:write("lua /home/pimmarket.lua &\n")
+            file:close()
+            writeErrorLog("✅ .shrc создан")
+        end
+    end
+    
+    return true
+end
+
+-- Запускаем настройку (только если это первый запуск)
+if not fs.exists("/home/.autostart_done") then
+    local success = setupAutoStart()
+    if success then
+        -- Создаём маркер, чтобы не создавать повторно
+        local file = io.open("/home/.autostart_done", "w")
+        if file then
+            file:write("autostart_configured_" .. os.date("%Y-%m-%d %H:%M:%S"))
+            file:close()
+        end
+        writeErrorLog("🎯 Автозагрузка настроена!")
+    end
+end
+
 pcall(function()
     event.ignore("interrupted", function() end)
     event.ignore("terminate", function() end)

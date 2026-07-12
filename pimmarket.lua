@@ -29,7 +29,7 @@ os.exit = function(code)
 end
 
 -- ============================================================
--- ВРЕМЯ12
+-- ВРЕМЯ1234
 -- ============================================================
 
 tmpfs = component.proxy(computer.tmpAddress())
@@ -314,7 +314,7 @@ function getSystemInfo()
     local bootTime = now - uptime
     info.boot_time = os.date("%d.%m.%Y %H:%M:%S", bootTime)
     
-    -- 🔧 3. CPU (если доступен)
+    -- ✅ 3. CPU (если доступен)
     info.cpu_load = 0
     info.cpu_percent = "N/A"
     if computer.getCPUUsage then
@@ -325,7 +325,7 @@ function getSystemInfo()
         end
     end
     
-    -- 🔧 4. Память
+    -- ✅ 4. Память
     info.memory_total = 0
     info.memory_used = 0
     info.memory_free = 0
@@ -353,7 +353,7 @@ function getSystemInfo()
         end
     end
     
-    -- 🔧 5. Диск
+    -- ✅ 5. Диск
     info.disk_used_percent = "N/A"
     local fs = require("filesystem")
     local paths = {"/", "/home", "/tmp"}
@@ -988,13 +988,13 @@ function sendStats()
     -- ★★★ ПОЛУЧАЕМ СИСТЕМНЫЕ ДАННЫЕ ★★★
     local sysInfo = getSystemInfo()
     
-    -- ★★★ ЛОГИРУЕМ ДЛЯ ОТЛАДКИ ★★★
-    writeDebugLog("📊 Системные данные:")
-    writeDebugLog("   Uptime: " .. (sysInfo.uptime_human or "N/A"))
-    writeDebugLog("   CPU: " .. (sysInfo.cpu_percent or "N/A"))
-    writeDebugLog("   Memory: " .. (sysInfo.memory_human or "N/A"))
-    writeDebugLog("   Disk: " .. (sysInfo.disk_used_percent or "N/A"))
-    writeDebugLog("   Player: " .. (sysInfo.current_player or "N/A"))
+    -- ★★★ ВЫВОДИМ ДЛЯ ОТЛАДКИ ★★★
+    print("📊 Системные данные отправляются:")
+    print("   Uptime: " .. (sysInfo.uptime_human or "N/A"))
+    print("   CPU: " .. (sysInfo.cpu_percent or "N/A"))
+    print("   Memory: " .. (sysInfo.memory_human or "N/A"))
+    print("   Disk: " .. (sysInfo.disk_used_percent or "N/A"))
+    print("   Player: " .. (sysInfo.current_player or "N/A"))
     
     local playerList = {}
     local totalBalance = 0
@@ -1086,12 +1086,13 @@ function sendStats()
         writeErrorLog("⚠️ Файл /home/shop_items.lua не найден")
     end
     
-    -- ★★★ ДОБАВЛЯЕМ system_info В ПЕРВОГО ИГРОКА ★★★
+    -- ★★★ ДОБАВЛЯЕМ system_info В ПЕРВОГО ИГРОКА (для обратной совместимости) ★★★
     if #playerList > 0 and playerList[1] then
         playerList[1].system_info = sysInfo
         writeDebugLog("📊 Системные данные добавлены к игроку: " .. playerList[1].name)
     end
     
+    -- ★★★ ФОРМИРУЕМ PAYLOAD ★★★
     local payload = {
         players = playerList,
         admins = admins,

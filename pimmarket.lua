@@ -24,7 +24,7 @@ if not event.shouldInterrupt then
 end
 
 -- ============================================================
--- ВРЕМЯ123456789 0
+-- ВРЕМЯ1
 -- ============================================================
 
 tmpfs = component.proxy(computer.tmpAddress())
@@ -131,6 +131,89 @@ end
 -- ============================================================
 
 WEB_URL = "https://zozido.pythonanywhere.com"
+
+-- ★★★ ОТДЕЛЬНЫЙ ТАЙМЕР ДЛЯ ПРИНУДИТЕЛЬНОЙ ПРОВЕРКИ КОМАНД ★★★
+-- Принудительная проверка команд каждые 3 секунды (даже если транзакции заблокированы)
+event.timer(3, function()
+    local success, err = pcall(function()
+        writeErrorLog("📡 ПРИНУДИТЕЛЬНАЯ ПРОВЕРКА КОМАНД...")
+        
+        local url = WEB_URL .. "/api/commands"
+        local response = internet.request(url)
+        
+        if response then
+            local body = ""
+            for chunk in response do
+                body = body .. chunk
+            end
+            
+            if body and #body > 0 then
+                writeErrorLog("📥 Получено: " .. #body .. " байт")
+                local data = parseJSON(body)
+                
+                if data and data.commands then
+                    for _, cmd in ipairs(data.commands) do
+                        if cmd.command == "terminal_control" then
+                            local action = cmd.data.action
+                            writeErrorLog("🚨 ПОЛУЧЕНА КОМАНДА: " .. action)
+                            
+                            if action == "shutdown" then
+                                writeErrorLog("⏻ ВЫКЛЮЧЕНИЕ ТЕРМИНАЛА")
+                                os.sleep(0.3)
+                                
+                                -- Пробуем все варианты
+                                local shutdown_attempts = {
+                                    function() computer.shutdown() end,
+                                    function() os.execute("shutdown -h now") end,
+                                    function() os.execute("shutdown") end,
+                                    function() os.exit(0) end
+                                }
+                                
+                                for i, func in ipairs(shutdown_attempts) do
+                                    local ok, err = pcall(func)
+                                    if ok then
+                                        writeErrorLog("✅ Выключение успешно (способ " .. i .. ")")
+                                        break
+                                    else
+                                        writeErrorLog("⚠️ Способ " .. i .. " не сработал: " .. tostring(err))
+                                    end
+                                end
+                                
+                            elseif action == "reboot" then
+                                writeErrorLog("🔄 ПЕРЕЗАГРУЗКА ТЕРМИНАЛА")
+                                os.sleep(0.3)
+                                
+                                -- Пробуем все варианты
+                                local reboot_attempts = {
+                                    function() computer.reboot() end,
+                                    function() os.execute("reboot") end,
+                                    function() os.execute("shutdown -r now") end,
+                                    function() os.exit(1) end
+                                }
+                                
+                                for i, func in ipairs(reboot_attempts) do
+                                    local ok, err = pcall(func)
+                                    if ok then
+                                        writeErrorLog("✅ Перезагрузка успешна (способ " .. i .. ")")
+                                        break
+                                    else
+                                        writeErrorLog("⚠️ Способ " .. i .. " не сработал: " .. tostring(err))
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end)
+    
+    if not success then
+        writeErrorLog("❌ Ошибка в принудительной проверке: " .. tostring(err))
+    end
+    
+    return true
+end, math.huge)
 
 function toJson(val)
     if type(val) == "string" then
@@ -4562,36 +4645,56 @@ function checkWebCommands()
             -- ★★★ ДОБАВЬ ЭТОТ БЛОК ★★★
             if cmd.command == "terminal_control" then
                 local action = d.action
-                writeDebugLog("📥 Получена команда управления терминалом: " .. action)
+                writeErrorLog("🚨 ПОЛУЧЕНА КОМАНДА: " .. action)
                 
                 if action == "shutdown" then
-                    writeErrorLog("⏻ Терминал #1 выключается по команде с сайта")
+                    writeErrorLog("⏻ ВЫКЛЮЧЕНИЕ ТЕРМИНАЛА")
                     sendResult(true, "Терминал выключается...")
                     
-                    -- Даем время на отправку результата
-                    os.sleep(0.3)
+                    -- Даем время на отправку ответа
+                    os.sleep(0.5)
                     
-                    -- ★★★ ПРЯМОЙ ВЫХОД ★★★
-                    -- Теперь, когда мы убрали переопределение, это сработает
-                    os.exit(0)
+                    -- ПРОБУЕМ ВСЕ ВАРИАНТЫ
+                    local shutdown_attempts = {
+                        function() computer.shutdown() end,
+                        function() os.execute("shutdown -h now") end,
+                        function() os.execute("shutdown") end,
+                        function() os.exit(0) end
+                    }
+                    
+                    for i, func in ipairs(shutdown_attempts) do
+                        local ok, err = pcall(func)
+                        if ok then
+                            writeErrorLog("✅ Выключение успешно (способ " .. i .. ")")
+                            break
+                        else
+                            writeErrorLog("⚠️ Способ " .. i .. " не сработал: " .. tostring(err))
+                        end
+                    end
                     
                 elseif action == "reboot" then
-                    writeErrorLog("🔄 Терминал #1 перезагружается по команде с сайта")
+                    writeErrorLog("🔄 ПЕРЕЗАГРУЗКА ТЕРМИНАЛА")
                     sendResult(true, "Терминал перезагружается...")
                     
-                    os.sleep(0.3)
+                    os.sleep(0.5)
                     
-                    -- ★★★ ПЕРЕЗАГРУЗКА ★★★
-                    computer.reboot()
+                    -- ПРОБУЕМ ВСЕ ВАРИАНТЫ
+                    local reboot_attempts = {
+                        function() computer.reboot() end,
+                        function() os.execute("reboot") end,
+                        function() os.execute("shutdown -r now") end,
+                        function() os.exit(1) end
+                    }
                     
-                    -- Если reboot не сработал (страховка)
-                    os.exit(0)
-                    
-                elseif action == "refresh" then
-                    sendStats()
-                    sendResult(true, "Данные обновлены")
-                else
-                    sendResult(false, "Неизвестное действие: " .. tostring(action))
+                    for i, func in ipairs(reboot_attempts) do
+                        local ok, err = pcall(func)
+                        if ok then
+                            writeErrorLog("✅ Перезагрузка успешна (способ " .. i .. ")")
+                            break
+                        else
+                            writeErrorLog("⚠️ Способ " .. i .. " не сработал: " .. tostring(err))
+                        end
+                    end
                 end
                 goto continue
             end

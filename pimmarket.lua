@@ -29,7 +29,7 @@ os.exit = function(code)
 end
 
 -- ============================================================
--- ВРЕМЯ1567
+-- ВРЕМЯ15678
 -- ============================================================
 
 tmpfs = component.proxy(computer.tmpAddress())
@@ -3259,7 +3259,7 @@ function showAuthPopup()
         -- ★★★ НОВАЯ КНОПКА QR CODE ★★★
         local qrBtn = {
             text = "[ QR CODE ]",
-            x = popupX + 20,
+            x = popupX + 22,
             y = popupY + popupHeight - 3,
             xs = 10,
             ys = 1,
@@ -3543,13 +3543,6 @@ function unbindAccount()
     end
 end
 
--- ============================================================
--- ★★★ QR-КОД ДЛЯ АУТЕНТИФИКАЦИИ ★★★
--- ============================================================
-
--- ============================================================
--- ★★★ QR-КОД ДЛЯ АУТЕНТИФИКАЦИИ (С БОЛЬШИМ ЭКРАНОМ) ★★★
--- ============================================================
 
 -- ============================================================
 -- ★★★ QR-КОД ДЛЯ АУТЕНТИФИКАЦИИ (С БОЛЬШИМ ЭКРАНОМ) ★★★
@@ -3580,20 +3573,25 @@ function showQRCodePopup()
     gpu.set(1, 50, "+")
     gpu.set(160, 50, "+")
     
-    -- Заголовок
+    -- ★★★ ЗАГОЛОВОК (по центру) ★★★
+    local titleText = "📱 QR-КОД ДЛЯ ВХОДА"
+    local titleX = math.floor((160 - #titleText) / 2) + 1
     gpu.setForeground(0x00FFCC)
-    gpu.set(68, 2, "📱 QR-КОД ДЛЯ ВХОДА")
+    gpu.set(titleX, 2, titleText)
     
-    -- Игрок
+    -- ★★★ ИГРОК (по центру) ★★★
+    local playerText = "Игрок: " .. (currentPlayer or "?")
+    local playerX = math.floor((160 - #playerText) / 2) + 1
     gpu.setForeground(colors.white)
-    gpu.set(50, 4, "Игрок: ")
-    gpu.setForeground(colors.accent_main)
-    gpu.set(60, 4, currentPlayer or "?")
+    gpu.set(playerX, 4, playerText)
     
+    -- ★★★ ПОДСКАЗКА (по центру) ★★★
+    local hintText = "Отсканируйте QR-код для входа на сайт"
+    local hintX = math.floor((160 - #hintText) / 2) + 1
     gpu.setForeground(colors.inactive)
-    gpu.set(48, 5, "Отсканируйте QR-код для входа на сайт")
+    gpu.set(hintX, 5, hintText)
     
-    -- ★★★ QR-КОД 37x37 (БЕЗ ИНВЕРСИИ — ЧЁРНЫЙ НА БЕЛОМ ФОНЕ) ★★★
+    -- ★★★ QR-КОД 37x37 (по центру) ★★★
     local qrY = 7
     local qrX = math.floor((160 - 37) / 2) + 1  -- Центр: 61
     
@@ -3637,7 +3635,7 @@ function showQRCodePopup()
 █████████████████████████████████████████████████████████████████████
 ]]
     
-    -- Разбиваем на строки и выводим БЕЗ ИНВЕРСИИ
+    -- Разбиваем на строки и выводим БЕЗ ИНВЕРСИИ (чёрный на белом)
     local lines = {}
     for line in asciiQR:gmatch("[^\n]+") do
         table.insert(lines, line)
@@ -3647,19 +3645,22 @@ function showQRCodePopup()
         gpu.set(qrX, qrY + i - 1, line)
     end
     
-    -- Ссылка
-    gpu.setForeground(colors.inactive)
+    -- ★★★ ССЫЛКА (по центру) ★★★
     local linkText = "Ссылка: https://zozido.pythonanywhere.com/"
-    gpu.set(50, qrY + 39, linkText)
+    local linkX = math.floor((160 - #linkText) / 2) + 1
+    gpu.setForeground(colors.inactive)
+    gpu.set(linkX, qrY + 39, linkText)
     
-    -- Подсказка
+    -- ★★★ ПОДСКАЗКА ВНИЗУ (по центру) ★★★
+    local bottomHint = "[ Нажмите ЗАКРЫТЬ или ESC для возврата ]"
+    local bottomHintX = math.floor((160 - #bottomHint) / 2) + 1
     gpu.setForeground(colors.text_main)
-    gpu.set(55, 48, "[ Нажмите ЗАКРЫТЬ или ESC для возврата ]")
+    gpu.set(bottomHintX, 48, bottomHint)
     
-    -- Кнопка ЗАКРЫТЬ
+    -- ★★★ КНОПКА ЗАКРЫТЬ (по центру) ★★★
     local closeBtn = {
         text = "[ ЗАКРЫТЬ ]",
-        x = 70,
+        x = math.floor((160 - 12) / 2) + 1,  -- Центр: 74
         y = 49,
         xs = 12,
         ys = 1,
@@ -3668,7 +3669,7 @@ function showQRCodePopup()
     }
     drawFlexButton(closeBtn)
     
-    -- Обработка
+    -- Обработка нажатий
     while currentScreen == "qr_popup" do
         local ev = {event.pull(0.5)}
         
@@ -3681,7 +3682,7 @@ function showQRCodePopup()
             
         elseif ev[1] == "key_down" then
             local code = ev[3]
-            if code == 27 then
+            if code == 27 then -- ESC
                 break
             end
         end

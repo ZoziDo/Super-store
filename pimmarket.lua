@@ -2119,8 +2119,8 @@ function drawWelcomeScreen()
     gpu.set(1, 1, "+" .. string.rep("=", 78) .. "+")
     gpu.set(1, 25, "+" .. string.rep("=", 78) .. "+")
     for y = 2, 24 do
-        gpu.set(1, y, "╹")
-        gpu.set(80, y, "╹")
+        gpu.set(1, y, "|")
+        gpu.set(80, y, "|")
     end
     
     local diamond = {
@@ -3133,8 +3133,8 @@ function showAuthPopup()
     gpu.fill(popupX, popupY, popupWidth, 1, "=")
     gpu.fill(popupX, popupY + popupHeight - 1, popupWidth, 1, "=")
     for i = 1, popupHeight - 2 do
-        gpu.set(popupX, popupY + i, "╹")
-        gpu.set(popupX + popupWidth - 1, popupY + i, "╹")
+        gpu.set(popupX, popupY + i, "|")
+        gpu.set(popupX + popupWidth - 1, popupY + i, "|")
     end
     gpu.set(popupX, popupY, "+")
     gpu.set(popupX + popupWidth - 1, popupY, "+")
@@ -3297,7 +3297,7 @@ function showAuthPopup()
                         verifyAuthCode(authCodeInput)
                     else
                         gpu.setForeground(colors.error)
-                        gpu.set(popupX + 3, popupY + 13, "⚠️ Введите 6-значный код!")
+                        gpu.set(popupX + 3, popupY + 13, " Введите 6-значный код!")
                         os.sleep(1.5)
                         showAuthPopup()
                     end
@@ -3319,7 +3319,7 @@ function showAuthPopup()
                         verifyAuthCode(authCodeInput)
                     else
                         gpu.setForeground(colors.error)
-                        gpu.set(popupX + 3, popupY + 13, "⚠️ Введите 6-значный код!")
+                        gpu.set(popupX + 3, popupY + 13, " Введите 6-значный код!")
                         os.sleep(1.5)
                         showAuthPopup()
                     end
@@ -3587,13 +3587,13 @@ function showQRCodePopup()
     
     -- Подсказка (центр: 80)
     local hintText = "Отсканируйте QR-код для входа на сайт"
-    local hintX = 80 - math.floor(#hintText / 2) + 5
+    local hintX = 80 - math.floor(#hintText / 2) + 11
     gpu.setForeground(colors.inactive)
     gpu.set(hintX, 5, hintText)
     
     -- QR-КОД 37x37 (центр: (160-37)/2 = 61)
     local qrY = 7
-    local qrX = 55  -- ровно по центру
+    local qrX = 44  -- ровно по центру
     
     local asciiQR = [[
 █████████████████████████████████████████████████████████████████████
@@ -3647,13 +3647,13 @@ function showQRCodePopup()
     
     -- Ссылка (центр: 80)
     local linkText = "Ссылка: https://zozido.pythonanywhere.com/"
-    local linkX = 80 - math.floor(#linkText / 2)
+    local linkX = 80 - math.floor(#linkText / 2) + 1
     gpu.setForeground(colors.inactive)
     gpu.set(linkX, qrY + 39, linkText)
     
     -- Подсказка внизу (центр: 80)
     local bottomHint = "[ Нажмите ЗАКРЫТЬ или ESC для возврата ]"
-    local bottomHintX = 80 - math.floor(#bottomHint / 2) + 5
+    local bottomHintX = 80 - math.floor(#bottomHint / 2) + 12
     gpu.setForeground(colors.text_main)
     gpu.set(bottomHintX, 48, bottomHint)
     
@@ -5301,17 +5301,7 @@ function main()
             
             if shopPaused then
                 writeDebugLog("Режим обслуживания активен, вход запрещён для: " .. playerName)
-                gpu.setBackground(colors.bg_main)
-                gpu.fill(1, 1, 80, 25, " ")
-                drawBigTitle()
-                gpu.setForeground(colors.error)
-                drawCenteredText(17, "РЕЖИМ ОБСЛУЖИВАНИЯ", colors.error)
-                drawCenteredText(18, "Магазин временно закрыт", colors.error)
-                drawCenteredText(19, "Пожалуйста, зайдите позже", colors.text_main)
-                gpu.setForeground(colors.text_main)
-                drawCenteredText(22, "--===============|VIP SHOP|===============--", colors.text_main)
-                drawTempMessage()
-                
+                drawWelcomeScreen()  -- ← просто вызываем нормальную функцию
                 while shopPaused do
                     local ev2 = {event.pull(1)}
                     if ev2[1] == "player_off" or ev2[1] == "pim_player_leave" then
@@ -5322,7 +5312,7 @@ function main()
                 end
                 goto continue
             end
-            
+                        
             if not pimOwner then
                 pimOwner = playerName
             end

@@ -3166,7 +3166,7 @@ function showAuthPopup()
         gpu.set(popupX + 3, popupY + 7, "   Для отвязки нажмите кнопку ниже")
         
         -- Кнопка ОТВЯЗАТЬ
-          local unbindBtn = {
+        local unbindBtn = {
             text = "[ ОТВЯЗАТЬ ]",
             x = popupX + 5,
             y = popupY + popupHeight - 3,
@@ -3180,7 +3180,7 @@ function showAuthPopup()
         -- Кнопка ЗАКРЫТЬ (справа)
         local closeBtn = {
             text = "[ ЗАКРЫТЬ ]",
-            x = popupX + popupWidth - 13,
+            x = popupX + popupWidth - 12,
             y = popupY + popupHeight - 3,
             xs = 10,
             ys = 1,
@@ -3190,32 +3190,30 @@ function showAuthPopup()
         drawFlexButton(closeBtn)
         
         -- Обработка нажатий
-      while currentScreen == "auth_popup" do
-        local ev = {event.pull(0.5)}
-        
-        -- ★★★ ОБРАБОТКА ВЫХОДА С PIM ★★★
-        if ev[1] == "player_off" or ev[1] == "pim_player_leave" then
-            writeDebugLog("👤 Игрок ушёл с PIM во время аутентификации")
-            currentScreen = "welcome"  -- ← было "menu", стало "welcome"
-            drawWelcomeScreen()        -- ← было drawMainMenu(), стало drawWelcomeScreen()
-            break
-        end
-        
-        if ev[1] == "touch" then
-            local x, y = ev[3], ev[4]
+        while currentScreen == "auth_popup" do
+            local ev = {event.pull(0.5)}
             
-            if isButtonClicked(closeBtn, x, y) then
-                goBackToMenu()
+            if ev[1] == "player_off" or ev[1] == "pim_player_leave" then
+                writeDebugLog("👤 Игрок ушёл с PIM во время аутентификации")
+                currentScreen = "welcome"
+                drawWelcomeScreen()
                 break
             end
             
-            if isButtonClicked(unbindBtn, x, y) then
-                showUnbindConfirmPopup()
-                break
+            if ev[1] == "touch" then
+                local x, y = ev[3], ev[4]
+                
+                if isButtonClicked(closeBtn, x, y) then
+                    goBackToMenu()
+                    break
+                end
+                
+                if isButtonClicked(unbindBtn, x, y) then
+                    showUnbindConfirmPopup()
+                    break
+                end
             end
         end
-    end
-
         
     else
         -- ★★★ ЕСЛИ НЕ ПРИВЯЗАН ★★★
@@ -3239,7 +3237,7 @@ function showAuthPopup()
         gpu.set(codeX, popupY + 9, displayCode)
         gpu.setBackground(0x0A0A1A)
         
-        -- Кнопки
+        -- ★★★ КНОПКИ ★★★
         local closeBtn = {
             text = "[ ЗАКРЫТЬ ]",
             x = popupX + popupWidth - 12,
@@ -3258,13 +3256,31 @@ function showAuthPopup()
             bg = colors.bg_button,
             fg = colors.success
         }
+        -- ★★★ НОВАЯ КНОПКА QR CODE ★★★
+        local qrBtn = {
+            text = "[ QR CODE ]",
+            x = popupX + 20,
+            y = popupY + popupHeight - 3,
+            xs = 10,
+            ys = 1,
+            bg = colors.bg_button,
+            fg = 0x00FFCC
+        }
         drawFlexButton(closeBtn)
         drawFlexButton(confirmBtn)
+        drawFlexButton(qrBtn)
         
         -- Обработка ввода
         local isEditing = true
         while currentScreen == "auth_popup" and isEditing do
             local ev = {event.pull(0.5)}
+            
+            if ev[1] == "player_off" or ev[1] == "pim_player_leave" then
+                writeDebugLog("👤 Игрок ушёл с PIM во время аутентификации")
+                currentScreen = "welcome"
+                drawWelcomeScreen()
+                break
+            end
             
             if ev[1] == "touch" then
                 local x, y = ev[3], ev[4]
@@ -3280,12 +3296,17 @@ function showAuthPopup()
                         isEditing = false
                         verifyAuthCode(authCodeInput)
                     else
-                        -- Показываем сообщение внутри попапа
                         gpu.setForeground(colors.error)
                         gpu.set(popupX + 3, popupY + 13, "⚠️ Введите 6-значный код!")
                         os.sleep(1.5)
                         showAuthPopup()
                     end
+                    break
+                end
+                
+                -- ★★★ ОБРАБОТКА КНОПКИ QR CODE ★★★
+                if isButtonClicked(qrBtn, x, y) then
+                    showQRCodePopup()
                     break
                 end
                 
@@ -3519,6 +3540,151 @@ function unbindAccount()
         gpu.set(20, 17, "❌ Ошибка соединения")
         os.sleep(2)
         showAuthPopup()
+    end
+end
+
+-- ============================================================
+-- ★★★ QR-КОД ДЛЯ АУТЕНТИФИКАЦИИ ★★★
+-- ============================================================
+
+function showQRCodePopup()
+    writeDebugLog("showQRCodePopup()")
+    currentScreen = "qr_popup"
+    
+    -- Сохраняем фон
+    local savedScreen = currentScreen
+    local savedContent = {}
+    for y = 1, 25 do
+        savedContent[y] = {}
+        for x = 1, 80 do
+            savedContent[y][x] = gpu.get(x, y)
+        end
+    end
+    
+    -- Рисуем попап
+    local popupWidth = 54
+    local popupHeight = 21
+    local popupX = math.floor((80 - popupWidth) / 2) + 1
+    local popupY = math.floor((25 - popupHeight) / 2)
+    
+    -- Затемняем фон
+    gpu.setBackground(0x000000)
+    gpu.fill(1, 1, 80, 25, " ")
+    gpu.setBackground(0x0A0A1A)
+    gpu.fill(popupX, popupY, popupWidth, popupHeight, " ")
+    
+    -- Рамка
+    gpu.setForeground(0x00FFCC)
+    gpu.fill(popupX, popupY, popupWidth, 1, "=")
+    gpu.fill(popupX, popupY + popupHeight - 1, popupWidth, 1, "=")
+    for i = 1, popupHeight - 2 do
+        gpu.set(popupX, popupY + i, "╹")
+        gpu.set(popupX + popupWidth - 1, popupY + i, "╹")
+    end
+    gpu.set(popupX, popupY, "+")
+    gpu.set(popupX + popupWidth - 1, popupY, "+")
+    gpu.set(popupX, popupY + popupHeight - 1, "+")
+    gpu.set(popupX + popupWidth - 1, popupY + popupHeight - 1, "+")
+    
+    -- Заголовок
+    gpu.setForeground(0x00FFCC)
+    gpu.set(popupX + math.floor((popupWidth - 20) / 2) + 1, popupY + 1, "📱 QR-КОД ДЛЯ ВХОДА")
+    
+    -- Информация об игроке
+    gpu.setForeground(colors.white)
+    gpu.set(popupX + 3, popupY + 3, "👤 Игрок: ")
+    gpu.setForeground(colors.accent_main)
+    gpu.set(popupX + 15, popupY + 3, currentPlayer or "Неизвестно")
+    
+    gpu.setForeground(colors.inactive)
+    gpu.set(popupX + 3, popupY + 4, "Отсканируйте QR-код для входа на сайт")
+    
+    -- QR-код (ASCII)
+    local qrY = popupY + 5
+    local qrX = popupX + 3
+    
+    local asciiQR = [[
+█████████████████████████████████████████████████████████████████████
+█████████████████████████████████████████████████████████████████████
+██████░░░░░░░░░░███████░██░░██████░██████░░░░██░░░███░░░░░░░░░░██████
+████░░█████████░░████████░████░░██░░░██░░░░██░░░████░░█████████░░████
+████░░██░░░░░██░░██████░░░████████░████░░░░████░████░░██░░░░░██░░████
+████░░██░░░░░██░░████░░███░░██░░░░███████░░██░░░████░░██░░░░░██░░████
+████░░██░░░░░██░░████░░░████████████░░░██░░██░░░████░░██░░░░░██░░████
+████░░█████████░░███████░░░░░░░░░░░██░░░░██░░███░░██░░█████████░░████
+█████░░░░░░░░░░░███░░██░██░░██░░██░██░░██░░██░██░░███░░░░░░░░░░░█████
+███████████████████████░██░░░░░░░░░░░██░░░░███░░█████████████████████
+████████░░░░███░░████░░░░░░░██░░███░░████░░░░███░░░░░░██░████████████
+████████░░░░░░░██████░░░░░██░░░░░░█░░░░██████░░░██░░░░███████░░░░████
+██████░░░░██░██░░░░█████░░░░████░░░██░░░░░░░░░░░░░██░░███████░░░░████
+████████████░████████░░░█████████████████████░██████░░░░░░░██████████
+████░░██████░░░░░░░██░░██████████████████████░░░░░░░██░░█████████████
+████████░░██░██████░░██████░░░██████████████████░░████░░░██░░████████
+██████░░░░░░░██░░██░░██░█████░░░░░░░░░░░██████████░░░░█████░░████████
+████░░████░░█████████░░░██████░░░░░░░░░██████░████░░████░░░████░░████
+██████████░░█░░░░░░████████████░░░░░░░████████░░░░██░░░░░░░██████████
+█████████████░░██░░░░░░███████░░█████████████░░░████░░░░░██░░░░██████
+████░░██░░██░░░░░░░██░░░████████████████████████████████░██░░████████
+████░░░░█████████░░██░░░██████░░█████░░██████░████░░░░░░░████░░██████
+████░░░░████░░░░░██░░░░██████████████████████░████░░█████░░░░████████
+████░░██░░███░░██████░░░██████████████████████████░░███████░░██░░████
+████████████░░░░░██████░████░░░░░░░░░░░████░░░██████░░░░█░░░░░░░░████
+██████░░███████████░░░░░██░░░░████░████░░████░░░░░░░██░░█████░░░░████
+████░░██████░░░░░░░░░███░░██░░█████░░██░░░░░░░░░░░░░░░░░░████░░░░████
+███████████████████░░█████░░██░░░░░░░░░░░░░██░██░░██████░██░░░░██████
+█████░░░░░░░░░░░███░░░░░██░░░░██░░░░░░░██████░░░░░██░░██░░░░░████████
+████░░█████████░░████░░░░░░░░░████░████████░░░██░░██████░██░░░░░░████
+████░░██░░░░░██░░█████████░░██████░██░░░░░░████░░░░░░░░░░░░░░░░██████
+████░░██░░░░░██░░██░░███░░██░░░░░░█░░████░░░░███░░████░░█████████████
+████░░██░░░░░██░░██░░███████████░░░██░░██░░██░░░░░░░░░░░░░░░░░░░░████
+████░░█████████░░██████░░░██░░███████░░████░░█░░░░░░░░░░░░░░░░░░░████
+██████░░░░░░░░░░████████░░████████░██░░███████░░░░░░░░░░░░░░░░░░░████
+█████████████████████████████████████████████████████████████████████
+█████████████████████████████████████████████████████████████████████
+]]
+    
+    -- Разбиваем QR-код на строки
+    local lines = {}
+    for line in asciiQR:gmatch("[^\n]+") do
+        -- Инвертируем (белый на чёрном)
+        local inverted = line:gsub("░", "█"):gsub("█", "░")
+        table.insert(lines, inverted)
+    end
+    
+    -- Выводим QR-код (белый на чёрном)
+    for i, line in ipairs(lines) do
+        gpu.set(qrX, qrY + i - 1, line)
+    end
+    
+    -- Ссылка под кодом
+    gpu.setForeground(colors.inactive)
+    local linkText = "Ссылка: https://zozido.pythonanywhere.com/"
+    gpu.set(popupX + 3, popupY + popupHeight - 3, linkText)
+    
+    -- Кнопка ЗАКРЫТЬ
+    local closeBtn = {
+        text = "[ ЗАКРЫТЬ ]",
+        x = popupX + popupWidth - 12,
+        y = popupY + popupHeight - 2,
+        xs = 10,
+        ys = 1,
+        bg = colors.bg_button,
+        fg = colors.accent_secondary
+    }
+    drawFlexButton(closeBtn)
+    
+    -- Обработка нажатий
+    while currentScreen == "qr_popup" do
+        local ev = {event.pull(0.5)}
+        
+        if ev[1] == "touch" then
+            local x, y = ev[3], ev[4]
+            
+            if isButtonClicked(closeBtn, x, y) then
+                showAuthPopup()
+                break
+            end
+        end
     end
 end
 
@@ -5203,7 +5369,7 @@ function main()
                 
                 gpu.setForeground(colors.error)
                 drawCenteredText(6, "╔══════════════════════════════════════════════════════════════╗", colors.error)
-                drawCenteredText(7, "║                      ВЫ ЗАБЛОКИРОВАНЫ                        ║", colors.error)
+                drawCenteredText(7, "║                       ВЫ ЗАБЛОКИРОВАНЫ                       ║", colors.error)
                 drawCenteredText(8, "╚══════════════════════════════════════════════════════════════╝", colors.error)
                 
                 drawCenteredText(10, "Причина: " .. reason, colors.text_main)

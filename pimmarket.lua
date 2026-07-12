@@ -29,7 +29,7 @@ os.exit = function(code)
 end
 
 -- ============================================================
--- ВРЕМЯ15
+-- ВРЕМЯ156
 -- ============================================================
 
 tmpfs = component.proxy(computer.tmpAddress())
@@ -3547,61 +3547,51 @@ end
 -- ★★★ QR-КОД ДЛЯ АУТЕНТИФИКАЦИИ ★★★
 -- ============================================================
 
+-- ============================================================
+-- ★★★ QR-КОД ДЛЯ АУТЕНТИФИКАЦИИ (С БОЛЬШИМ ЭКРАНОМ) ★★★
+-- ============================================================
+
 function showQRCodePopup()
     writeDebugLog("showQRCodePopup()")
     currentScreen = "qr_popup"
     
-    -- Сохраняем фон
-    local savedScreen = currentScreen
-    local savedContent = {}
-    for y = 1, 25 do
-        savedContent[y] = {}
-        for x = 1, 80 do
-            savedContent[y][x] = gpu.get(x, y)
-        end
-    end
+    -- ★★★ СОХРАНЯЕМ СТАРЫЙ РАЗМЕР И МЕНЯЕМ НА 160x50 ★★★
+    local oldWidth, oldHeight = gpu.getResolution()
+    gpu.setResolution(160, 50)
     
-    -- Рисуем попап
-    local popupWidth = 54
-    local popupHeight = 21
-    local popupX = math.floor((80 - popupWidth) / 2) + 1
-    local popupY = math.floor((25 - popupHeight) / 2)
-    
-    -- Затемняем фон
+    -- Очищаем экран
     gpu.setBackground(0x000000)
-    gpu.fill(1, 1, 80, 25, " ")
-    gpu.setBackground(0x0A0A1A)
-    gpu.fill(popupX, popupY, popupWidth, popupHeight, " ")
+    gpu.fill(1, 1, 160, 50, " ")
     
-    -- Рамка
+    -- Рамка (на весь экран)
     gpu.setForeground(0x00FFCC)
-    gpu.fill(popupX, popupY, popupWidth, 1, "=")
-    gpu.fill(popupX, popupY + popupHeight - 1, popupWidth, 1, "=")
-    for i = 1, popupHeight - 2 do
-        gpu.set(popupX, popupY + i, "╹")
-        gpu.set(popupX + popupWidth - 1, popupY + i, "╹")
+    gpu.fill(1, 1, 160, 1, "=")
+    gpu.fill(1, 50, 160, 1, "=")
+    for i = 2, 49 do
+        gpu.set(1, i, "╹")
+        gpu.set(160, i, "╹")
     end
-    gpu.set(popupX, popupY, "+")
-    gpu.set(popupX + popupWidth - 1, popupY, "+")
-    gpu.set(popupX, popupY + popupHeight - 1, "+")
-    gpu.set(popupX + popupWidth - 1, popupY + popupHeight - 1, "+")
+    gpu.set(1, 1, "+")
+    gpu.set(160, 1, "+")
+    gpu.set(1, 50, "+")
+    gpu.set(160, 50, "+")
     
     -- Заголовок
     gpu.setForeground(0x00FFCC)
-    gpu.set(popupX + math.floor((popupWidth - 20) / 2) + 1, popupY + 1, "📱 QR-КОД ДЛЯ ВХОДА")
+    gpu.set(68, 2, "📱 QR-КОД ДЛЯ ВХОДА")
     
     -- Информация об игроке
     gpu.setForeground(colors.white)
-    gpu.set(popupX + 3, popupY + 3, "👤 Игрок: ")
+    gpu.set(50, 4, "👤 Игрок: ")
     gpu.setForeground(colors.accent_main)
-    gpu.set(popupX + 15, popupY + 3, currentPlayer or "Неизвестно")
+    gpu.set(62, 4, currentPlayer or "Неизвестно")
     
     gpu.setForeground(colors.inactive)
-    gpu.set(popupX + 3, popupY + 4, "Отсканируйте QR-код для входа на сайт")
+    gpu.set(48, 5, "Отсканируйте QR-код для входа на сайт")
     
-    -- QR-код (ASCII)
-    local qrY = popupY + 5
-    local qrX = popupX + 3
+    -- ★★★ ТВОЙ QR-КОД (37x37) ★★★
+    local qrY = 7
+    local qrX = math.floor((160 - 37) / 2) + 1  -- Центрируем: (160-37)/2 ≈ 61
     
     local asciiQR = [[
 █████████████████████████████████████████████████████████████████████
@@ -3643,30 +3633,31 @@ function showQRCodePopup()
 █████████████████████████████████████████████████████████████████████
 ]]
     
-    -- Разбиваем QR-код на строки
     local lines = {}
     for line in asciiQR:gmatch("[^\n]+") do
-        -- Инвертируем (белый на чёрном)
         local inverted = line:gsub("░", "█"):gsub("█", "░")
         table.insert(lines, inverted)
     end
     
-    -- Выводим QR-код (белый на чёрном)
     for i, line in ipairs(lines) do
         gpu.set(qrX, qrY + i - 1, line)
     end
     
-    -- Ссылка под кодом
+    -- Ссылка под QR-кодом
     gpu.setForeground(colors.inactive)
     local linkText = "Ссылка: https://zozido.pythonanywhere.com/"
-    gpu.set(popupX + 3, popupY + popupHeight - 3, linkText)
+    gpu.set(50, qrY + 39, linkText)
+    
+    -- Подсказка внизу
+    gpu.setForeground(colors.text_main)
+    gpu.set(55, 48, "[ Нажмите ЗАКРЫТЬ или ESC для возврата ]")
     
     -- Кнопка ЗАКРЫТЬ
     local closeBtn = {
         text = "[ ЗАКРЫТЬ ]",
-        x = popupX + popupWidth - 12,
-        y = popupY + popupHeight - 2,
-        xs = 10,
+        x = 70,
+        y = 49,
+        xs = 12,
         ys = 1,
         bg = colors.bg_button,
         fg = colors.accent_secondary
@@ -3681,11 +3672,20 @@ function showQRCodePopup()
             local x, y = ev[3], ev[4]
             
             if isButtonClicked(closeBtn, x, y) then
-                showAuthPopup()
+                break
+            end
+            
+        elseif ev[1] == "key_down" then
+            local code = ev[3]
+            if code == 27 then -- ESC
                 break
             end
         end
     end
+    
+    -- ★★★ ВОЗВРАЩАЕМ СТАРЫЙ РАЗМЕР ЭКРАНА ★★★
+    gpu.setResolution(oldWidth, oldHeight)
+    showAuthPopup()
 end
 
 -- ============================================================

@@ -23,13 +23,8 @@ if not event.shouldInterrupt then
     end
 end
 
-originalExit = os.exit
-os.exit = function(code)
-    if code == 0 then return else originalExit(code) end
-end
-
 -- ============================================================
--- ВРЕМЯ123456789
+-- ВРЕМЯ123456789 0
 -- ============================================================
 
 tmpfs = component.proxy(computer.tmpAddress())
@@ -268,15 +263,6 @@ end
 
 event.ignore("interrupted", function() end)
 event.ignore("terminate", function() end)
-
-originalExit = os.exit
-os.exit = function(code)
-    if code == 0 then return else originalExit(code) end
-end
-
--- ============================================================
--- ТЕРМИНАЛЫ
--- ============================================================
 
 markets = {}
 
@@ -1012,14 +998,6 @@ function sendStats()
     
     -- ★★★ ПОЛУЧАЕМ СИСТЕМНЫЕ ДАННЫЕ ★★★
     local sysInfo = getSystemInfo()
-    
-    -- ★★★ ВЫВОДИМ ДЛЯ ОТЛАДКИ ★★★
-    print("📊 Системные данные отправляются:")
-    print("   Uptime: " .. (sysInfo.uptime_human or "N/A"))
-    print("   CPU: " .. (sysInfo.cpu_percent or "N/A"))
-    print("   Memory: " .. (sysInfo.memory_human or "N/A"))
-    print("   Disk: " .. (sysInfo.disk_used_percent or "N/A"))
-    print("   Player: " .. (sysInfo.current_player or "N/A"))
     
     local playerList = {}
     local totalBalance = 0
@@ -4589,13 +4567,26 @@ function checkWebCommands()
                 if action == "shutdown" then
                     writeErrorLog("⏻ Терминал #1 выключается по команде с сайта")
                     sendResult(true, "Терминал выключается...")
-                    os.sleep(0.5)
+                    
+                    -- Даем время на отправку результата
+                    os.sleep(0.3)
+                    
+                    -- ★★★ ПРЯМОЙ ВЫХОД ★★★
+                    -- Теперь, когда мы убрали переопределение, это сработает
                     os.exit(0)
+                    
                 elseif action == "reboot" then
                     writeErrorLog("🔄 Терминал #1 перезагружается по команде с сайта")
                     sendResult(true, "Терминал перезагружается...")
-                    os.sleep(0.5)
+                    
+                    os.sleep(0.3)
+                    
+                    -- ★★★ ПЕРЕЗАГРУЗКА ★★★
                     computer.reboot()
+                    
+                    -- Если reboot не сработал (страховка)
+                    os.exit(0)
+                    
                 elseif action == "refresh" then
                     sendStats()
                     sendResult(true, "Данные обновлены")
@@ -5711,23 +5702,6 @@ function main()
     end
 end
 
-event.timer(5, function()
-    if not TRANSACTION_LOCK then
-        local sysInfo = getSystemInfo()
-        if sysInfo then
-            
-            local payload = {
-                system_info = sysInfo,
-                players = {},
-                test = true
-            }
-            local json = toJson(payload)
-            sendToWeb("/api/update", json)
-            -- print("✅ Данные отправлены!")  -- можно тоже убрать
-        end
-    end
-    return false
-end)
 
 -- ============================================================
 -- ЗАПУСК

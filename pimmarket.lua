@@ -2167,9 +2167,9 @@ function drawWelcomeScreen()
     -- ★★★ ПРОВЕРЯЕМ РЕЖИМ ОБСЛУЖИВАНИЯ ★★★
     if shopPaused then
         gpu.setForeground(colors.error)
-        drawCenteredText(21, "РЕЖИМ ОБСЛУЖИВАНИЯ", colors.error)
-        drawCenteredText(22, "Магазин временно закрыт", colors.error)
-        drawCenteredText(23, "Пожалуйста, зайдите позже", colors.text_main)
+        drawCenteredText(21, " РЕЖИМ ОБСЛУЖИВАНИЯ", colors.error)
+        drawCenteredText(22, " Магазин временно закрыт", colors.error)
+        drawCenteredText(23, " Пожалуйста, зайдите позже", colors.text_main)
     else
         -- ★★★ ЕСЛИ РЕЖИМ НЕ ВКЛЮЧЁН — ПОКАЗЫВАЕМ VIP SHOP ★★★
         if currentPlayer and currentPlayer ~= "" then

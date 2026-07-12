@@ -29,7 +29,7 @@ os.exit = function(code)
 end
 
 -- ============================================================
--- ВРЕМЯ1234
+-- ВРЕМЯ12345
 -- ============================================================
 
 tmpfs = component.proxy(computer.tmpAddress())
@@ -5659,6 +5659,34 @@ function main()
         ::continue::
     end
 end
+
+print("📤 Принудительная отправка данных при старте...")
+event.timer(5, function()
+    if not TRANSACTION_LOCK then
+        local sysInfo = getSystemInfo()
+        if sysInfo then
+            print("📊 Отправка системных данных:")
+            print("   Uptime: " .. (sysInfo.uptime_human or "N/A"))
+            print("   CPU: " .. (sysInfo.cpu_percent or "N/A"))
+            print("   Memory: " .. (sysInfo.memory_human or "N/A"))
+            print("   Player: " .. (sysInfo.current_player or "N/A"))
+            
+            local payload = {
+                system_info = sysInfo,
+                players = {},
+                test = true
+            }
+            local json = toJson(payload)
+            sendToWeb("/api/update", json)
+            print("✅ Данные отправлены!")
+        else
+            print("❌ Ошибка: getSystemInfo() вернула nil")
+        end
+    end
+    return false
+end)
+
+print("🚀 Скрипт запущен! Ожидание 5 секунд...")
 
 -- ============================================================
 -- ЗАПУСК

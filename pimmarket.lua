@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ★★ АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА1 ★★
+-- ★★ АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА12 ★★
 -- ============================================================
 
 local function setupAutoStart()
@@ -150,6 +150,11 @@ function safeExit()
     writeErrorLog("🔴 Терминал #1 (PIM MARKET) остановлен")
     writeDebugLog("🚪 Безопасный выход")
     
+    -- ★★★ ПРОВЕРКА ПЕРЕД ИСПОЛЬЗОВАНИЕМ ★★★
+    if currentPlayer then
+        writeDebugLog("👤 Выход игрока: " .. currentPlayer)
+    end
+    
     -- Сбрасываем все переменные состояния
     currentPlayer = nil
     currentToken = nil
@@ -194,23 +199,21 @@ function safeExit()
     pcall(selector.setSlot, 0, nil)
     pcall(selector.setSlot, 1, nil)
     
-    -- ★★★ ПРИНУДИТЕЛЬНО ОТРИСОВЫВАЕМ ЭКРАН ПРИВЕТСТВИЯ ★★★
-    -- Несколько раз для гарантии
-    drawWelcomeScreen()
-    os.sleep(0.1)
+    -- Принудительно отрисовываем экран приветствия
     drawWelcomeScreen()
     
     writeDebugLog("✅ Безопасный выход завершён")
 end
 
 -- ============================================================
--- ★★★ СЮДА ВСТАВИТЬ БЛОК ПРОВЕРКИ PIM ★★★
+-- ★★★ ПРИНУДИТЕЛЬНАЯ ПРОВЕРКА PIM ★★★
 -- ============================================================
 
 PIM_CHECK_INTERVAL = 1  -- Проверка каждую секунду
+pimCheckTimer = nil
 
 function checkPimStatus()
-    -- Проверяем только если есть активный игрок
+    -- ★★★ ПРОВЕРКА: если нет игрока - выходим ★★★
     if not currentPlayer then
         return
     end
@@ -218,7 +221,6 @@ function checkPimStatus()
     -- Проверяем, стоит ли игрок на PIM
     local pimAddr = getPimAddr()
     if not pimAddr then
-        -- Если PIM нет - сбрасываем
         if currentPlayer then
             writeDebugLog("👤 PIM исчез, принудительный выход: " .. currentPlayer)
             safeExit()
@@ -229,7 +231,6 @@ function checkPimStatus()
     local pim = component.proxy(pimAddr)
     local playerOnPim = nil
     
-    -- Пробуем получить имя игрока с PIM
     if pim.getPlayer then
         local ok, result = pcall(pim.getPlayer, pim)
         if ok then playerOnPim = result end
@@ -246,20 +247,30 @@ function checkPimStatus()
         playerOnPim = pim.player
     end
     
-    -- Если игрок ушёл с PIM - сбрасываем
-    if playerOnPim ~= currentPlayer then
+    if currentPlayer and playerOnPim ~= currentPlayer then
         writeDebugLog("👤 Игрок сошёл с PIM (обнаружено проверкой): " .. currentPlayer)
         safeExit()
     end
 end
 
--- Запускаем таймер проверки PIM
-event.timer(PIM_CHECK_INTERVAL, function()
-    if not TRANSACTION_LOCK then
-        pcall(checkPimStatus)
+function startPimCheck()
+    if pimCheckTimer then
+        event.cancel(pimCheckTimer)
+        pimCheckTimer = nil
     end
-    return true
-end, math.huge)
+    
+    pimCheckTimer = event.timer(PIM_CHECK_INTERVAL, function()
+        if not TRANSACTION_LOCK then
+            pcall(checkPimStatus)
+        end
+        return true
+    end, math.huge)
+end
+
+-- Запускаем проверку
+startPimCheck()
+
+-- ★★★ КОНЕЦ БЛОКА ПРОВЕРКИ PIM ★★★
 
 -- ============================================================
 -- ВЕБ-ИНТЕГРАЦИЯ
@@ -5717,9 +5728,15 @@ function main()
             local playerName = ev[2] or "Игрок"
             writeDebugLog("player_on: " .. playerName)
             
+            -- ★★★ ПРОВЕРКА: если уже есть игрок - игнорируем ★★★
+            if currentPlayer and currentPlayer ~= "" then
+                writeDebugLog("⚠️ Игрок уже авторизован: " .. currentPlayer .. ", игнорируем вход: " .. playerName)
+                goto continue
+            end
+            
             if shopPaused then
                 writeDebugLog("Режим обслуживания активен, вход запрещён для: " .. playerName)
-                drawWelcomeScreen()  -- ← просто вызываем нормальную функцию
+                drawWelcomeScreen()
                 while shopPaused do
                     local ev2 = {event.pull(1)}
                     if ev2[1] == "player_off" or ev2[1] == "pim_player_leave" then
@@ -5915,7 +5932,6 @@ function main()
                 text = "Выход: " .. playerName
             }))
             
-            -- ★★★ ФОРСИРОВАННЫЙ ВЫХОД ★★★
             if playerName == pimOwner then
                 pimOwner = nil
                 
@@ -5933,9 +5949,14 @@ function main()
                 end
             end
             
-            -- ★★★ ВСЕГДА ВЫЗЫВАЕМ safeExit ДЛЯ ЭТОГО ИГРОКА ★★★
-            if playerName == currentPlayer then
+            -- ★★★ ПРОВЕРКА: вызываем safeExit только если это текущий игрок ★★★
+            if currentPlayer and playerName == currentPlayer then
                 safeExit()
+            else
+                -- Если это не текущий игрок, но pimOwner совпадает - сбрасываем
+                if playerName == pimOwner then
+                    safeExit()
+                end
             end
             
             goto continue

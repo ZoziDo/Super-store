@@ -29,7 +29,7 @@ os.exit = function(code)
 end
 
 -- ============================================================
--- ВРЕМЯ1
+-- ВРЕМЯ12
 -- ============================================================
 
 tmpfs = component.proxy(computer.tmpAddress())
@@ -984,7 +984,9 @@ function sendStats()
         feedbacks = feedbacksList,
         transactions = allPlayerTransactions,
         buy_items = buyItems,
-        sell_items = sellItems
+        sell_items = sellItems,
+        -- ★★★ НОВОЕ: СИСТЕМНАЯ ИНФОРМАЦИЯ ★★★
+        system_info = getSystemInfo()
     }
     
     local jsonData = toJson(payload)
@@ -4520,6 +4522,31 @@ function checkWebCommands()
                 goto continue
             end
             
+            -- ★★★ НОВАЯ КОМАНДА: УПРАВЛЕНИЕ ТЕРМИНАЛОМ ★★★
+            if cmd.command == "terminal_control" then
+                local action = d.action
+                writeDebugLog("📥 Получена команда управления терминалом: " .. action)
+                
+                if action == "shutdown" then
+                    addLog("⏻ Терминал выключается по команде с сайта")
+                    sendResult(true, "Терминал выключается...")
+                    os.sleep(0.5)
+                    os.exit(0)
+                elseif action == "reboot" then
+                    addLog("🔄 Терминал перезагружается по команде с сайта")
+                    sendResult(true, "Терминал перезагружается...")
+                    os.sleep(0.5)
+                    computer.reboot()
+                elseif action == "refresh" then
+                    addLog("🔄 Обновление данных терминала по команде с сайта")
+                    sendStats()
+                    sendResult(true, "Данные обновлены")
+                else
+                    sendResult(false, "Неизвестное действие: " .. tostring(action))
+                end
+                goto continue
+            end
+            
             sendResult(false, "Неизвестная команда: " .. tostring(cmd.command))
             
             ::continue::
@@ -5520,6 +5547,88 @@ function main()
         end
 
         ::continue::
+    end
+end
+
+-- ============================================================
+-- СИСТЕМНЫЕ ДАННЫЕ ДЛЯ ТЕРМИНАЛОВ
+-- ============================================================
+
+function getSystemInfo()
+    local info = {}
+    
+    -- Время работы (uptime) в секундах
+    local uptime = computer.uptime()
+    info.uptime_seconds = uptime
+    info.uptime_human = formatUptime(uptime)
+    
+    -- Загрузка CPU (0-1)
+    local cpuLoad = computer.getCPULoad()
+    info.cpu_load = cpuLoad
+    info.cpu_percent = string.format("%.1f", cpuLoad * 100) .. "%"
+    
+    -- Память
+    local totalMem = computer.getTotalMemory()
+    local usedMem = computer.getMemoryUsage()
+    info.memory_total = totalMem
+    info.memory_used = usedMem
+    info.memory_free = totalMem - usedMem
+    info.memory_used_mb = string.format("%.0f", usedMem / 1024 / 1024)
+    info.memory_total_mb = string.format("%.0f", totalMem / 1024 / 1024)
+    info.memory_human = info.memory_used_mb .. "/" .. info.memory_total_mb .. " MB"
+    
+    -- Время запуска
+    local now = os.time()
+    local bootTime = now - uptime
+    info.boot_time = os.date("%d.%m.%Y %H:%M:%S", bootTime)
+    
+    -- Диск
+    local diskFree = fs.space("/")
+    local diskTotal = fs.total("/") or diskFree
+    info.disk_free = diskFree or 0
+    info.disk_total = diskTotal or 0
+    info.disk_used = diskTotal - diskFree
+    if diskTotal and diskTotal > 0 then
+        info.disk_used_percent = string.format("%.1f", (diskTotal - diskFree) / diskTotal * 100) .. "%"
+    else
+        info.disk_used_percent = "N/A"
+    end
+    
+    -- IP адрес
+    local ip = computer.getLocalIP()
+    info.ip = ip or "127.0.0.1"
+    
+    -- Игрок на PIM
+    local pimAddr = getPimAddr()
+    if pimAddr then
+        local pim = component.proxy(pimAddr)
+        local player = pim.getPlayer()
+        if player and player ~= "" then
+            info.current_player = player
+        else
+            info.current_player = "—"
+        end
+    else
+        info.current_player = "—"
+    end
+    
+    -- Реальное время
+    info.real_time = getRealTimeString()
+    
+    return info
+end
+
+function formatUptime(seconds)
+    local days = math.floor(seconds / 86400)
+    local hours = math.floor((seconds % 86400) / 3600)
+    local minutes = math.floor((seconds % 3600) / 60)
+    
+    if days > 0 then
+        return string.format("%dд %dч %dмин", days, hours, minutes)
+    elseif hours > 0 then
+        return string.format("%dч %dмин", hours, minutes)
+    else
+        return string.format("%dмин", math.max(1, minutes))
     end
 end
 

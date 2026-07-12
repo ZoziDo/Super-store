@@ -3545,14 +3545,14 @@ end
 
 
 -- ============================================================
--- ★★★ QR-КОД ДЛЯ АУТЕНТИФИКАЦИИ (С БОЛЬШИМ ЭКРАНОМ) ★★★
+-- ★★★ QR-КОД ДЛЯ АУТЕНТИФИКАЦИИ (ПО ЦЕНТРУ) ★★★
 -- ============================================================
 
 function showQRCodePopup()
     writeDebugLog("showQRCodePopup()")
     currentScreen = "qr_popup"
     
-    -- ★★★ МЕНЯЕМ РАЗРЕШЕНИЕ НА 160x50 ★★★
+    -- Меняем разрешение на 160x50
     local oldWidth, oldHeight = gpu.getResolution()
     gpu.setResolution(160, 50)
     
@@ -3565,35 +3565,35 @@ function showQRCodePopup()
     gpu.fill(1, 1, 160, 1, "=")
     gpu.fill(1, 50, 160, 1, "=")
     for i = 2, 49 do
-        gpu.set(1, i, "╹")
-        gpu.set(160, i, "╹")
+        gpu.set(1, i, "|")
+        gpu.set(160, i, "|")
     end
     gpu.set(1, 1, "+")
     gpu.set(160, 1, "+")
     gpu.set(1, 50, "+")
     gpu.set(160, 50, "+")
     
-    -- ★★★ ЗАГОЛОВОК (по центру) ★★★
-    local titleText = "📱 QR-КОД ДЛЯ ВХОДА"
-    local titleX = math.floor((160 - #titleText) / 2) + 1
+    -- Заголовок (центр: 80)
+    local titleText = "QR-КОД ДЛЯ ВХОДА"
+    local titleX = 80 - math.floor(#titleText / 2)
     gpu.setForeground(0x00FFCC)
     gpu.set(titleX, 2, titleText)
     
-    -- ★★★ ИГРОК (по центру) ★★★
+    -- Игрок (центр: 80)
     local playerText = "Игрок: " .. (currentPlayer or "?")
-    local playerX = math.floor((160 - #playerText) / 2) + 1
+    local playerX = 80 - math.floor(#playerText / 2)
     gpu.setForeground(colors.white)
     gpu.set(playerX, 4, playerText)
     
-    -- ★★★ ПОДСКАЗКА (по центру) ★★★
+    -- Подсказка (центр: 80)
     local hintText = "Отсканируйте QR-код для входа на сайт"
-    local hintX = math.floor((160 - #hintText) / 2) + 1
+    local hintX = 80 - math.floor(#hintText / 2)
     gpu.setForeground(colors.inactive)
     gpu.set(hintX, 5, hintText)
     
-    -- ★★★ QR-КОД 37x37 (по центру) ★★★
+    -- QR-КОД 37x37 (центр: (160-37)/2 = 61)
     local qrY = 7
-    local qrX = math.floor((160 - 37) / 2) + 1  -- Центр: 61
+    local qrX = 62  -- ровно по центру
     
     local asciiQR = [[
 █████████████████████████████████████████████████████████████████████
@@ -3635,7 +3635,7 @@ function showQRCodePopup()
 █████████████████████████████████████████████████████████████████████
 ]]
     
-    -- Разбиваем на строки и выводим БЕЗ ИНВЕРСИИ (чёрный на белом)
+    -- Выводим QR-код
     local lines = {}
     for line in asciiQR:gmatch("[^\n]+") do
         table.insert(lines, line)
@@ -3645,22 +3645,22 @@ function showQRCodePopup()
         gpu.set(qrX, qrY + i - 1, line)
     end
     
-    -- ★★★ ССЫЛКА (по центру) ★★★
+    -- Ссылка (центр: 80)
     local linkText = "Ссылка: https://zozido.pythonanywhere.com/"
-    local linkX = math.floor((160 - #linkText) / 2) + 1
+    local linkX = 80 - math.floor(#linkText / 2)
     gpu.setForeground(colors.inactive)
     gpu.set(linkX, qrY + 39, linkText)
     
-    -- ★★★ ПОДСКАЗКА ВНИЗУ (по центру) ★★★
+    -- Подсказка внизу (центр: 80)
     local bottomHint = "[ Нажмите ЗАКРЫТЬ или ESC для возврата ]"
-    local bottomHintX = math.floor((160 - #bottomHint) / 2) + 1
+    local bottomHintX = 80 - math.floor(#bottomHint / 2)
     gpu.setForeground(colors.text_main)
     gpu.set(bottomHintX, 48, bottomHint)
     
-    -- ★★★ КНОПКА ЗАКРЫТЬ (по центру) ★★★
+    -- Кнопка ЗАКРЫТЬ (центр: 80, ширина 12)
     local closeBtn = {
         text = "[ ЗАКРЫТЬ ]",
-        x = math.floor((160 - 12) / 2) + 1,  -- Центр: 74
+        x = 80 - 6,  -- ровно по центру (12/2 = 6)
         y = 49,
         xs = 12,
         ys = 1,
@@ -3682,13 +3682,13 @@ function showQRCodePopup()
             
         elseif ev[1] == "key_down" then
             local code = ev[3]
-            if code == 27 then -- ESC
+            if code == 27 then
                 break
             end
         end
     end
     
-    -- ★★★ ВОЗВРАЩАЕМ СТАРЫЙ РАЗМЕР ★★★
+    -- Возвращаем старый размер
     gpu.setResolution(oldWidth, oldHeight)
     showAuthPopup()
 end

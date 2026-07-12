@@ -29,7 +29,7 @@ os.exit = function(code)
 end
 
 -- ============================================================
--- ВРЕМЯ12
+-- ВРЕМЯ126
 -- ============================================================
 
 tmpfs = component.proxy(computer.tmpAddress())
@@ -242,7 +242,7 @@ function writeErrorLog(msg)
 end
 
 function writeDebugLog(msg)
-    -- Отладочные логи отключены
+    print("[DEBUG] " .. tostring(msg))
 end
 
 function safeCall(func, ...)
@@ -5557,36 +5557,38 @@ end
 function getSystemInfo()
     local info = {}
     
-    -- Время работы (uptime) в секундах
+    -- ★★★ ВРЕМЯ РАБОТЫ (uptime) ★★★
     local uptime = computer.uptime()
     info.uptime_seconds = uptime
     info.uptime_human = formatUptime(uptime)
     
-    -- Загрузка CPU (0-1)
-    local cpuLoad = computer.getCPULoad()
-    info.cpu_load = cpuLoad
-    info.cpu_percent = string.format("%.1f", cpuLoad * 100) .. "%"
+    -- ★★★ ЗАГРУЗКА CPU — НЕДОСТУПНА ★★★
+    info.cpu_load = 0
+    info.cpu_percent = "N/A"
     
-    -- Память
-    local totalMem = computer.getTotalMemory()
-    local usedMem = computer.getMemoryUsage()
-    info.memory_total = totalMem
-    info.memory_used = usedMem
-    info.memory_free = totalMem - usedMem
-    info.memory_used_mb = string.format("%.0f", usedMem / 1024 / 1024)
-    info.memory_total_mb = string.format("%.0f", totalMem / 1024 / 1024)
-    info.memory_human = info.memory_used_mb .. "/" .. info.memory_total_mb .. " MB"
+    -- ★★★ ПАМЯТЬ — НЕДОСТУПНА ★★★
+    info.memory_total = 0
+    info.memory_used = 0
+    info.memory_free = 0
+    info.memory_used_mb = "N/A"
+    info.memory_total_mb = "N/A"
+    info.memory_human = "N/A"
     
-    -- Время запуска
+    -- ★★★ ВРЕМЯ ЗАПУСКА ★★★
     local now = os.time()
     local bootTime = now - uptime
     info.boot_time = os.date("%d.%m.%Y %H:%M:%S", bootTime)
     
-    -- Диск
-    local diskFree = fs.space("/")
-    local diskTotal = fs.total("/") or diskFree
-    info.disk_free = diskFree or 0
-    info.disk_total = diskTotal or 0
+    -- ★★★ ДИСК (через filesystem) ★★★
+    local fs = require("filesystem")
+    local diskFree = 0
+    local diskTotal = 0
+    if fs and fs.space then
+        diskFree = fs.space("/") or 0
+        diskTotal = fs.total("/") or diskFree
+    end
+    info.disk_free = diskFree
+    info.disk_total = diskTotal
     info.disk_used = diskTotal - diskFree
     if diskTotal and diskTotal > 0 then
         info.disk_used_percent = string.format("%.1f", (diskTotal - diskFree) / diskTotal * 100) .. "%"
@@ -5594,11 +5596,11 @@ function getSystemInfo()
         info.disk_used_percent = "N/A"
     end
     
-    -- IP адрес
-    local ip = computer.getLocalIP()
+    -- ★★★ IP АДРЕС ★★★
+    local ip = computer.getLocalIP and computer.getLocalIP() or "127.0.0.1"
     info.ip = ip or "127.0.0.1"
     
-    -- Игрок на PIM
+    -- ★★★ ИГРОК НА PIM ★★★
     local pimAddr = getPimAddr()
     if pimAddr then
         local pim = component.proxy(pimAddr)
@@ -5631,6 +5633,13 @@ function formatUptime(seconds)
         return string.format("%dмин", math.max(1, minutes))
     end
 end
+
+-- Принудительная отправка данных при запуске
+event.timer(5, function()
+    print("🚀 Отправка данных на сайт...")
+    sendStats()
+    return false
+end)
 
 -- ============================================================
 -- ЗАПУСК

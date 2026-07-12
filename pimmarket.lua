@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ★★ АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА1 ★★
+-- ★★ АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА12 ★★
 -- ============================================================
 
 local function setupAutoStart()
@@ -206,24 +206,29 @@ function safeExit()
 end
 
 -- ============================================================
--- ★★★ ПРИНУДИТЕЛЬНАЯ ПРОВЕРКА PIM ★★★
+-- ★★★ ПРОВЕРКА PIM (ОБЪЕДИНЁННАЯ) ★★★
 -- ============================================================
 
-PIM_CHECK_INTERVAL = 10
+PIM_CHECK_INTERVAL = 3  -- Проверка каждые 3 секунды
 pimCheckTimer = nil
+pimCheckRetries = 0  -- Счётчик неудачных попыток
+MAX_PIM_RETRIES = 3  -- Максимум неудачных попыток перед сбросом
 
 function checkPimStatus()
     -- ★★★ ПРОВЕРКА: если нет игрока - выходим ★★★
     if not currentPlayer then
+        pimCheckRetries = 0
         return
     end
     
-    -- Проверяем, стоит ли игрок на PIM
+    -- Проверяем, есть ли вообще PIM
     local pimAddr = getPimAddr()
     if not pimAddr then
-        if currentPlayer then
-            writeDebugLog("👤 PIM исчез, принудительный выход: " .. currentPlayer)
+        pimCheckRetries = pimCheckRetries + 1
+        if pimCheckRetries >= MAX_PIM_RETRIES then
+            writeDebugLog("👤 PIM отсутствует " .. pimCheckRetries .. " попыток, принудительный выход: " .. currentPlayer)
             safeExit()
+            pimCheckRetries = 0
         end
         return
     end
@@ -231,7 +236,7 @@ function checkPimStatus()
     local pim = component.proxy(pimAddr)
     local playerOnPim = nil
     
-    -- ★★★ ПОЛУЧАЕМ ИМЯ ИГРОКА С PIM (С ЗАЩИТОЙ) ★★★
+    -- ★★★ ПОЛУЧАЕМ ИМЯ ИГРОКА С PIM ★★★
     if pim.getPlayer then
         local ok, result = pcall(pim.getPlayer, pim)
         if ok and result and result ~= "" then
@@ -253,7 +258,6 @@ function checkPimStatus()
         end
     end
     
-    -- ★★★ ПОСЛЕДНЯЯ ПОПЫТКА (НО ПРОВЕРЯЕМ РЕЗУЛЬТАТ) ★★★
     if not playerOnPim then
         local ok, result = pcall(function()
             return pim.player
@@ -263,19 +267,45 @@ function checkPimStatus()
         end
     end
     
-    -- ★★★ ЕСЛИ НЕ УДАЛОСЬ ПОЛУЧИТЬ ИМЯ - НЕ ДЕЛАЕМ НИЧЕГО ★★★
+    -- ★★★ ЕСЛИ НЕ УДАЛОСЬ ПОЛУЧИТЬ ИМЯ - УВЕЛИЧИВАЕМ СЧЁТЧИК ★★★
     if not playerOnPim or playerOnPim == "" then
-        writeDebugLog("⚠️ Не удалось получить имя игрока с PIM, пропускаем проверку")
+        pimCheckRetries = pimCheckRetries + 1
+        if pimCheckRetries >= MAX_PIM_RETRIES then
+            writeDebugLog("👤 Не удалось получить имя с PIM (" .. pimCheckRetries .. " попыток), принудительный выход: " .. currentPlayer)
+            safeExit()
+            pimCheckRetries = 0
+        else
+            writeDebugLog("⚠️ Не удалось получить имя с PIM (попытка " .. pimCheckRetries .. "/" .. MAX_PIM_RETRIES .. ")")
+        end
         return
     end
     
-    -- ★★★ СРАВНИВАЕМ ИГРОКОВ ★★★
-    if currentPlayer and playerOnPim ~= currentPlayer then
-        writeDebugLog("👤 Игрок сошёл с PIM (обнаружено проверкой): " .. currentPlayer)
+    -- ★★★ ИМЯ ПОЛУЧЕНО - СБРАСЫВАЕМ СЧЁТЧИК ★★★
+    pimCheckRetries = 0
+    
+    -- ★★★ ЕСЛИ ИГРОК СМЕНИЛСЯ - СБРАСЫВАЕМ ★★★
+    if playerOnPim ~= currentPlayer then
+        writeDebugLog("👤 Игрок сменился на PIM: " .. playerOnPim .. " (был: " .. currentPlayer .. ")")
         safeExit()
     end
 end
 
+function startPimCheck()
+    if pimCheckTimer then
+        event.cancel(pimCheckTimer)
+        pimCheckTimer = nil
+    end
+    
+    pimCheckTimer = event.timer(PIM_CHECK_INTERVAL, function()
+        if not TRANSACTION_LOCK then
+            pcall(checkPimStatus)
+        end
+        return true
+    end, math.huge)
+end
+
+-- ★★★ ЗАПУСКАЕМ ПРОВЕРКУ ★★★
+startPimCheck()
 
 -- ============================================================
 -- ВЕБ-ИНТЕГРАЦИЯ

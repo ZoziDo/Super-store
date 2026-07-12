@@ -29,7 +29,7 @@ os.exit = function(code)
 end
 
 -- ============================================================
--- ВРЕМЯ123456
+-- ВРЕМЯ1234567
 -- ============================================================
 
 tmpfs = component.proxy(computer.tmpAddress())
@@ -304,28 +304,29 @@ colors = {
 function getSystemInfo()
     local info = {}
     
-    -- ✅ 1. Время работы (реальное)
+    -- 1. Время работы
     local uptime = computer.uptime()
     info.uptime_seconds = uptime
     info.uptime_human = formatUptime(uptime)
     
-    -- ✅ 2. Время запуска (реальное)
-    local now = os.time()
-    local bootTime = now - uptime
+    -- 2. Время запуска (ИСПРАВЛЕНО)
+    -- Используем реальное время из tmpfs
+    local realTime = getRealTimestamp()
+    local bootTime = realTime - uptime
     info.boot_time = os.date("%d.%m.%Y %H:%M:%S", bootTime)
     
-    -- 🔧 3. CPU (если доступен)
+    -- 3. CPU (если недоступен — N/A)
     info.cpu_load = 0
     info.cpu_percent = "N/A"
     if computer.getCPUUsage then
         local ok, cpu = pcall(computer.getCPUUsage)
-        if ok and cpu then
+        if ok and cpu and type(cpu) == "number" then
             info.cpu_load = cpu
             info.cpu_percent = string.format("%.1f%%", cpu * 100)
         end
     end
     
-    -- 🔧 4. Память (реальная)
+    -- 4. Память
     info.memory_total = 0
     info.memory_used = 0
     info.memory_free = 0
@@ -335,7 +336,7 @@ function getSystemInfo()
     
     if computer.totalMemory then
         local ok, total = pcall(computer.totalMemory)
-        if ok and total then
+        if ok and total and type(total) == "number" then
             info.memory_total = total
             info.memory_total_mb = string.format("%.1f MB", total / 1024 / 1024)
         end
@@ -343,7 +344,7 @@ function getSystemInfo()
     
     if computer.freeMemory then
         local ok, free = pcall(computer.freeMemory)
-        if ok and free then
+        if ok and free and type(free) == "number" then
             info.memory_free = free
             if info.memory_total > 0 then
                 info.memory_used = info.memory_total - free
@@ -353,10 +354,10 @@ function getSystemInfo()
         end
     end
     
-    -- 🔧 5. Диск (реальный)
+    -- 5. Диск (пробуем разные пути)
     info.disk_used_percent = "N/A"
     local fs = require("filesystem")
-    local paths = {"/", "/home", "/tmp"}
+    local paths = {"/", "/home", "/tmp", "/lib"}
     for _, path in ipairs(paths) do
         local ok1, free = pcall(fs.space, path)
         local ok2, total = pcall(fs.total, path)
@@ -368,15 +369,21 @@ function getSystemInfo()
         end
     end
     
-    -- ✅ 6. IP адрес
-    info.ip = computer.getLocalIP and computer.getLocalIP() or "N/A"
+    -- 6. IP адрес
+    info.ip = "N/A"
+    if computer.getLocalIP then
+        local ok, ip = pcall(computer.getLocalIP)
+        if ok and ip then
+            info.ip = ip
+        end
+    end
     
-    -- ✅ 7. Текущий игрок (через PIM)
+    -- 7. Игрок через PIM
+    info.current_player = "—"
     local pimAddr = getPimAddr()
     if pimAddr then
         local pim = component.proxy(pimAddr)
         local player = nil
-        -- Пробуем разные методы получения игрока
         if pim.getPlayer then
             local ok, result = pcall(pim.getPlayer, pim)
             if ok then player = result end
@@ -393,8 +400,6 @@ function getSystemInfo()
             player = pim.player
         end
         info.current_player = (player and player ~= "") and player or "—"
-    else
-        info.current_player = "—"
     end
     
     info.real_time = getRealTimeString()

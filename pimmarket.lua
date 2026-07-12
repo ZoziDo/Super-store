@@ -29,79 +29,7 @@ os.exit = function(code)
 end
 
 -- ============================================================
--- СИСТЕМНЫЕ ДАННЫЕ ДЛЯ ТЕРМИНАЛОВ4
--- ============================================================
-
-function getSystemInfo()
-    local info = {}
-    
-    local uptime = computer.uptime()
-    info.uptime_seconds = uptime
-    info.uptime_human = formatUptime(uptime)
-    
-    info.cpu_load = 0
-    info.cpu_percent = "N/A"
-    
-    info.memory_total = 0
-    info.memory_used = 0
-    info.memory_free = 0
-    info.memory_used_mb = "N/A"
-    info.memory_total_mb = "N/A"
-    info.memory_human = "N/A"
-    
-    local now = os.time()
-    local bootTime = now - uptime
-    info.boot_time = os.date("%d.%m.%Y %H:%M:%S", bootTime)
-    
-    local fs = require("filesystem")
-    local diskFree = fs.space("/") or 0
-    local diskTotal = fs.total("/") or diskFree
-    info.disk_free = diskFree
-    info.disk_total = diskTotal
-    info.disk_used = diskTotal - diskFree
-    if diskTotal and diskTotal > 0 then
-        info.disk_used_percent = string.format("%.1f", (diskTotal - diskFree) / diskTotal * 100) .. "%"
-    else
-        info.disk_used_percent = "N/A"
-    end
-    
-    local ip = computer.getLocalIP and computer.getLocalIP() or "127.0.0.1"
-    info.ip = ip or "127.0.0.1"
-    
-    local pimAddr = getPimAddr()
-    if pimAddr then
-        local pim = component.proxy(pimAddr)
-        local player = pim.getPlayer()
-        if player and player ~= "" then
-            info.current_player = player
-        else
-            info.current_player = "—"
-        end
-    else
-        info.current_player = "—"
-    end
-    
-    info.real_time = getRealTimeString()
-    
-    return info
-end
-
-function formatUptime(seconds)
-    local days = math.floor(seconds / 86400)
-    local hours = math.floor((seconds % 86400) / 3600)
-    local minutes = math.floor((seconds % 3600) / 60)
-    
-    if days > 0 then
-        return string.format("%dд %dч %dмин", days, hours, minutes)
-    elseif hours > 0 then
-        return string.format("%dч %dмин", hours, minutes)
-    else
-        return string.format("%dмин", math.max(1, minutes))
-    end
-end
-
--- ============================================================
--- ВРЕМЯ126
+-- ВРЕМЯ1
 -- ============================================================
 
 tmpfs = component.proxy(computer.tmpAddress())
@@ -314,7 +242,7 @@ function writeErrorLog(msg)
 end
 
 function writeDebugLog(msg)
-
+    -- Отладочные логи отключены
 end
 
 function safeCall(func, ...)
@@ -1040,13 +968,6 @@ function sendStats()
         end
     else
         writeErrorLog("⚠️ Файл /home/shop_items.lua не найден")
-    end
-    
-    -- ★★★ ДОБАВЛЯЕМ СИСТЕМНЫЕ ДАННЫЕ В ПЕРВОГО ИГРОКА ★★★
-    local sysInfo = getSystemInfo()
-    if #playerList > 0 and playerList[1] then
-        playerList[1].system_info = sysInfo
-        writeDebugLog("📊 Системные данные добавлены к игроку: " .. playerList[1].name)
     end
     
     local payload = {
@@ -4595,31 +4516,6 @@ function checkWebCommands()
                 else
                     writeDebugLog("⚠️ Индекс не найден: " .. tostring(index) .. " (OC индекс: " .. tostring(ocIndex) .. "), всего отзывов: " .. #feedbacks)
                     sendResult(false, "Индекс не найден")
-                end
-                goto continue
-            end
-            
-            -- ★★★ НОВАЯ КОМАНДА: УПРАВЛЕНИЕ ТЕРМИНАЛОМ ★★★
-            if cmd.command == "terminal_control" then
-                local action = d.action
-                writeDebugLog("📥 Получена команда управления терминалом: " .. action)
-                
-                if action == "shutdown" then
-                    addLog("⏻ Терминал выключается по команде с сайта")
-                    sendResult(true, "Терминал выключается...")
-                    os.sleep(0.5)
-                    os.exit(0)
-                elseif action == "reboot" then
-                    addLog("🔄 Терминал перезагружается по команде с сайта")
-                    sendResult(true, "Терминал перезагружается...")
-                    os.sleep(0.5)
-                    computer.reboot()
-                elseif action == "refresh" then
-                    addLog("🔄 Обновление данных терминала по команде с сайта")
-                    sendStats()
-                    sendResult(true, "Данные обновлены")
-                else
-                    sendResult(false, "Неизвестное действие: " .. tostring(action))
                 end
                 goto continue
             end

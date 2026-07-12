@@ -29,22 +29,19 @@ os.exit = function(code)
 end
 
 -- ============================================================
--- СИСТЕМНЫЕ ДАННЫЕ ДЛЯ ТЕРМИНАЛОВ1
+-- СИСТЕМНЫЕ ДАННЫЕ ДЛЯ ТЕРМИНАЛОВ
 -- ============================================================
 
 function getSystemInfo()
     local info = {}
     
-    -- Время работы (uptime) в секундах
     local uptime = computer.uptime()
     info.uptime_seconds = uptime
     info.uptime_human = formatUptime(uptime)
     
-    -- Загрузка CPU — НЕДОСТУПНА
     info.cpu_load = 0
     info.cpu_percent = "N/A"
     
-    -- Память — НЕДОСТУПНА
     info.memory_total = 0
     info.memory_used = 0
     info.memory_free = 0
@@ -52,12 +49,10 @@ function getSystemInfo()
     info.memory_total_mb = "N/A"
     info.memory_human = "N/A"
     
-    -- Время запуска
     local now = os.time()
     local bootTime = now - uptime
     info.boot_time = os.date("%d.%m.%Y %H:%M:%S", bootTime)
     
-    -- Диск
     local fs = require("filesystem")
     local diskFree = fs.space("/") or 0
     local diskTotal = fs.total("/") or diskFree
@@ -70,11 +65,9 @@ function getSystemInfo()
         info.disk_used_percent = "N/A"
     end
     
-    -- IP адрес
     local ip = computer.getLocalIP and computer.getLocalIP() or "127.0.0.1"
     info.ip = ip or "127.0.0.1"
     
-    -- Игрок на PIM
     local pimAddr = getPimAddr()
     if pimAddr then
         local pim = component.proxy(pimAddr)

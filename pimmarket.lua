@@ -29,7 +29,7 @@ os.exit = function(code)
 end
 
 -- ============================================================
--- ВРЕМЯ12556
+-- ВРЕМЯ1
 -- ============================================================
 
 tmpfs = component.proxy(computer.tmpAddress())
@@ -49,16 +49,17 @@ function getRealTimeHM()
 end
 
 -- ============================================================
--- ★★★ ОЧИСТКА СТРОК ★★★
+-- ★★★ ОЧИСТКА СТРОК ОТ НЕВИДИМЫХ СИМВОЛОВ ★★★
 -- ============================================================
 function cleanString(str)
     if not str then return "" end
-    -- Удаляем управляющие символы (невидимые)
-    str = str:gsub("[%c]", " ")
+    -- Удаляем все управляющие символы (коды 0-31 и 127)
+    str = str:gsub("[%c]", "")
     -- Убираем лишние пробелы
     str = str:gsub("%s+", " ")
     -- Обрезаем пробелы по краям
-    return str:match("^%s*(.-)%s*$") or ""
+    str = str:match("^%s*(.-)%s*$") or ""
+    return str
 end
 
 -- ============================================================
@@ -5172,70 +5173,73 @@ function main()
             end
 
             if banInfo then
-            -- ★★★ ДЕКОДИРУЕМ ПРИЧИНУ ★★★
-            local reason = "Не указана"
-            if banInfo.reason_b64 then
-                reason = decodeBase64(banInfo.reason_b64)
-            elseif banInfo.reason then
-                reason = banInfo.reason
-            end
-            
-            -- ★★★ ОЧИЩАЕМ ОТ ЛИШНИХ СИМВОЛОВ ★★★
-            reason = cleanString(reason)
-            
-            -- ★★★ ФОРМАТИРУЕМ ДАТЫ ★★★
-            local function formatDate(isoDate)
-                if not isoDate or isoDate == "" then return "" end
-                local year, month, day = isoDate:match("(%d+)-(%d+)-(%d+)")
-                if year and month and day then
-                    return day .. "." .. month .. "." .. year
+                -- ★★★ ДЕКОДИРУЕМ ПРИЧИНУ ★★★
+                local reason = "Не указана"
+                if banInfo.reason_b64 then
+                    reason = decodeBase64(banInfo.reason_b64)
+                elseif banInfo.reason then
+                    reason = banInfo.reason
                 end
-                return isoDate
-            end
-            
-            local formattedDate = formatDate(banInfo.date)
-            local formattedExpire = formatDate(banInfo.expires)
-            local admin = cleanString(banInfo.admin or "Система")
-            
-            gpu.setBackground(colors.bg_main)
-            gpu.fill(1, 1, 80, 25, " ")
-            
-            gpu.setForeground(colors.error)
-            drawCenteredText(6, "╔══════════════════════════════════════════════════════════════╗", colors.error)
-            drawCenteredText(7, "║                        ВЫ ЗАБЛОКИРОВАНЫ                      ║", colors.error)
-            drawCenteredText(8, "╚══════════════════════════════════════════════════════════════╝", colors.error)
-            
-            drawCenteredText(10, "Причина: " .. reason, colors.text_main)
-            drawCenteredText(11, "Администратор: " .. admin, colors.text_main)
-            drawCenteredText(12, "Дата: " .. formattedDate, colors.text_main)
-            
-            if banInfo.expires then
-                drawCenteredText(13, "Срок истекает: " .. formattedExpire, colors.text_main)
-            else
-                drawCenteredText(13, "Бессрочный бан", colors.text_main)
-            end
-            
-            drawCenteredText(15, "Доступ запрещён", colors.error)
-            
-            gpu.setForeground(colors.accent_secondary)
-            drawCenteredText(22, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", colors.accent_secondary)
-            
-            drawTempMessage()
-            
-            while true do
-                local ev2 = {event.pull(1)}
-                if ev2[1] == "player_off" or ev2[1] == "pim_player_leave" then
-                    writeDebugLog("👤 Игрок ушёл с PIM: " .. playerName)
-                    drawWelcomeScreen()
-                    break
+                reason = cleanString(reason)  -- ← ОЧИЩАЕМ
+                
+                local admin = cleanString(banInfo.admin or "Система")
+                
+                -- ★★★ ФОРМАТИРУЕМ ДАТЫ ★★★
+                local function formatDate(isoDate)
+                    if not isoDate or isoDate == "" then return "" end
+                    local year, month, day = isoDate:match("(%d+)-(%d+)-(%d+)")
+                    if year and month and day then
+                        return day .. "." .. month .. "." .. year
+                    end
+                    return isoDate
                 end
+                
+                local formattedDate = banInfo.date and formatDate(banInfo.date) or ""
+                local formattedExpire = banInfo.expires and formatDate(banInfo.expires) or ""
+                local isPermanent = not banInfo.expires or banInfo.expires == ""
+                
+                gpu.setBackground(colors.bg_main)
+                gpu.fill(1, 1, 80, 25, " ")
+                
+                gpu.setForeground(colors.error)
+                drawCenteredText(6, "╔══════════════════════════════════════════════════════════════╗", colors.error)
+                drawCenteredText(7, "║                      ВЫ ЗАБЛОКИРОВАНЫ                        ║", colors.error)
+                drawCenteredText(8, "╚══════════════════════════════════════════════════════════════╝", colors.error)
+                
+                drawCenteredText(10, "Причина: " .. reason, colors.text_main)
+                drawCenteredText(11, "Администратор: " .. admin, colors.text_main)
+                
+                if formattedDate ~= "" then
+                    drawCenteredText(12, "Дата: " .. formattedDate, colors.text_main)
+                end
+                
+                if isPermanent then
+                    drawCenteredText(13, "Бессрочный бан", colors.text_main)
+                else
+                    drawCenteredText(13, "Срок истекает: " .. formattedExpire, colors.text_main)
+                end
+                
+                drawCenteredText(15, " Доступ запрещён", colors.error)
+                
+                gpu.setForeground(colors.accent_secondary)
+                drawCenteredText(22, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", colors.accent_secondary)
+                
+                drawTempMessage()
+                
+                while true do
+                    local ev2 = {event.pull(1)}
+                    if ev2[1] == "player_off" or ev2[1] == "pim_player_leave" then
+                        writeDebugLog("👤 Игрок ушёл с PIM: " .. playerName)
+                        drawWelcomeScreen()
+                        break
+                    end
+                end
+                currentPlayer = nil
+                pimOwner = nil
+                alreadyAuthorized = false
+                currentScreen = "welcome"
+                goto continue
             end
-            currentPlayer = nil
-            pimOwner = nil
-            alreadyAuthorized = false
-            currentScreen = "welcome"
-            goto continue
-        end
             
               if alreadyAuthorized then
                 if currentScreen == "auth" or currentScreen == "account_loading" then

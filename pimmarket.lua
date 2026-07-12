@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ★★ АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА1321 ★★
+-- ★★ АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА1 ★★
 -- ============================================================
 
 local function setupAutoStart()
@@ -3571,7 +3571,7 @@ function showAuthPopup()
         gpu.set(codeX, popupY + 9, displayCode)
         gpu.setBackground(0x0A0A1A)
         
-        -- ★★★ КНОПКИ ★★★
+         -- ★★★ КНОПКИ ★★★
         local closeBtn = {
             text = "[ ЗАКРЫТЬ ]",
             x = popupX + popupWidth - 12,
@@ -3590,7 +3590,8 @@ function showAuthPopup()
             bg = colors.bg_button,
             fg = colors.success
         }
-        -- ★★★ НОВАЯ КНОПКА QR CODE ★★★
+        -- ★★★ КНОПКА QR CODE ВРЕМЕННО ОТКЛЮЧЕНА ★★★
+        --[[
         local qrBtn = {
             text = "[ QR CODE ]",
             x = popupX + 22,
@@ -3600,9 +3601,10 @@ function showAuthPopup()
             bg = colors.bg_button,
             fg = 0x00FFCC
         }
+        drawFlexButton(qrBtn)
+        --]]
         drawFlexButton(closeBtn)
         drawFlexButton(confirmBtn)
-        drawFlexButton(qrBtn)
         
         -- Обработка ввода
         local isEditing = true
@@ -3638,11 +3640,13 @@ function showAuthPopup()
                     break
                 end
                 
-                -- ★★★ ОБРАБОТКА КНОПКИ QR CODE ★★★
+                -- ★★★ ОБРАБОТКА КНОПКИ QR CODE (ВРЕМЕННО ОТКЛЮЧЕНА) ★★★
+                --[[
                 if isButtonClicked(qrBtn, x, y) then
                     showQRCodePopup()
                     break
                 end
+                --]]
                 
             elseif ev[1] == "key_down" then
                 local ch = ev[3]

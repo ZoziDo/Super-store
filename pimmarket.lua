@@ -29,6 +29,85 @@ os.exit = function(code)
 end
 
 -- ============================================================
+-- СИСТЕМНЫЕ ДАННЫЕ ДЛЯ ТЕРМИНАЛОВ1
+-- ============================================================
+
+function getSystemInfo()
+    local info = {}
+    
+    -- Время работы (uptime) в секундах
+    local uptime = computer.uptime()
+    info.uptime_seconds = uptime
+    info.uptime_human = formatUptime(uptime)
+    
+    -- Загрузка CPU — НЕДОСТУПНА
+    info.cpu_load = 0
+    info.cpu_percent = "N/A"
+    
+    -- Память — НЕДОСТУПНА
+    info.memory_total = 0
+    info.memory_used = 0
+    info.memory_free = 0
+    info.memory_used_mb = "N/A"
+    info.memory_total_mb = "N/A"
+    info.memory_human = "N/A"
+    
+    -- Время запуска
+    local now = os.time()
+    local bootTime = now - uptime
+    info.boot_time = os.date("%d.%m.%Y %H:%M:%S", bootTime)
+    
+    -- Диск
+    local fs = require("filesystem")
+    local diskFree = fs.space("/") or 0
+    local diskTotal = fs.total("/") or diskFree
+    info.disk_free = diskFree
+    info.disk_total = diskTotal
+    info.disk_used = diskTotal - diskFree
+    if diskTotal and diskTotal > 0 then
+        info.disk_used_percent = string.format("%.1f", (diskTotal - diskFree) / diskTotal * 100) .. "%"
+    else
+        info.disk_used_percent = "N/A"
+    end
+    
+    -- IP адрес
+    local ip = computer.getLocalIP and computer.getLocalIP() or "127.0.0.1"
+    info.ip = ip or "127.0.0.1"
+    
+    -- Игрок на PIM
+    local pimAddr = getPimAddr()
+    if pimAddr then
+        local pim = component.proxy(pimAddr)
+        local player = pim.getPlayer()
+        if player and player ~= "" then
+            info.current_player = player
+        else
+            info.current_player = "—"
+        end
+    else
+        info.current_player = "—"
+    end
+    
+    info.real_time = getRealTimeString()
+    
+    return info
+end
+
+function formatUptime(seconds)
+    local days = math.floor(seconds / 86400)
+    local hours = math.floor((seconds % 86400) / 3600)
+    local minutes = math.floor((seconds % 3600) / 60)
+    
+    if days > 0 then
+        return string.format("%dд %dч %dмин", days, hours, minutes)
+    elseif hours > 0 then
+        return string.format("%dч %dмин", hours, minutes)
+    else
+        return string.format("%dмин", math.max(1, minutes))
+    end
+end
+
+-- ============================================================
 -- ВРЕМЯ126
 -- ============================================================
 
@@ -5549,97 +5628,6 @@ function main()
         ::continue::
     end
 end
-
--- ============================================================
--- СИСТЕМНЫЕ ДАННЫЕ ДЛЯ ТЕРМИНАЛОВ
--- ============================================================
-
-function getSystemInfo()
-    local info = {}
-    
-    -- ★★★ ВРЕМЯ РАБОТЫ (uptime) ★★★
-    local uptime = computer.uptime()
-    info.uptime_seconds = uptime
-    info.uptime_human = formatUptime(uptime)
-    
-    -- ★★★ ЗАГРУЗКА CPU — НЕДОСТУПНА ★★★
-    info.cpu_load = 0
-    info.cpu_percent = "N/A"
-    
-    -- ★★★ ПАМЯТЬ — НЕДОСТУПНА ★★★
-    info.memory_total = 0
-    info.memory_used = 0
-    info.memory_free = 0
-    info.memory_used_mb = "N/A"
-    info.memory_total_mb = "N/A"
-    info.memory_human = "N/A"
-    
-    -- ★★★ ВРЕМЯ ЗАПУСКА ★★★
-    local now = os.time()
-    local bootTime = now - uptime
-    info.boot_time = os.date("%d.%m.%Y %H:%M:%S", bootTime)
-    
-    -- ★★★ ДИСК (через filesystem) ★★★
-    local fs = require("filesystem")
-    local diskFree = 0
-    local diskTotal = 0
-    if fs and fs.space then
-        diskFree = fs.space("/") or 0
-        diskTotal = fs.total("/") or diskFree
-    end
-    info.disk_free = diskFree
-    info.disk_total = diskTotal
-    info.disk_used = diskTotal - diskFree
-    if diskTotal and diskTotal > 0 then
-        info.disk_used_percent = string.format("%.1f", (diskTotal - diskFree) / diskTotal * 100) .. "%"
-    else
-        info.disk_used_percent = "N/A"
-    end
-    
-    -- ★★★ IP АДРЕС ★★★
-    local ip = computer.getLocalIP and computer.getLocalIP() or "127.0.0.1"
-    info.ip = ip or "127.0.0.1"
-    
-    -- ★★★ ИГРОК НА PIM ★★★
-    local pimAddr = getPimAddr()
-    if pimAddr then
-        local pim = component.proxy(pimAddr)
-        local player = pim.getPlayer()
-        if player and player ~= "" then
-            info.current_player = player
-        else
-            info.current_player = "—"
-        end
-    else
-        info.current_player = "—"
-    end
-    
-    -- Реальное время
-    info.real_time = getRealTimeString()
-    
-    return info
-end
-
-function formatUptime(seconds)
-    local days = math.floor(seconds / 86400)
-    local hours = math.floor((seconds % 86400) / 3600)
-    local minutes = math.floor((seconds % 3600) / 60)
-    
-    if days > 0 then
-        return string.format("%dд %dч %dмин", days, hours, minutes)
-    elseif hours > 0 then
-        return string.format("%dч %dмин", hours, minutes)
-    else
-        return string.format("%dмин", math.max(1, minutes))
-    end
-end
-
--- Принудительная отправка данных при запуске
-event.timer(5, function()
-    print("🚀 Отправка данных на сайт...")
-    sendStats()
-    return false
-end)
 
 -- ============================================================
 -- ЗАПУСК

@@ -29,7 +29,7 @@ os.exit = function(code)
 end
 
 -- ============================================================
--- ВРЕМЯ15
+-- ВРЕМЯ156
 -- ============================================================
 
 tmpfs = component.proxy(computer.tmpAddress())
@@ -93,7 +93,6 @@ function safeExit()
     alreadyAuthorized = false
     pimOwner = nil
     currentScreen = "welcome"
-    shopPaused = false
     authCodeInput = ""
     boundPlayer = nil
     
@@ -2165,31 +2164,33 @@ function drawWelcomeScreen()
     
     local cx = 41
     
-    if currentPlayer and currentPlayer ~= "" then
-        gpu.setForeground(0x00FFCC)
-        gpu.set(cx - 5, 21, "АВТОРИЗАЦИЯ")
-        
-        gpu.setForeground(sub_color)
-        gpu.set(cx - 6, 22, "◆ McSkill HiTech ◆")
-        
-        gpu.setForeground(hint_color)
-        gpu.set(cx - 10, 23, "Пожалуйста, подождите...")
-    else
-        gpu.setForeground(text_color)
-        gpu.set(cx - 2, 21, "VIP SHOP")
-        
-        gpu.setForeground(sub_color)
-        gpu.set(cx - 6, 22, "◆ McSkill HiTech ◆")
-        
-        gpu.setForeground(hint_color)
-        gpu.set(cx - 10, 23, "Встаньте на ПИМ для входа")
-    end
-    
+    -- ★★★ ПРОВЕРЯЕМ РЕЖИМ ОБСЛУЖИВАНИЯ ★★★
     if shopPaused then
         gpu.setForeground(colors.error)
         drawCenteredText(18, "РЕЖИМ ОБСЛУЖИВАНИЯ", colors.error)
         drawCenteredText(19, "Магазин временно закрыт", colors.error)
         drawCenteredText(20, "Пожалуйста, зайдите позже", colors.text_main)
+    else
+        -- ★★★ ЕСЛИ РЕЖИМ НЕ ВКЛЮЧЁН — ПОКАЗЫВАЕМ VIP SHOP ★★★
+        if currentPlayer and currentPlayer ~= "" then
+            gpu.setForeground(text_color)
+            gpu.set(cx - 2, 21, "VIP SHOP")
+            
+            gpu.setForeground(sub_color)
+            gpu.set(cx - 6, 22, "◆ McSkill HiTech ◆")
+            
+            gpu.setForeground(hint_color)
+            gpu.set(cx - 10, 23, "Встаньте на ПИМ для входа")
+        else
+            gpu.setForeground(text_color)
+            gpu.set(cx - 2, 21, "VIP SHOP")
+            
+            gpu.setForeground(sub_color)
+            gpu.set(cx - 6, 22, "◆ McSkill HiTech ◆")
+            
+            gpu.setForeground(hint_color)
+            gpu.set(cx - 10, 23, "Встаньте на ПИМ для входа")
+        end
     end
 end
 

@@ -314,7 +314,7 @@ function writeErrorLog(msg)
 end
 
 function writeDebugLog(msg)
-    print("[DEBUG] " .. tostring(msg))
+
 end
 
 function safeCall(func, ...)

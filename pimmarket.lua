@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ★★ АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА ★★
+-- ★★ АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА1 ★★
 -- ============================================================
 
 local function setupAutoStart()
@@ -149,6 +149,8 @@ end
 function safeExit()
     writeErrorLog("🔴 Терминал #1 (PIM MARKET) остановлен")
     writeDebugLog("🚪 Безопасный выход")
+    
+    -- Сбрасываем все переменные состояния
     currentPlayer = nil
     currentToken = nil
     alreadyAuthorized = false
@@ -162,6 +164,7 @@ function safeExit()
         writeDebugLog("🔓 Блокировка сброшена при выходе")
     end
     
+    -- Сбрасываем все UI переменные
     selectedItem = nil
     hoveredIndex = 0
     selectedIndex = 0
@@ -180,16 +183,83 @@ function safeExit()
     listScroll = 1
     horizontalScroll = 1
     tempMessage = ""
+    
     if tempMessageTimer then
         event.cancel(tempMessageTimer)
         tempMessageTimer = nil
     end
     
+    -- Сбрасываем селектор
     pcall(updateSelectorDisplay, nil)
     pcall(selector.setSlot, 0, nil)
     pcall(selector.setSlot, 1, nil)
+    
+    -- ★★★ ПРИНУДИТЕЛЬНО ОТРИСОВЫВАЕМ ЭКРАН ПРИВЕТСТВИЯ ★★★
+    -- Несколько раз для гарантии
     drawWelcomeScreen()
+    os.sleep(0.1)
+    drawWelcomeScreen()
+    
+    writeDebugLog("✅ Безопасный выход завершён")
 end
+
+-- ============================================================
+-- ★★★ СЮДА ВСТАВИТЬ БЛОК ПРОВЕРКИ PIM ★★★
+-- ============================================================
+
+PIM_CHECK_INTERVAL = 1  -- Проверка каждую секунду
+
+function checkPimStatus()
+    -- Проверяем только если есть активный игрок
+    if not currentPlayer then
+        return
+    end
+    
+    -- Проверяем, стоит ли игрок на PIM
+    local pimAddr = getPimAddr()
+    if not pimAddr then
+        -- Если PIM нет - сбрасываем
+        if currentPlayer then
+            writeDebugLog("👤 PIM исчез, принудительный выход: " .. currentPlayer)
+            safeExit()
+        end
+        return
+    end
+    
+    local pim = component.proxy(pimAddr)
+    local playerOnPim = nil
+    
+    -- Пробуем получить имя игрока с PIM
+    if pim.getPlayer then
+        local ok, result = pcall(pim.getPlayer, pim)
+        if ok then playerOnPim = result end
+    end
+    if not playerOnPim and pim.getPlayerName then
+        local ok, result = pcall(pim.getPlayerName, pim)
+        if ok then playerOnPim = result end
+    end
+    if not playerOnPim and pim.getUsername then
+        local ok, result = pcall(pim.getUsername, pim)
+        if ok then playerOnPim = result end
+    end
+    if not playerOnPim then
+        playerOnPim = pim.player
+    end
+    
+    -- Если игрок ушёл с PIM - сбрасываем
+    if playerOnPim ~= currentPlayer then
+        writeDebugLog("👤 Игрок сошёл с PIM (обнаружено проверкой): " .. currentPlayer)
+        safeExit()
+    end
+end
+
+-- Запускаем таймер проверки PIM
+event.timer(PIM_CHECK_INTERVAL, function()
+    if not TRANSACTION_LOCK then
+        pcall(checkPimStatus)
+    end
+    return true
+end, math.huge)
 
 -- ============================================================
 -- ВЕБ-ИНТЕГРАЦИЯ
@@ -5845,6 +5915,7 @@ function main()
                 text = "Выход: " .. playerName
             }))
             
+            -- ★★★ ФОРСИРОВАННЫЙ ВЫХОД ★★★
             if playerName == pimOwner then
                 pimOwner = nil
                 
@@ -5862,11 +5933,14 @@ function main()
                 end
             end
             
-            safeExit()
+            -- ★★★ ВСЕГДА ВЫЗЫВАЕМ safeExit ДЛЯ ЭТОГО ИГРОКА ★★★
+            if playerName == currentPlayer then
+                safeExit()
+            end
+            
             goto continue
         end
-
-        ::continue::
+       ::continue::
     end
 end
 

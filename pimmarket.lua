@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ★★ АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА12 ★★
+-- ★★ АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА132 ★★
 -- ============================================================
 
 local function setupAutoStart()
@@ -204,108 +204,6 @@ function safeExit()
     
     writeDebugLog("✅ Безопасный выход завершён")
 end
-
--- ============================================================
--- ★★★ ПРОВЕРКА PIM (ОБЪЕДИНЁННАЯ) ★★★
--- ============================================================
-
-PIM_CHECK_INTERVAL = 3  -- Проверка каждые 3 секунды
-pimCheckTimer = nil
-pimCheckRetries = 0  -- Счётчик неудачных попыток
-MAX_PIM_RETRIES = 3  -- Максимум неудачных попыток перед сбросом
-
-function checkPimStatus()
-    -- ★★★ ПРОВЕРКА: если нет игрока - выходим ★★★
-    if not currentPlayer then
-        pimCheckRetries = 0
-        return
-    end
-    
-    -- Проверяем, есть ли вообще PIM
-    local pimAddr = getPimAddr()
-    if not pimAddr then
-        pimCheckRetries = pimCheckRetries + 1
-        if pimCheckRetries >= MAX_PIM_RETRIES then
-            writeDebugLog("👤 PIM отсутствует " .. pimCheckRetries .. " попыток, принудительный выход: " .. currentPlayer)
-            safeExit()
-            pimCheckRetries = 0
-        end
-        return
-    end
-    
-    local pim = component.proxy(pimAddr)
-    local playerOnPim = nil
-    
-    -- ★★★ ПОЛУЧАЕМ ИМЯ ИГРОКА С PIM ★★★
-    if pim.getPlayer then
-        local ok, result = pcall(pim.getPlayer, pim)
-        if ok and result and result ~= "" then
-            playerOnPim = result
-        end
-    end
-    
-    if not playerOnPim and pim.getPlayerName then
-        local ok, result = pcall(pim.getPlayerName, pim)
-        if ok and result and result ~= "" then
-            playerOnPim = result
-        end
-    end
-    
-    if not playerOnPim and pim.getUsername then
-        local ok, result = pcall(pim.getUsername, pim)
-        if ok and result and result ~= "" then
-            playerOnPim = result
-        end
-    end
-    
-    if not playerOnPim then
-        local ok, result = pcall(function()
-            return pim.player
-        end)
-        if ok and result and result ~= "" then
-            playerOnPim = result
-        end
-    end
-    
-    -- ★★★ ЕСЛИ НЕ УДАЛОСЬ ПОЛУЧИТЬ ИМЯ - УВЕЛИЧИВАЕМ СЧЁТЧИК ★★★
-    if not playerOnPim or playerOnPim == "" then
-        pimCheckRetries = pimCheckRetries + 1
-        if pimCheckRetries >= MAX_PIM_RETRIES then
-            writeDebugLog("👤 Не удалось получить имя с PIM (" .. pimCheckRetries .. " попыток), принудительный выход: " .. currentPlayer)
-            safeExit()
-            pimCheckRetries = 0
-        else
-            writeDebugLog("⚠️ Не удалось получить имя с PIM (попытка " .. pimCheckRetries .. "/" .. MAX_PIM_RETRIES .. ")")
-        end
-        return
-    end
-    
-    -- ★★★ ИМЯ ПОЛУЧЕНО - СБРАСЫВАЕМ СЧЁТЧИК ★★★
-    pimCheckRetries = 0
-    
-    -- ★★★ ЕСЛИ ИГРОК СМЕНИЛСЯ - СБРАСЫВАЕМ ★★★
-    if playerOnPim ~= currentPlayer then
-        writeDebugLog("👤 Игрок сменился на PIM: " .. playerOnPim .. " (был: " .. currentPlayer .. ")")
-        safeExit()
-    end
-end
-
-function startPimCheck()
-    if pimCheckTimer then
-        event.cancel(pimCheckTimer)
-        pimCheckTimer = nil
-    end
-    
-    pimCheckTimer = event.timer(PIM_CHECK_INTERVAL, function()
-        if not TRANSACTION_LOCK then
-            pcall(checkPimStatus)
-        end
-        return true
-    end, math.huge)
-end
-
--- ★★★ ЗАПУСКАЕМ ПРОВЕРКУ ★★★
-startPimCheck()
 
 -- ============================================================
 -- ВЕБ-ИНТЕГРАЦИЯ
@@ -5101,6 +4999,14 @@ function main()
     while true do
         local ev = {event.pull(0.5)}
         local e = ev[1]
+        
+        -- ★★★ ДИАГНОСТИКА ВСЕХ СОБЫТИЙ ★★★
+        if e ~= nil then
+            writeErrorLog("📌 СОБЫТИЕ: " .. tostring(e))
+            if e == "player_off" or e == "pim_player_leave" then
+                writeErrorLog("🔥 ВЫХОД С PIM ОБНАРУЖЕН!")
+            end
+        end
 
         if e == "key_down" then
             local _, _, _, code, char = table.unpack(ev)

@@ -2269,7 +2269,7 @@ function drawShopMenu()
     writeDebugLog("drawShopMenu()")
     clear()
     drawScreenBorder()
-    drawCenteredText(6, "МАГАЗИН", colors.accent_secondary)
+    drawCenteredText(6, " МАГАЗИН", colors.accent_secondary)
     if not playerAgreed then
         drawCenteredText(9, "Доступ запрещён.", colors.error)
         drawCenteredText(10, "Примите соглашение, нажав [Соглашение] в главном меню.", colors.accent_main)

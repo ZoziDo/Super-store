@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ★★ АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА1234 ★★
+-- ★★ АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА1 ★★
 -- ============================================================
 
 local function setupAutoStart()
@@ -209,7 +209,7 @@ end
 -- ★★★ ПРИНУДИТЕЛЬНАЯ ПРОВЕРКА PIM ★★★
 -- ============================================================
 
-PIM_CHECK_INTERVAL = 5
+PIM_CHECK_INTERVAL = 10
 pimCheckTimer = nil
 
 function checkPimStatus()
@@ -231,47 +231,51 @@ function checkPimStatus()
     local pim = component.proxy(pimAddr)
     local playerOnPim = nil
     
+    -- ★★★ ПОЛУЧАЕМ ИМЯ ИГРОКА С PIM (С ЗАЩИТОЙ) ★★★
     if pim.getPlayer then
         local ok, result = pcall(pim.getPlayer, pim)
-        if ok then playerOnPim = result end
-    end
-    if not playerOnPim and pim.getPlayerName then
-        local ok, result = pcall(pim.getPlayerName, pim)
-        if ok then playerOnPim = result end
-    end
-    if not playerOnPim and pim.getUsername then
-        local ok, result = pcall(pim.getUsername, pim)
-        if ok then playerOnPim = result end
-    end
-    if not playerOnPim then
-        playerOnPim = pim.player
+        if ok and result and result ~= "" then
+            playerOnPim = result
+        end
     end
     
-    -- ★★★ ПРОВЕРКА: если игрок сошёл с PIM ★★★
+    if not playerOnPim and pim.getPlayerName then
+        local ok, result = pcall(pim.getPlayerName, pim)
+        if ok and result and result ~= "" then
+            playerOnPim = result
+        end
+    end
+    
+    if not playerOnPim and pim.getUsername then
+        local ok, result = pcall(pim.getUsername, pim)
+        if ok and result and result ~= "" then
+            playerOnPim = result
+        end
+    end
+    
+    -- ★★★ ПОСЛЕДНЯЯ ПОПЫТКА (НО ПРОВЕРЯЕМ РЕЗУЛЬТАТ) ★★★
+    if not playerOnPim then
+        local ok, result = pcall(function()
+            return pim.player
+        end)
+        if ok and result and result ~= "" then
+            playerOnPim = result
+        end
+    end
+    
+    -- ★★★ ЕСЛИ НЕ УДАЛОСЬ ПОЛУЧИТЬ ИМЯ - НЕ ДЕЛАЕМ НИЧЕГО ★★★
+    if not playerOnPim or playerOnPim == "" then
+        writeDebugLog("⚠️ Не удалось получить имя игрока с PIM, пропускаем проверку")
+        return
+    end
+    
+    -- ★★★ СРАВНИВАЕМ ИГРОКОВ ★★★
     if currentPlayer and playerOnPim ~= currentPlayer then
         writeDebugLog("👤 Игрок сошёл с PIM (обнаружено проверкой): " .. currentPlayer)
         safeExit()
     end
 end
 
-function startPimCheck()
-    if pimCheckTimer then
-        event.cancel(pimCheckTimer)
-        pimCheckTimer = nil
-    end
-    
-    pimCheckTimer = event.timer(PIM_CHECK_INTERVAL, function()
-        if not TRANSACTION_LOCK then
-            pcall(checkPimStatus)
-        end
-        return true
-    end, math.huge)
-end
-
--- Запускаем проверку
-startPimCheck()
-
--- ★★★ КОНЕЦ БЛОКА ПРОВЕРКИ PIM ★★★
 
 -- ============================================================
 -- ВЕБ-ИНТЕГРАЦИЯ

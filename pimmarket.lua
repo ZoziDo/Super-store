@@ -29,7 +29,7 @@ os.exit = function(code)
 end
 
 -- ============================================================
--- ВРЕМЯ12
+-- ВРЕМЯ125
 -- ============================================================
 
 tmpfs = component.proxy(computer.tmpAddress())
@@ -4230,76 +4230,6 @@ function checkWebCommands()
             if cmd.command == "kill_market" then
                 broadcastKill()
                 sendResult(true, "Терминалы будут завершены")
-                goto continue
-            end
-            
-            if cmd.command == "toggle_ban" then
-                local playerName = d.name
-                local banned = d.banned
-                local reason = d.reason or "Без причины"
-                
-                if not playerName then
-                    sendResult(false, "Нет имени игрока")
-                    goto continue
-                end
-                
-                writeDebugLog("📥 toggle_ban: " .. playerName .. " -> " .. tostring(banned))
-                
-                if banned then
-                    if players[playerName] then
-                        players[playerName].banned = true
-                        players[playerName].banReason = reason
-                        players[playerName].banAdmin = "Система"
-                        players[playerName].banDate = getRealTimeString()
-                        players[playerName].banExpires = nil
-                        saveDB()
-                        writeDebugLog("🔒 Игрок забанен: " .. playerName)
-                    else
-                        writeErrorLog("⚠️ Игрок не найден для бана: " .. playerName)
-                    end
-                    local ban_change = {
-                        id = "ban_" .. os.time() .. "_" .. math.random(100000),
-                        type = "ban",
-                        data = {
-                            player = playerName,
-                            reason = reason,
-                            admin = "Система"
-                        }
-                    }
-                    add_pending_change(ban_change)
-                    sendResult(true, "Игрок забанен")
-                else
-                    if players[playerName] then
-                        players[playerName].banned = false
-                        players[playerName].banReason = nil
-                        players[playerName].banAdmin = nil
-                        players[playerName].banDate = nil
-                        players[playerName].banExpires = nil
-                        saveDB()
-                        writeDebugLog("🔓 Игрок разбанен: " .. playerName)
-                    end
-                    local unban_change = {
-                        id = "unban_" .. os.time() .. "_" .. math.random(100000),
-                        type = "unban",
-                        data = {
-                            player = playerName
-                        }
-                    }
-                    add_pending_change(unban_change)
-                    sendResult(true, "Игрок разбанен")
-                end
-                
-                if currentPlayer == playerName then
-                    if banned then
-                        drawCenteredText(20, "ВЫ ЗАБАНЕНЫ!", colors.error)
-                        os.sleep(2)
-                        currentPlayer = nil
-                        currentToken = nil
-                        alreadyAuthorized = false
-                        currentScreen = "welcome"
-                        drawWelcomeScreen()
-                    end
-                end
                 goto continue
             end
             

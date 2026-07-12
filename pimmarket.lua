@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ★★ АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА12 ★★
+-- ★★ АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА123 ★★
 -- ============================================================
 
 local function setupAutoStart()
@@ -528,13 +528,12 @@ function getSystemInfo()
     info.uptime_seconds = uptime
     info.uptime_human = formatUptime(uptime)
     
-    -- 2. Время запуска (ИСПРАВЛЕНО)
-    -- Используем реальное время из tmpfs
+    -- 2. Время запуска
     local realTime = getRealTimestamp()
     local bootTime = realTime - uptime
     info.boot_time = os.date("%d.%m.%Y %H:%M:%S", bootTime)
     
-    -- 3. CPU (если недоступен — N/A)
+    -- 3. CPU
     info.cpu_load = 0
     info.cpu_percent = "N/A"
     if computer.getCPUUsage then
@@ -573,7 +572,7 @@ function getSystemInfo()
         end
     end
     
-    -- 5. Диск (пробуем разные пути)
+    -- 5. Диск
     info.disk_used_percent = "N/A"
     local fs = require("filesystem")
     local paths = {"/", "/home", "/tmp", "/lib"}
@@ -597,28 +596,49 @@ function getSystemInfo()
         end
     end
     
-    -- 7. Игрок через PIM
+    -- ★★★ 7. Игрок через PIM (ИСПРАВЛЕНО) ★★★
     info.current_player = "—"
     local pimAddr = getPimAddr()
     if pimAddr then
         local pim = component.proxy(pimAddr)
         local player = nil
+        
+        -- ★★★ БЕЗОПАСНО ПОЛУЧАЕМ ИМЯ ИГРОКА ★★★
         if pim.getPlayer then
             local ok, result = pcall(pim.getPlayer, pim)
-            if ok then player = result end
+            if ok and result then
+                player = result
+            end
         end
+        
         if not player and pim.getPlayerName then
             local ok, result = pcall(pim.getPlayerName, pim)
-            if ok then player = result end
+            if ok and result then
+                player = result
+            end
         end
+        
         if not player and pim.getUsername then
             local ok, result = pcall(pim.getUsername, pim)
-            if ok then player = result end
+            if ok and result then
+                player = result
+            end
         end
+        
+        -- ★★★ ПОСЛЕДНЯЯ ПОПЫТКА ★★★
         if not player then
-            player = pim.player
+            local ok, result = pcall(function()
+                return pim.player
+            end)
+            if ok and result then
+                player = result
+            end
         end
-        info.current_player = (player and player ~= "") and player or "—"
+        
+        -- ★★★ БЕЗОПАСНО ПРИСВАИВАЕМ ★★★
+        if player and player ~= "" then
+            info.current_player = player
+        end
     end
     
     info.real_time = getRealTimeString()
@@ -1225,8 +1245,14 @@ end
 function sendStats()
     writeDebugLog("📊 sendStats() начат (резервный дамп)")
     
-    -- ★★★ ПОЛУЧАЕМ СИСТЕМНЫЕ ДАННЫЕ ★★★
-    local sysInfo = getSystemInfo()
+    -- ★★★ ПОЛУЧАЕМ СИСТЕМНЫЕ ДАННЫЕ (С ЗАЩИТОЙ) ★★★
+    local sysInfo = {}
+    local ok, result = pcall(getSystemInfo)
+    if ok and result then
+        sysInfo = result
+    else
+        writeErrorLog("⚠️ Ошибка получения системной информации")
+    end
     
     local playerList = {}
     local totalBalance = 0
@@ -1406,8 +1432,13 @@ event.listen("modem_message", function(_, _, from, port, _, _, data)
 end)
 
 function getPimAddr()
-    for addr in component.list("pim") do
-        return addr
+    local success, result = pcall(function()
+        for addr in component.list("pim") do
+            return addr
+        end
+    end)
+    if success and result then
+        return result
     end
     return nil
 end

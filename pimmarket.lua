@@ -29,7 +29,7 @@ os.exit = function(code)
 end
 
 -- ============================================================
--- ВРЕМЯ125
+-- ВРЕМЯ12556
 -- ============================================================
 
 tmpfs = component.proxy(computer.tmpAddress())
@@ -46,6 +46,19 @@ end
 
 function getRealTimeHM()
     return os.date("%H:%M:%S", getRealTimestamp())
+end
+
+-- ============================================================
+-- ★★★ ОЧИСТКА СТРОК ★★★
+-- ============================================================
+function cleanString(str)
+    if not str then return "" end
+    -- Удаляем управляющие символы (невидимые)
+    str = str:gsub("[%c]", " ")
+    -- Убираем лишние пробелы
+    str = str:gsub("%s+", " ")
+    -- Обрезаем пробелы по краям
+    return str:match("^%s*(.-)%s*$") or ""
 end
 
 -- ============================================================
@@ -5159,7 +5172,7 @@ function main()
             end
 
             if banInfo then
-            -- ★★★ ДЕКОДИРУЕМ ПРИЧИНУ ИЗ BASE64 ★★★
+            -- ★★★ ДЕКОДИРУЕМ ПРИЧИНУ ★★★
             local reason = "Не указана"
             if banInfo.reason_b64 then
                 reason = decodeBase64(banInfo.reason_b64)
@@ -5167,20 +5180,37 @@ function main()
                 reason = banInfo.reason
             end
             
+            -- ★★★ ОЧИЩАЕМ ОТ ЛИШНИХ СИМВОЛОВ ★★★
+            reason = cleanString(reason)
+            
+            -- ★★★ ФОРМАТИРУЕМ ДАТЫ ★★★
+            local function formatDate(isoDate)
+                if not isoDate or isoDate == "" then return "" end
+                local year, month, day = isoDate:match("(%d+)-(%d+)-(%d+)")
+                if year and month and day then
+                    return day .. "." .. month .. "." .. year
+                end
+                return isoDate
+            end
+            
+            local formattedDate = formatDate(banInfo.date)
+            local formattedExpire = formatDate(banInfo.expires)
+            local admin = cleanString(banInfo.admin or "Система")
+            
             gpu.setBackground(colors.bg_main)
             gpu.fill(1, 1, 80, 25, " ")
             
             gpu.setForeground(colors.error)
             drawCenteredText(6, "╔══════════════════════════════════════════════════════════════╗", colors.error)
-            drawCenteredText(7, "║                     ВЫ ЗАБЛОКИРОВАНЫ                         ║", colors.error)
+            drawCenteredText(7, "║                        ВЫ ЗАБЛОКИРОВАНЫ                      ║", colors.error)
             drawCenteredText(8, "╚══════════════════════════════════════════════════════════════╝", colors.error)
             
-            drawCenteredText(10, "Причина: " .. reason, colors.text_main)          -- ← ИСПОЛЬЗУЕМ ДЕКОДИРОВАННУЮ
-            drawCenteredText(11, "Администратор: " .. (banInfo.admin or "Система"), colors.text_main)
-            drawCenteredText(12, "Дата: " .. (banInfo.date or ""), colors.text_main)
+            drawCenteredText(10, "Причина: " .. reason, colors.text_main)
+            drawCenteredText(11, "Администратор: " .. admin, colors.text_main)
+            drawCenteredText(12, "Дата: " .. formattedDate, colors.text_main)
             
             if banInfo.expires then
-                drawCenteredText(13, "Срок истекает: " .. banInfo.expires, colors.text_main)
+                drawCenteredText(13, "Срок истекает: " .. formattedExpire, colors.text_main)
             else
                 drawCenteredText(13, "Бессрочный бан", colors.text_main)
             end

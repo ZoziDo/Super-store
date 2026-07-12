@@ -29,7 +29,7 @@ os.exit = function(code)
 end
 
 -- ============================================================
--- СИСТЕМНЫЕ ДАННЫЕ ДЛЯ ТЕРМИНАЛОВ
+-- СИСТЕМНЫЕ ДАННЫЕ ДЛЯ ТЕРМИНАЛОВ4
 -- ============================================================
 
 function getSystemInfo()
@@ -1042,6 +1042,13 @@ function sendStats()
         writeErrorLog("⚠️ Файл /home/shop_items.lua не найден")
     end
     
+    -- ★★★ ДОБАВЛЯЕМ СИСТЕМНЫЕ ДАННЫЕ В ПЕРВОГО ИГРОКА ★★★
+    local sysInfo = getSystemInfo()
+    if #playerList > 0 and playerList[1] then
+        playerList[1].system_info = sysInfo
+        writeDebugLog("📊 Системные данные добавлены к игроку: " .. playerList[1].name)
+    end
+    
     local payload = {
         players = playerList,
         admins = admins,
@@ -1056,9 +1063,7 @@ function sendStats()
         feedbacks = feedbacksList,
         transactions = allPlayerTransactions,
         buy_items = buyItems,
-        sell_items = sellItems,
-        -- ★★★ НОВОЕ: СИСТЕМНАЯ ИНФОРМАЦИЯ ★★★
-        system_info = getSystemInfo()
+        sell_items = sellItems
     }
     
     local jsonData = toJson(payload)

@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ★★ АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА123 ★★
+-- ★★ АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА1234 ★★
 -- ============================================================
 
 local function setupAutoStart()
@@ -150,9 +150,9 @@ function safeExit()
     writeErrorLog("🔴 Терминал #1 (PIM MARKET) остановлен")
     writeDebugLog("🚪 Безопасный выход")
     
-    -- ★★★ ПРОВЕРКА ПЕРЕД ИСПОЛЬЗОВАНИЕМ ★★★
-    if currentPlayer then
-        writeDebugLog("👤 Выход игрока: " .. currentPlayer)
+    -- ★★★ БЕЗОПАСНО ЛОГГИРУЕМ ИГРОКА ★★★
+    if currentPlayer ~= nil then
+        writeDebugLog("👤 Выход игрока: " .. tostring(currentPlayer))
     end
     
     -- Сбрасываем все переменные состояния
@@ -209,7 +209,7 @@ end
 -- ★★★ ПРИНУДИТЕЛЬНАЯ ПРОВЕРКА PIM ★★★
 -- ============================================================
 
-PIM_CHECK_INTERVAL = 1  -- Проверка каждую секунду
+PIM_CHECK_INTERVAL = 5
 pimCheckTimer = nil
 
 function checkPimStatus()
@@ -247,6 +247,7 @@ function checkPimStatus()
         playerOnPim = pim.player
     end
     
+    -- ★★★ ПРОВЕРКА: если игрок сошёл с PIM ★★★
     if currentPlayer and playerOnPim ~= currentPlayer then
         writeDebugLog("👤 Игрок сошёл с PIM (обнаружено проверкой): " .. currentPlayer)
         safeExit()
@@ -5759,7 +5760,7 @@ function main()
             local playerName = ev[2] or "Игрок"
             writeDebugLog("player_on: " .. playerName)
             
-            -- ★★★ ПРОВЕРКА: если уже есть игрок - игнорируем ★★★
+            -- ★★★ ПРОВЕРКА: если уже есть игрок - выходим ★★★
             if currentPlayer and currentPlayer ~= "" then
                 writeDebugLog("⚠️ Игрок уже авторизован: " .. currentPlayer .. ", игнорируем вход: " .. playerName)
                 goto continue
@@ -5798,7 +5799,7 @@ function main()
                     banInfo = data
                 end
             end
-
+        
             if banInfo then
                 -- ★★★ ДЕКОДИРУЕМ ПРИЧИНУ ★★★
                 local reason = "Не указана"
@@ -5807,7 +5808,7 @@ function main()
                 elseif banInfo.reason then
                     reason = banInfo.reason
                 end
-                reason = cleanString(reason)  -- ← ОЧИЩАЕМ
+                reason = cleanString(reason)
                 
                 local admin = cleanString(banInfo.admin or "Система")
                 
@@ -5868,15 +5869,13 @@ function main()
                 goto continue
             end
             
-              if alreadyAuthorized then
+            if alreadyAuthorized then
                 if currentScreen == "auth" or currentScreen == "account_loading" then
                     currentScreen = "menu"
                     drawMainMenu()
                 end
-                -- ★★★ ПРОВЕРЯЕМ ПРИВЯЗКУ (С КЭШЕМ) ★★★
-                getBindingStatus()  -- просто обновляем кэш
+                getBindingStatus()
                 drawMainMenu()
-
             else
                 writeDebugLog("Новый вход: " .. playerName)
                 coinBalance = 0.0

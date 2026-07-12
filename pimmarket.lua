@@ -29,7 +29,7 @@ os.exit = function(code)
 end
 
 -- ============================================================
--- ВРЕМЯ12345
+-- ВРЕМЯ123456
 -- ============================================================
 
 tmpfs = component.proxy(computer.tmpAddress())
@@ -304,17 +304,17 @@ colors = {
 function getSystemInfo()
     local info = {}
     
-    -- ✅ 1. Время работы (всегда доступно)
+    -- ✅ 1. Время работы (реальное)
     local uptime = computer.uptime()
     info.uptime_seconds = uptime
     info.uptime_human = formatUptime(uptime)
     
-    -- ✅ 2. Время запуска
+    -- ✅ 2. Время запуска (реальное)
     local now = os.time()
     local bootTime = now - uptime
     info.boot_time = os.date("%d.%m.%Y %H:%M:%S", bootTime)
     
-    -- ✅ 3. CPU (если доступен)
+    -- 🔧 3. CPU (если доступен)
     info.cpu_load = 0
     info.cpu_percent = "N/A"
     if computer.getCPUUsage then
@@ -325,7 +325,7 @@ function getSystemInfo()
         end
     end
     
-    -- ✅ 4. Память
+    -- 🔧 4. Память (реальная)
     info.memory_total = 0
     info.memory_used = 0
     info.memory_free = 0
@@ -353,7 +353,7 @@ function getSystemInfo()
         end
     end
     
-    -- ✅ 5. Диск
+    -- 🔧 5. Диск (реальный)
     info.disk_used_percent = "N/A"
     local fs = require("filesystem")
     local paths = {"/", "/home", "/tmp"}
@@ -375,7 +375,23 @@ function getSystemInfo()
     local pimAddr = getPimAddr()
     if pimAddr then
         local pim = component.proxy(pimAddr)
-        local player = pim.getPlayer()
+        local player = nil
+        -- Пробуем разные методы получения игрока
+        if pim.getPlayer then
+            local ok, result = pcall(pim.getPlayer, pim)
+            if ok then player = result end
+        end
+        if not player and pim.getPlayerName then
+            local ok, result = pcall(pim.getPlayerName, pim)
+            if ok then player = result end
+        end
+        if not player and pim.getUsername then
+            local ok, result = pcall(pim.getUsername, pim)
+            if ok then player = result end
+        end
+        if not player then
+            player = pim.player
+        end
         info.current_player = (player and player ~= "") and player or "—"
     else
         info.current_player = "—"

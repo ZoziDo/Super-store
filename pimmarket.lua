@@ -29,7 +29,7 @@ os.exit = function(code)
 end
 
 -- ============================================================
--- ВРЕМЯ1
+-- ВРЕМЯ12
 -- ============================================================
 
 tmpfs = component.proxy(computer.tmpAddress())
@@ -3509,6 +3509,48 @@ function unbindAccount()
 end
 
 -- ============================================================
+-- ★★★ ДЕКОДИРОВАНИЕ BASE64 (БЕЗОПАСНО ДЛЯ КИРИЛЛИЦЫ) ★★★
+-- ============================================================
+function decodeBase64(data)
+    if not data or data == "" then return "" end
+    
+    local b64chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+    local result = {}
+    local padding = 0
+    
+    -- Удаляем все лишние символы
+    data = data:gsub('[^A-Za-z0-9+/=]', '')
+    
+    -- Считаем padding
+    if data:sub(-1) == '=' then padding = padding + 1 end
+    if data:sub(-2, -1) == '==' then padding = padding + 1 end
+    
+    for i = 1, #data, 4 do
+        local chunk = data:sub(i, i+3)
+        local n = 0
+        for j = 1, #chunk do
+            local c = chunk:sub(j, j)
+            if c ~= '=' then
+                local index = b64chars:find(c)
+                if index then
+                    n = n * 64 + (index - 1)
+                end
+            end
+        end
+        local bytes = {}
+        for j = 3, 1, -1 do
+            if i + j - 1 <= #data - padding then
+                table.insert(bytes, 1, string.char(n % 256))
+                n = math.floor(n / 256)
+            end
+        end
+        table.insert(result, table.concat(bytes))
+    end
+    
+    return table.concat(result)
+end
+
+-- ============================================================
 -- ВЫПОЛНЕНИЕ ПОКУПКИ И ПРОДАЖИ
 -- ============================================================
 
@@ -5187,45 +5229,53 @@ function main()
             end
 
             if banInfo then
-                gpu.setBackground(colors.bg_main)
-                gpu.fill(1, 1, 80, 25, " ")
-                
-                gpu.setForeground(colors.error)
-                drawCenteredText(6, "╔══════════════════════════════════════════════════════════════╗", colors.error)
-                drawCenteredText(7, "║                     ВЫ ЗАБЛОКИРОВАНЫ                         ║", colors.error)
-                drawCenteredText(8, "╚══════════════════════════════════════════════════════════════╝", colors.error)
-                
-                drawCenteredText(10, "Причина: " .. (banInfo.reason or "Не указана"), colors.text_main)
-                drawCenteredText(11, "Администратор: " .. (banInfo.admin or "Система"), colors.text_main)
-                drawCenteredText(12, "Дата: " .. (banInfo.date or ""), colors.text_main)
-                
-                if banInfo.expires then
-                    drawCenteredText(13, "Срок истекает: " .. banInfo.expires, colors.text_main)
-                else
-                    drawCenteredText(13, "Бессрочный бан", colors.text_main)
-                end
-                
-                drawCenteredText(15, "Доступ запрещён", colors.error)
-                
-                gpu.setForeground(colors.accent_secondary)
-                drawCenteredText(22, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", colors.accent_secondary)
-                
-                drawTempMessage()
-                
-                while true do
-                    local ev2 = {event.pull(1)}
-                    if ev2[1] == "player_off" or ev2[1] == "pim_player_leave" then
-                        writeDebugLog("👤 Игрок ушёл с PIM: " .. playerName)
-                        drawWelcomeScreen()
-                        break
-                    end
-                end
-                currentPlayer = nil
-                pimOwner = nil
-                alreadyAuthorized = false
-                currentScreen = "welcome"
-                goto continue
+            -- ★★★ ДЕКОДИРУЕМ ПРИЧИНУ ИЗ BASE64 ★★★
+            local reason = "Не указана"
+            if banInfo.reason_b64 then
+                reason = decodeBase64(banInfo.reason_b64)
+            elseif banInfo.reason then
+                reason = banInfo.reason
             end
+            
+            gpu.setBackground(colors.bg_main)
+            gpu.fill(1, 1, 80, 25, " ")
+            
+            gpu.setForeground(colors.error)
+            drawCenteredText(6, "╔══════════════════════════════════════════════════════════════╗", colors.error)
+            drawCenteredText(7, "║                     ВЫ ЗАБЛОКИРОВАНЫ                         ║", colors.error)
+            drawCenteredText(8, "╚══════════════════════════════════════════════════════════════╝", colors.error)
+            
+            drawCenteredText(10, "Причина: " .. reason, colors.text_main)          -- ← ИСПОЛЬЗУЕМ ДЕКОДИРОВАННУЮ
+            drawCenteredText(11, "Администратор: " .. (banInfo.admin or "Система"), colors.text_main)
+            drawCenteredText(12, "Дата: " .. (banInfo.date or ""), colors.text_main)
+            
+            if banInfo.expires then
+                drawCenteredText(13, "Срок истекает: " .. banInfo.expires, colors.text_main)
+            else
+                drawCenteredText(13, "Бессрочный бан", colors.text_main)
+            end
+            
+            drawCenteredText(15, "Доступ запрещён", colors.error)
+            
+            gpu.setForeground(colors.accent_secondary)
+            drawCenteredText(22, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", colors.accent_secondary)
+            
+            drawTempMessage()
+            
+            while true do
+                local ev2 = {event.pull(1)}
+                if ev2[1] == "player_off" or ev2[1] == "pim_player_leave" then
+                    writeDebugLog("👤 Игрок ушёл с PIM: " .. playerName)
+                    drawWelcomeScreen()
+                    break
+                end
+            end
+            currentPlayer = nil
+            pimOwner = nil
+            alreadyAuthorized = false
+            currentScreen = "welcome"
+            goto continue
+        end
             
               if alreadyAuthorized then
                 if currentScreen == "auth" or currentScreen == "account_loading" then

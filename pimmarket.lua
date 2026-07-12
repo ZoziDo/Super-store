@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ★★ АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА132 ★★
+-- ★★ АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА1321 ★★
 -- ============================================================
 
 local function setupAutoStart()
@@ -5895,6 +5895,52 @@ function main()
         if e == "player_off" or e == "pim_player_leave" then
             local playerName = ev[2] or "Игрок"
             writeDebugLog("player_off: " .. playerName)
+            writeErrorLog("🔥 ВЫХОД С PIM ОБНАРУЖЕН: " .. playerName)
+            
+            -- ★★★ ЗАДЕРЖКА ПЕРЕД ОБРАБОТКОЙ ★★★
+            -- Ждём 0.5 секунды, чтобы убедиться, что это реальный выход, а не "моргание"
+            os.sleep(0.5)
+            
+            -- ★★★ ПРОВЕРЯЕМ, СТОИТ ЛИ ИГРОК НА PIM ★★★
+            local pimAddr = getPimAddr()
+            if pimAddr then
+                local pim = component.proxy(pimAddr)
+                local playerOnPim = nil
+                
+                if pim.getPlayer then
+                    local ok, result = pcall(pim.getPlayer, pim)
+                    if ok and result and result ~= "" then
+                        playerOnPim = result
+                    end
+                end
+                if not playerOnPim and pim.getPlayerName then
+                    local ok, result = pcall(pim.getPlayerName, pim)
+                    if ok and result and result ~= "" then
+                        playerOnPim = result
+                    end
+                end
+                if not playerOnPim and pim.getUsername then
+                    local ok, result = pcall(pim.getUsername, pim)
+                    if ok and result and result ~= "" then
+                        playerOnPim = result
+                    end
+                end
+                if not playerOnPim then
+                    local ok, result = pcall(function()
+                        return pim.player
+                    end)
+                    if ok and result and result ~= "" then
+                        playerOnPim = result
+                    end
+                end
+                
+                -- ★★★ ЕСЛИ ИГРОК ВСЁ ЕЩЁ НА PIM - НЕ СБРАСЫВАЕМ ★★★
+                if playerOnPim and playerOnPim == currentPlayer then
+                    writeErrorLog("✅ Игрок всё ещё на PIM, отменяем выход")
+                    goto continue
+                end
+            end
+            
             addLog("👤 Выход: " .. playerName)
             sendToWeb("/api/new_log", toJson({
                 time = getRealTimeHM(),

@@ -29,7 +29,7 @@ os.exit = function(code)
 end
 
 -- ============================================================
--- ВРЕМЯ1
+-- ВРЕМЯ12
 -- ============================================================
 
 tmpfs = component.proxy(computer.tmpAddress())
@@ -296,6 +296,111 @@ colors = {
     tomato = 0xFF6347,
     white = 0xFFFFFF
 }
+
+-- ============================================================
+-- СИСТЕМНЫЕ ДАННЫЕ ДЛЯ ТЕРМИНАЛОВ
+-- ============================================================
+
+function getSystemInfo()
+    local info = {}
+    
+    -- ✅ 1. Время работы (всегда доступно)
+    local uptime = computer.uptime()
+    info.uptime_seconds = uptime
+    info.uptime_human = formatUptime(uptime)
+    
+    -- ✅ 2. Время запуска
+    local now = os.time()
+    local bootTime = now - uptime
+    info.boot_time = os.date("%d.%m.%Y %H:%M:%S", bootTime)
+    
+    -- 🔧 3. CPU (если доступен)
+    info.cpu_load = 0
+    info.cpu_percent = "N/A"
+    if computer.getCPUUsage then
+        local ok, cpu = pcall(computer.getCPUUsage)
+        if ok and cpu then
+            info.cpu_load = cpu
+            info.cpu_percent = string.format("%.1f%%", cpu * 100)
+        end
+    end
+    
+    -- 🔧 4. Память
+    info.memory_total = 0
+    info.memory_used = 0
+    info.memory_free = 0
+    info.memory_used_mb = "N/A"
+    info.memory_total_mb = "N/A"
+    info.memory_human = "N/A"
+    
+    if computer.totalMemory then
+        local ok, total = pcall(computer.totalMemory)
+        if ok and total then
+            info.memory_total = total
+            info.memory_total_mb = string.format("%.1f MB", total / 1024 / 1024)
+        end
+    end
+    
+    if computer.freeMemory then
+        local ok, free = pcall(computer.freeMemory)
+        if ok and free then
+            info.memory_free = free
+            if info.memory_total > 0 then
+                info.memory_used = info.memory_total - free
+                info.memory_used_mb = string.format("%.1f MB", info.memory_used / 1024 / 1024)
+                info.memory_human = info.memory_used_mb .. " / " .. info.memory_total_mb
+            end
+        end
+    end
+    
+    -- 🔧 5. Диск
+    info.disk_used_percent = "N/A"
+    local fs = require("filesystem")
+    local paths = {"/", "/home", "/tmp"}
+    for _, path in ipairs(paths) do
+        local ok1, free = pcall(fs.space, path)
+        local ok2, total = pcall(fs.total, path)
+        if ok1 and ok2 and total and type(total) == "number" and total > 0 then
+            if free and type(free) == "number" then
+                info.disk_used_percent = string.format("%.1f%%", (total - free) / total * 100)
+                break
+            end
+        end
+    end
+    
+    -- ✅ 6. IP адрес
+    info.ip = computer.getLocalIP and computer.getLocalIP() or "N/A"
+    
+    -- ✅ 7. Текущий игрок (через PIM)
+    local pimAddr = getPimAddr()
+    if pimAddr then
+        local pim = component.proxy(pimAddr)
+        local player = pim.getPlayer()
+        info.current_player = (player and player ~= "") and player or "—"
+    else
+        info.current_player = "—"
+    end
+    
+    info.real_time = getRealTimeString()
+    
+    return info
+end
+
+-- Форматирование времени работы
+function formatUptime(seconds)
+    if not seconds or seconds < 0 then return "—" end
+    local days = math.floor(seconds / 86400)
+    local hours = math.floor((seconds % 86400) / 3600)
+    local minutes = math.floor((seconds % 3600) / 60)
+    
+    if days > 0 then
+        return string.format("%dд %dч %dм", days, hours, minutes)
+    elseif hours > 0 then
+        return string.format("%dч %dм", hours, minutes)
+    else
+        return string.format("%dм", math.max(1, minutes))
+    end
+end
 
 -- ============================================================
 -- UI БАЗОВЫЕ ФУНКЦИИ
@@ -880,6 +985,17 @@ end
 function sendStats()
     writeDebugLog("📊 sendStats() начат (резервный дамп)")
     
+    -- ★★★ ПОЛУЧАЕМ СИСТЕМНЫЕ ДАННЫЕ ★★★
+    local sysInfo = getSystemInfo()
+    
+    -- ★★★ ЛОГИРУЕМ ДЛЯ ОТЛАДКИ ★★★
+    writeDebugLog("📊 Системные данные:")
+    writeDebugLog("   Uptime: " .. (sysInfo.uptime_human or "N/A"))
+    writeDebugLog("   CPU: " .. (sysInfo.cpu_percent or "N/A"))
+    writeDebugLog("   Memory: " .. (sysInfo.memory_human or "N/A"))
+    writeDebugLog("   Disk: " .. (sysInfo.disk_used_percent or "N/A"))
+    writeDebugLog("   Player: " .. (sysInfo.current_player or "N/A"))
+    
     local playerList = {}
     local totalBalance = 0
     local playerCount = 0
@@ -970,6 +1086,12 @@ function sendStats()
         writeErrorLog("⚠️ Файл /home/shop_items.lua не найден")
     end
     
+    -- ★★★ ДОБАВЛЯЕМ system_info В ПЕРВОГО ИГРОКА ★★★
+    if #playerList > 0 and playerList[1] then
+        playerList[1].system_info = sysInfo
+        writeDebugLog("📊 Системные данные добавлены к игроку: " .. playerList[1].name)
+    end
+    
     local payload = {
         players = playerList,
         admins = admins,
@@ -984,7 +1106,9 @@ function sendStats()
         feedbacks = feedbacksList,
         transactions = allPlayerTransactions,
         buy_items = buyItems,
-        sell_items = sellItems
+        sell_items = sellItems,
+        -- ★★★ ОТПРАВЛЯЕМ system_info НА КОРНЕВОМ УРОВНЕ ★★★
+        system_info = sysInfo
     }
     
     local jsonData = toJson(payload)
@@ -995,6 +1119,18 @@ function sendStats()
 end
 
 event.timer(60, sendStats, math.huge)
+
+-- ★★★ СЮДА ВСТАВЛЯЕМ ТАЙМЕР ДЛЯ СИСТЕМНЫХ ДАННЫХ ★★★
+-- Принудительная отправка системных данных каждые 30 секунд
+event.timer(30, function()
+    if not TRANSACTION_LOCK then
+        local sysInfo = getSystemInfo()
+        -- Отправляем отдельно, чтобы сервер точно получил
+        sendToWeb("/api/system_info", toJson(sysInfo))
+        writeDebugLog("📊 Отправлены системные данные отдельным пакетом")
+    end
+    return true
+end, math.huge)
 
 function safeDoFile(path)
     writeDebugLog("safeDoFile: " .. path)

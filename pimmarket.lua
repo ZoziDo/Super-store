@@ -13,7 +13,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ★★★ АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА ★★★
+-- ★★ АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА ★★
 -- ============================================================
 
 local function setupAutoStart()
@@ -24,7 +24,7 @@ local function setupAutoStart()
     -- 1. Создаём startup.lua
     local startupFile = "/home/startup.lua"
     if not fs.exists(startupFile) then
-        writeErrorLog("📝 Создаём автозапуск: " .. startupFile)
+        print("📝 Создаём автозапуск: " .. startupFile)
         local file = io.open(startupFile, "w")
         if file then
             file:write([[
@@ -41,7 +41,7 @@ shell.execute("lua /home/pimmarket.lua &")
 print("✅ PIM MARKET запущен")
 ]])
             file:close()
-            writeErrorLog("✅ Автозапуск создан")
+            print("✅ Автозапуск создан")
             return true
         end
     end
@@ -54,7 +54,7 @@ print("✅ PIM MARKET запущен")
             file:write("-- Автозапуск PIM MARKET\n")
             file:write("lua /home/pimmarket.lua &\n")
             file:close()
-            writeErrorLog("✅ .shrc создан")
+            print("✅ .shrc создан")
         end
     end
     
@@ -71,9 +71,11 @@ if not fs.exists("/home/.autostart_done") then
             file:write("autostart_configured_" .. os.date("%Y-%m-%d %H:%M:%S"))
             file:close()
         end
-        writeErrorLog("🎯 Автозагрузка настроена!")
+        print("🎯 Автозагрузка настроена!")
     end
 end
+
+-- ★★★ КОНЕЦ БЛОКА АВТОЗАПУСКА ★★★
 
 pcall(function()
     event.ignore("interrupted", function() end)

@@ -29,7 +29,7 @@ os.exit = function(code)
 end
 
 -- ============================================================
--- ВРЕМЯ156789
+-- ВРЕМЯ1
 -- ============================================================
 
 tmpfs = component.proxy(computer.tmpAddress())
@@ -3575,25 +3575,25 @@ function showQRCodePopup()
     
     -- Заголовок (центр: 80)
     local titleText = "QR-КОД ДЛЯ ВХОДА"
-    local titleX = 80 - math.floor(#titleText / 2)
+    local titleX = 80 - math.floor(#titleText / 2) + 2
     gpu.setForeground(0x00FFCC)
     gpu.set(titleX, 2, titleText)
     
     -- Игрок (центр: 80)
     local playerText = "Игрок: " .. (currentPlayer or "?")
-    local playerX = 80 - math.floor(#playerText / 2)
+    local playerX = 80 - math.floor(#playerText / 2)   
     gpu.setForeground(colors.white)
     gpu.set(playerX, 4, playerText)
     
     -- Подсказка (центр: 80)
     local hintText = "Отсканируйте QR-код для входа на сайт"
-    local hintX = 80 - math.floor(#hintText / 2)
+    local hintX = 80 - math.floor(#hintText / 2) + 5
     gpu.setForeground(colors.inactive)
     gpu.set(hintX, 5, hintText)
     
     -- QR-КОД 37x37 (центр: (160-37)/2 = 61)
     local qrY = 7
-    local qrX = 62  -- ровно по центру
+    local qrX = 55  -- ровно по центру
     
     local asciiQR = [[
 █████████████████████████████████████████████████████████████████████
@@ -3653,7 +3653,7 @@ function showQRCodePopup()
     
     -- Подсказка внизу (центр: 80)
     local bottomHint = "[ Нажмите ЗАКРЫТЬ или ESC для возврата ]"
-    local bottomHintX = 80 - math.floor(#bottomHint / 2)
+    local bottomHintX = 80 - math.floor(#bottomHint / 2) + 5
     gpu.setForeground(colors.text_main)
     gpu.set(bottomHintX, 48, bottomHint)
     

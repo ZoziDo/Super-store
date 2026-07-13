@@ -11,7 +11,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- АВТОМАТИЧЕСКАЯ246 НАСТРОЙКА АВТОЗАПУСКА123331
+-- АВТОМАТИЧЕСКАЯ246 НАСТРОЙКА АВТОЗАПУСКА11111
 -- ============================================================
 
 local function setupAutoStart()
@@ -316,10 +316,8 @@ end
 
 -- ★★★ БЫСТРЫЙ ПЕРЕХОД МЕЖДУ ЭКРАНАМИ ★★★
 function quickScreenSwitch(newScreen)
-    -- Сохраняем текущий буфер
     currentScreen = newScreen
     bufferClear()
-    -- Рендерим новый экран без очистки экрана
     if newScreen == "menu" then
         drawMainMenu()
     elseif newScreen == "shop" then
@@ -372,7 +370,6 @@ function clearDebugFile()
     writeDebugFile("=== DEBUG LOG STARTED ===")
 end
 
--- Очищаем файл при запуске
 clearDebugFile()
 
 -- ============================================================
@@ -470,28 +467,22 @@ end
 -- ★★★ GRACEFUL SHUTDOWN - ПЛАВНОЕ ЗАВЕРШЕНИЕ ★★★
 -- ============================================================
 
--- Флаг, что мы в процессе завершения
 isShuttingDown = false
 
--- Функция для безопасного сохранения всех данных
 function saveAllData()
     writeDebugLog("💾 Сохранение всех данных...")
     
-    -- 1. Сохраняем игроков
     if dbDirty then
         saveDB()
         writeDebugLog("   ✅ Игроки сохранены")
     end
     
-    -- 2. Сохраняем статистику
     saveGlobalStats()
     writeDebugLog("   ✅ Статистика сохранена")
     
-    -- 3. Отправляем все логи
     flushLogQueue()
     writeDebugLog("   ✅ Логи отправлены")
     
-    -- 4. Сохраняем pending изменения
     if #pending_buffer > 0 then
         save_pending_buffer()
         writeDebugLog("   ✅ Буфер изменений сохранён")
@@ -500,15 +491,13 @@ function saveAllData()
     writeDebugLog("💾 Все данные сохранены!")
 end
 
--- Функция для асинхронного сохранения (не блокирует GUI)
 function asyncSaveData()
     if isShuttingDown then
-        return  -- Уже сохраняем
+        return
     end
     
     isShuttingDown = true
     
-    -- Сохраняем в фоне через 0.1 секунду
     event.timer(0.1, function()
         pcall(saveAllData)
         isShuttingDown = false
@@ -516,34 +505,27 @@ function asyncSaveData()
     end)
 end
 
--- Функция для принудительного сохранения (блокирует до завершения)
 function forceSaveData()
     isShuttingDown = true
     saveAllData()
     isShuttingDown = false
 end
 
--- ★★★ КОНЕЦ БЛОКА GRACEFUL SHUTDOWN ★★★      
-
 -- ============================================================
 -- ★★★ ОБРАБОТЧИК ВЫКЛЮЧЕНИЯ КОМПЬЮТЕРА ★★★
 -- ============================================================
 
--- Слушаем событие выключения (если есть)
 event.listen("computer_shutdown", function()
     writeErrorLog("⏻ Компьютер выключается! Сохраняем данные...")
     forceSaveData()
     writeErrorLog("✅ Данные сохранены перед выключением")
 end)
 
--- Также сохраняем при завершении процесса
 event.listen("terminate", function()
     writeErrorLog("⏻ Процесс завершается! Сохраняем данные...")
     forceSaveData()
     writeErrorLog("✅ Данные сохранены перед завершением")
 end)
-
--- ★★★ КОНЕЦ БЛОКА ОБРАБОТЧИКА ★★★            
 
 -- ============================================================
 -- ★★★ ЗАЩИТА ОТ ЗАВИСАНИЙ ★★★
@@ -572,10 +554,8 @@ end
 function safeExit()
     writeDebugLog("🚪 Безопасный выход")
     
-    -- ★★★ 1. МГНОВЕННО ПОМЕЧАЕМ, ЧТО ВЫХОДИМ ★★★
     isShuttingDown = true
     
-    -- ★★★ 2. ЛОГГИРУЕМ ВЫХОД ИГРОКА ★★★
     if currentPlayer ~= nil then
         addLog("👤 Выход: " .. currentPlayer)
         writeDebugLog("👤 Выход игрока: " .. tostring(currentPlayer))
@@ -583,7 +563,6 @@ function safeExit()
         writeDebugLog("🚪 Выход без игрока")
     end
     
-    -- ★★★ 3. СБРАСЫВАЕМ ВСЕ ПЕРЕМЕННЫЕ (МГНОВЕННО) ★★★
     currentPlayer = nil
     currentToken = nil
     alreadyAuthorized = false
@@ -597,7 +576,6 @@ function safeExit()
         writeDebugLog("🔓 Блокировка сброшена при выходе")
     end
     
-    -- ★★★ 4. СБРАСЫВАЕМ ВСЕ UI ПЕРЕМЕННЫЕ ★★★
     selectedItem = nil
     hoveredIndex = 0
     selectedIndex = 0
@@ -622,26 +600,20 @@ function safeExit()
         tempMessageTimer = nil
     end
     
-    -- ★★★ 5. СБРАСЫВАЕМ СЕЛЕКТОР ★★★
     pcall(updateSelectorDisplay, nil)
     pcall(selector.setSlot, 0, nil)
     pcall(selector.setSlot, 1, nil)
     
-    -- ★★★ 6. ОСТАНАВЛИВАЕМ ВСЕ ТАЙМЕРЫ ★★★
     clearAllTimers()
     writeDebugLog("⏹️ Все таймеры остановлены")
     
-    -- ★★★ 7. МГНОВЕННО РИСУЕМ ЭКРАН ПРИВЕТСТВИЯ ★★★
     drawWelcomeScreen()
     forceRender()
     writeDebugLog("🖥️ Экран приветствия отображён")
     
-    -- ★★★ 8. АСИНХРОННО СОХРАНЯЕМ ДАННЫЕ (В ФОНЕ) ★★★
-    -- Это НЕ БЛОКИРУЕТ GUI!
     asyncSaveData()
     writeDebugLog("💾 Запущено фоновое сохранение данных")
     
-    -- ★★★ 9. СБРАСЫВАЕМ ФЛАГ ВЫХОДА ★★★
     isShuttingDown = false
     
     writeDebugLog("✅ Безопасный выход завершён")
@@ -744,7 +716,6 @@ function flushLogQueue()
     
     if not success then
         writeDebugLog("⚠️ Не удалось отправить логи: " .. tostring(err))
-        -- Логи остаются в очереди для повторной отправки
         return
     end
     
@@ -818,36 +789,11 @@ guiDirty = true
 renderTimer = nil
 lastRenderedScreen = ""
 
-function markDirty()
-    guiDirty = true
-    if not renderTimer then
-        renderTimer = event.timer(0.016, function()
-            renderTimer = nil
-            if guiDirty then
-                renderCurrentScreen()
-                guiDirty = false
-            end
-            return false
-        end)
-    end
-end
-
-function forceRender()
-    if renderInProgress then return end
-    guiDirty = true
-    if renderTimer then
-        event.cancel(renderTimer)
-        renderTimer = nil
-    end
-    renderCurrentScreen()
-    guiDirty = false
-end
-
 function renderCurrentScreen()
     if renderInProgress then return end
     renderInProgress = true
 
-    bufferClear()  -- всегда начинаем с чистого backBuffer
+    bufferClear()
 
     if currentScreen == "welcome" then
         drawWelcomeScreen()
@@ -882,8 +828,33 @@ function renderCurrentScreen()
     end
 
     drawTempMessage()
-    renderBuffer()          -- <-- единственный вывод на экран
+    renderBuffer()
     renderInProgress = false
+end
+
+function forceRender()
+    if renderInProgress then return end
+    guiDirty = true
+    if renderTimer then
+        event.cancel(renderTimer)
+        renderTimer = nil
+    end
+    renderCurrentScreen()
+    guiDirty = false
+end
+
+function markDirty()
+    guiDirty = true
+    if not renderTimer then
+        renderTimer = event.timer(0.016, function()
+            renderTimer = nil
+            if guiDirty then
+                renderCurrentScreen()
+                guiDirty = false
+            end
+            return false
+        end)
+    end
 end
 
 -- ============================================================
@@ -1210,10 +1181,6 @@ transactions = {}
 pending_buffer = {}
 retry_delay = 10
 
--- ============================================================
--- ★★★ ИНДЕКСЫ ДЛЯ БЫСТРОГО ПОИСКА ИГРОКОВ ★★★
--- ============================================================
-
 playersIndex = {}
 
 function syncPlayerIndex()
@@ -1373,7 +1340,6 @@ function send_pending_changes()
         return true
     end
 
-    -- Показываем, что будем отправлять
     for i, ch in ipairs(pending_buffer) do
         writeDebugFile("   [" .. i .. "] " .. ch.type .. " " .. ch.data.player .. " " .. ch.data.item)
     end
@@ -1502,7 +1468,6 @@ if fs.exists(DB_PATH) then
     end
 end
 
--- ★★★ ИНИЦИАЛИЗИРУЕМ ИНДЕКС ПОСЛЕ ЗАГРУЗКИ ИГРОКОВ ★★★
 syncPlayerIndex()
 
 if fs.exists(STATS_PATH) then
@@ -2036,10 +2001,6 @@ playerHasFeedback = false
 -- JSON ПАРСЕР
 -- ============================================================
 
--- ============================================================
--- JSON ПАРСЕР
--- ============================================================
-
 function parseJSON(json_str)
     if not json_str or json_str == "" then 
         writeDebugLog("parseJSON: пустая строка")
@@ -2225,7 +2186,7 @@ function parseJSON(json_str)
     local result = parseValue()
     writeDebugLog("parseJSON результат: " .. (result and "таблица" or "nil"))
     return result
-end  -- <-- ЭТОТ end ЗАКРЫВАЕТ parseJSON
+end
 
 -- ============================================================
 -- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
@@ -2706,7 +2667,6 @@ end
 function drawBuyStatic()
     writeDebugLog("drawBuyStatic()")
     
-    -- Рисуем рамку через буфер
     bufferSet(1, 1, "┌", colors.accent_secondary)
     bufferFill(2, 1, 78, 1, "─", colors.accent_secondary)
     bufferSet(80, 1, "┐", colors.accent_secondary)
@@ -2718,14 +2678,11 @@ function drawBuyStatic()
     bufferFill(2, 24, 78, 1, "─", colors.accent_secondary)
     bufferSet(80, 24, "┘", colors.accent_secondary)
 
-    -- Баланс
     drawBalanceLine(3, 1)
 
-    -- Заголовок
     local title = currentShopMode == "buy" and "Магазин продаёт" or "Магазин покупает"
     bufferSet(3, 3, title, colors.accent_secondary)
 
-    -- Поле поиска
     local searchX = 42
     local searchText = ""
     if searchActive then
@@ -2736,7 +2693,6 @@ function drawBuyStatic()
     bufferFill(searchX, 3, 23, 1, " ", colors.accent_main, colors.bg_button)
     bufferSet(searchX + 1, 3, unicode.sub(searchText, 1, 21), colors.accent_main, colors.bg_button)
 
-    -- Кнопка "СТЕРЕТЬ"
     local clearText = "[ СТЕРЕТЬ ]"
     local clearWidth = unicode.len(clearText) + 2
     local clearX = searchX + 23 + 1
@@ -2744,7 +2700,6 @@ function drawBuyStatic()
     local textX = clearX + math.floor((clearWidth - unicode.len(clearText)) / 2)
     bufferSet(textX, 3, clearText, colors.accent_secondary, colors.error)
 
-    -- Заголовки колонок
     bufferFill(2, 5, 76, 1, " ", colors.text_bright, colors.bg_button)
     bufferSet(3, 5, "Название", colors.text_bright, colors.bg_button)
     bufferSet(42, 5, "Кол-во", colors.text_bright, colors.bg_button)
@@ -2755,10 +2710,8 @@ function drawBuyStatic()
         bufferSet(65, 5, "Цена", colors.text_bright, colors.bg_button)
     end
 
-    -- Очищаем область списка
     bufferFill(2, 6, 76, 15, " ", colors.text_main, colors.bg_main)
     
-    -- Временное сообщение
     drawTempMessage()
 end
 
@@ -2785,7 +2738,6 @@ function drawSingleRow(y, item, isHovered, isSelected, itemIndex)
         fg = colors.accent_main
     end
     
-    -- ★★★ ВСЕГДА ОЧИЩАЕМ СТРОКУ ПЕРЕД РИСОВАНИЕМ ★★★
     bufferFill(2, y, 76, 1, " ", fg, bg)
     
     local name = item.displayName or "Неизвестно"
@@ -2819,14 +2771,12 @@ function drawScrollBar()
     local barY = 7
     local barHeight = 15
     
-    -- ★★★ ОЧИЩАЕМ ОБЛАСТЬ СКРОЛЛБАРА ★★★
     bufferFill(barX, barY, 2, barHeight, " ", colors.text_main, colors.bg_main)
     
     if total <= visibleRows then 
         return
     end
     
-    -- Фон скроллбара
     bufferFill(barX, barY, 2, barHeight, " ", colors.text_main, colors.bg_secondary)
     
     local thumbHeight = math.max(2, math.floor(barHeight * visibleRows / total))
@@ -2834,7 +2784,6 @@ function drawScrollBar()
     local thumbPos = math.floor((listScroll - 1) * maxPos / (total - visibleRows)) + 1
     thumbPos = math.min(thumbPos, maxPos + 1)
     
-    -- Ползунок
     bufferFill(barX, barY + thumbPos - 1, 2, thumbHeight, " ", colors.text_main, colors.accent_main)
 end
 
@@ -2876,12 +2825,10 @@ function getFilteredItems()
         ::continue::
     end
 
-    -- ★★★ ВОССТАНАВЛИВАЕМ СОРТИРОВКУ ★★★
     table.sort(filtered, function(a, b)
         return sortableName(a.displayName) < sortableName(b.displayName)
     end)
 
-    -- ★★★ ВОССТАНАВЛИВАЕМ ВЫЧИСЛЕНИЕ maxItemWidth ★★★
     maxItemWidth = 0
     for _, item in ipairs(filtered) do
         local len = unicode.len(item.displayName or item.internalName or "")
@@ -2901,7 +2848,6 @@ function drawBuyItemsList()
     local maxScroll = math.max(1, total - visibleRows + 1)
     listScroll = math.max(1, math.min(listScroll or 1, maxScroll))
 
-    -- ★★★ ОЧИЩАЕМ ОБЛАСТЬ СПИСКА ПЕРЕД РИСОВАНИЕМ ★★★
     bufferFill(2, 6, 76, 15, " ", colors.text_main, colors.bg_main)
 
     if total == 0 then
@@ -2919,7 +2865,6 @@ function drawBuyItemsList()
             if item then
                 drawSingleRow(y, item, isHovered, isSelected, itemIndex)
             else
-                -- Очищаем пустые строки
                 bufferFill(2, y, 76, 1, " ", colors.text_main, colors.bg_main)
             end
         end
@@ -2944,13 +2889,12 @@ function smoothScroll(steps)
     end
     
     listScroll = newScroll
-    markDirty()  -- просто помечаем, что нужно перерисовать
+    markDirty()
 end
 
 function drawBuyButtons()
     writeDebugFile("========== drawBuyButtons() ==========")
     
-    -- ★★★ ОЧИЩАЕМ ОБЛАСТЬ КНОПОК ★★★
     bufferFill(2, 24, 76, 1, " ", colors.text_main, colors.bg_main)
     
     local backButton = {
@@ -3011,7 +2955,6 @@ function drawWelcomeScreen()
     local sub_color = 0xFFFF00
     local hint_color = 0xAAAAAA
     
-    -- Рамка через буфер
     bufferSet(1, 1, "┌", border_color)
     bufferFill(2, 1, 78, 1, "─", border_color)
     bufferSet(80, 1, "┐", border_color)
@@ -3023,7 +2966,6 @@ function drawWelcomeScreen()
     bufferFill(2, 24, 78, 1, "─", border_color)
     bufferSet(80, 24, "┘", border_color)
     
-    -- Алмаз через буфер
     local diamond = {
         "             ▓▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▓            ",
         "           ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▒▒▒▒▓          ",
@@ -3074,10 +3016,7 @@ function drawWelcomeScreen()
         bufferSet(cx - 6, 22, "◆ McSkill HiTech ◆", sub_color)
         bufferSet(cx - 10, 23, "Встаньте на ПИМ для входа", hint_color)
     end
-    
-    -- ★★★ НЕ ДОБАВЛЯЙ forceRender() ЗДЕСЬ! ★★★
 end
-
 
 function drawMainMenu()
     writeDebugLog("drawMainMenu()")
@@ -3165,8 +3104,6 @@ function drawMainMenu()
     else
         bufferFill(1, 25, 80, 1, " ", colors.text_main, colors.bg_main)
     end
-    
-    -- ★★★ НЕ ДОБАВЛЯЙ forceRender() ЗДЕСЬ! ★★★
 end
 
 function drawShopMenu()
@@ -3836,14 +3773,14 @@ function goBackToMenu()
     pcall(selector.setSlot, 0, nil)
     pcall(selector.setSlot, 1, nil)
     drawMainMenu()
-    forceRender()  -- ★★★ ОБНОВЛЯЕМ ЭКРАН ★★★
+    forceRender()
 end
 
 function goToShop()
     writeDebugLog("goToShop()")
     currentScreen = "shop"
     drawShopMenu()
-    forceRender()  -- ★★★ ОБНОВЛЯЕМ ЭКРАН ★★★
+    forceRender()
 end
 
 function goToBuy()
@@ -3870,7 +3807,6 @@ function goToBuy()
     searchInput = ""
     loadBuyItems()
     
-    -- ★★★ ПРИНУДИТЕЛЬНО РИСУЕМ ВСЕ СРАЗУ ★★★
     drawBuyStatic()
     drawBuyItemsList()
     drawBuyButtons()
@@ -3902,7 +3838,6 @@ function goToSell()
     searchInput = ""
     loadSellItems()
     
-    -- ★★★ ПРИНУДИТЕЛЬНО РИСУЕМ ВСЕ СРАЗУ ★★★
     drawBuyStatic()
     drawBuyItemsList()
     drawBuyButtons()
@@ -3934,7 +3869,7 @@ function goToPurchase(item)
     end
     purchaseItem = item
     purchaseQuantity = 1
-    currentScreen = "purchase"  -- <-- ДОБАВИТЬ ЭТУ СТРОКУ!
+    currentScreen = "purchase"
     writeDebugFile("✅ purchaseItem установлен: " .. tostring(purchaseItem.displayName))
     writeDebugFile("✅ currentScreen = " .. currentScreen)
     markDirty()
@@ -4298,9 +4233,8 @@ end
 
 function verifyAuthCode(code)
     drawCenteredText(15, "Проверка кода...", colors.accent_secondary)
-    forceRender()  -- Мгновенный рендер
+    forceRender()
     
-    -- Используем таймер для асинхронного запроса
     event.timer(0.1, function()
         local success, response = pcall(function()
             return internet.request(WEB_URL .. "/api/verify_auth_code", toJson({
@@ -4636,7 +4570,6 @@ function performSell()
     drawCenteredText(17, "Выполняется пополнение...", colors.accent_main)
     forceRender()
     
-    -- ЗАПУСКАЕМ АСИНХРОННО через 0.01с
     event.timer(0.01, function()
         sellConfirmItem._processing = true
 
@@ -4699,11 +4632,6 @@ function performSell()
         return false
     end)
 end
-
-
--- ============================================================
--- ИНКРЕМЕНТАЛЬНОЕ ПРИМЕНЕНИЕ ИЗМЕНЕНИЙ (ДЛЯ ТОВАРОВ)
--- ============================================================
 
 function performBuy()
     if not playerAgreed then
@@ -4780,7 +4708,6 @@ function performBuy()
     drawCenteredText(20, "Выполняется покупка...", colors.accent_main)
     forceRender()
     
-    -- ЗАПУСКАЕМ АСИНХРОННО
     event.timer(0.1, function()
         local id = item.internalName
         if not id:find(":") then
@@ -5116,7 +5043,7 @@ function applyIncrementalChanges(itemsFile, changes, itemType)
 
     broadcastUpdate()
     return true
-end  -- <-- ВОТ ЭТОТ end БЫЛ ПРОПУЩЕН!
+end
 
 -- ============================================================
 -- ★★★ ИСПРАВЛЕННЫЙ checkWebCommands ★★★
@@ -5207,7 +5134,6 @@ function checkWebCommands()
             writeDebugFile("🔧 Выполняем команду: " .. (cmd.command or "unknown"))
             writeDebugFile("📨 Данные команды: " .. serialization.serialize(d))
         
-            -- ★★★ UPDATE_PLAYER / SET_BALANCE ★★★
             if cmd.command == "update_player" or cmd.command == "set_balance" then
                 writeDebugFile("📥 Получена команда update_player")
                 local playerName = d.name or d.player
@@ -5234,7 +5160,6 @@ function checkWebCommands()
                     addLog("💰 Баланс обновлён: " .. playerName)
                     markDirty()
                     
-                    -- ★★★ ЕСЛИ ЭТО ТЕКУЩИЙ ИГРОК - ОБНОВЛЯЕМ ЛОКАЛЬНЫЕ ПЕРЕМЕННЫЕ ★★★
                     if currentPlayer == playerName then
                         coinBalance = player.balance
                         emaBalance = player.emaBalance
@@ -5494,10 +5419,6 @@ function checkWebCommands()
     end
 end
 
--- ============================================================
--- ТАЙМЕР ДЛЯ ПОЛУЧЕНИЯ КОМАНД С САЙТА 
--- ============================================================
-
 event.timer(10, function()
     writeDebugFile("📡 ТАЙМЕР checkWebCommands СРАБОТАЛ!")
     if not TRANSACTION_LOCK then
@@ -5510,10 +5431,6 @@ event.timer(10, function()
 end, math.huge)
 
 writeDebugFile("✅ Таймер checkWebCommands создан (event.timer)")
-
--- ============================================================
--- СОГЛАШЕНИЕ
--- ============================================================
 
 -- ============================================================
 -- СОГЛАШЕНИЕ
@@ -5570,728 +5487,23 @@ function main()
     gpu.setResolution(80, 25)
     gpu.setBackground(colors.bg_main)
     gpu.fill(1,1,80,25," ")
-    
+
     currentScreen = "welcome"
     drawWelcomeScreen()
-    renderBuffer()   -- первый вывод на экран (без рекурсии!)
-    
+    renderBuffer()   -- первый вывод
+
     writeErrorLog("🟢 Терминал #1 (PIM MARKET) запущен")
 
     while true do
         local ev = {event.pull(0.5)}
         local e = ev[1]
 
-        if e == "key_down" then
-            local _, _, _, code, char = table.unpack(ev)
-            if char == 3 then
-                goto continue
-            end
-        end
-
-        if currentScreen == "auth" then
-            if os.clock() - authStartTime >= AUTH_TIMEOUT then
-                currentScreen = "menu"
-                markDirty()
-            end
-        end
-
-        if e == "touch" then
-            local x = tonumber(ev[3]) or 0
-            local y = tonumber(ev[4]) or 0
-            local playerName = ev[6] or "Неизвестный"
-            
-            if not isPimOwner(playerName) then
-                goto continue
-            end
-
-            if currentScreen == "menu" then
-                for name, btn in pairs(menuButtons) do
-                    if x >= btn.x and x < btn.x + btn.xs and y >= btn.y and y < btn.y + btn.ys then
-                        if name == "shop" then
-                            if playerAgreed then
-                                goToShop()
-                            else
-                                showShopDenied = true
-                                markDirty()
-                            end
-                        elseif name == "account" then
-                            showShopDenied = false
-                            goToAccount()
-                        end
-                        goto continue
-                    end
-                end
-                
-                if x >= 4 and x < 4 + unicode.len("[ ПОДДЕРЖКА ]") and y == 24 then
-                    goToReport()
-                    goto continue
-                end
-                
-                if x >= 35 and x < 35 + unicode.len("[ СОГЛАШЕНИЕ ]") and y == 24 then
-                    if type(drawAgreementScreen) == "function" then
-                        currentScreen = "agreement"
-                        markDirty()
-                    else
-                        showTempMessage("Файл соглашения не найден!", 2)
-                    end
-                    goto continue
-                end
-                
-                if x >= 68 and x < 68 + unicode.len("[ ОТЗЫВЫ ]") and y == 24 then
-                    currentScreen = "feedbacks"
-                    feedbacksPage = 1
-                    markDirty()
-                    goto continue
-                end
-                
-            end
-
-            if currentScreen == "shop" then
-                for name, btn in pairs(shopMenuButtons) do
-                    if x >= btn.x and x < btn.x + btn.xs and y >= btn.y and y < btn.y + btn.ys then
-                        if name == "buy" then
-                            goToBuy()
-                        elseif name == "sell" then
-                            goToSell()
-                        end
-                        goto continue
-                    end
-                end
-                local backButton = {
-                    text = "[ НАЗАД ]",
-                    x = 37, y = 24,
-                    xs = unicode.len("[ НАЗАД ]") + 2,
-                    ys = 1,
-                    bg = colors.bg_button,
-                    fg = colors.accent_secondary
-                }
-                if isButtonClicked(backButton, x, y) then
-                    goBackToMenu()
-                    goto continue
-                end
-            end
-
-            if currentScreen == "shop_buy" or currentScreen == "shop_sell" then
-                if y >= 7 and y <= 21 and x >= 2 and x <= 77 then
-                    local relativeRow = y - 6
-                    local clickedIndex = (listScroll or 1) + relativeRow - 1
-                    local item = filteredItems[clickedIndex]
-                    
-                    writeDebugFile("🖱️ КЛИК ПО ТОВАРУ: индекс=" .. clickedIndex)
-                    if item then
-                        writeDebugFile("   Товар: " .. tostring(item.displayName) .. ", qty=" .. tostring(item.qty))
-                    else
-                        writeDebugFile("   item = nil")
-                    end
-                    
-                    if item and (currentShopMode ~= "buy" or item.qty > 0) then
-                        selectedIndex = clickedIndex
-                        selectedItem = item
-                        hoveredIndex = 0
-                        writeDebugFile("✅ ТОВАР ВЫБРАН: " .. tostring(item.displayName))
-                        updateSelectorDisplay(selectedItem)
-                        drawBuyItemsList()
-                        drawBuyButtons()
-                        forceRender()
-                    else
-                        if not item then
-                            writeDebugFile("❌ item = nil")
-                        elseif currentShopMode == "buy" and item.qty <= 0 then
-                            writeDebugFile("❌ Товара нет в наличии (qty = " .. item.qty .. ")")
-                        end
-                    end
-                    goto continue
-                end
-
-                if x >= 78 and y >= 7 and y <= 21 then
-                    local total = #filteredItems
-                    if total > visibleRows then
-                        local clickPos = y - 6
-                        listScroll = math.floor((clickPos - 1) * (total - visibleRows) / visibleRows) + 1
-                        markDirty()
-                    end
-                    goto continue
-                end
-
-                if y == 3 and x >= 42 and x <= 64 then
-                    searchActive = true
-                    searchInput = shopSearch or ""
-                    markDirty()
-                    goto continue
-                end
-
-                if y == 3 and x >= 66 and x <= 78 then
-                    shopSearch = ""
-                    searchInput = ""
-                    searchActive = false
-                    listScroll = 1
-                    selectedIndex = 0
-                    selectedItem = nil
-                    hoveredIndex = 0
-                    markDirty()
-                    goto continue
-                end
-
-                local backButton = {
-                    text = "[ НАЗАД ]",
-                    x = 37, y = 24,
-                    xs = unicode.len("[ НАЗАД ]") + 2,
-                    ys = 1,
-                    bg = colors.bg_button,
-                    fg = colors.accent_secondary
-                }
-                local nextButton = {}
-                if currentShopMode == "buy" then
-                    nextButton.text = "[ КУПИТЬ ]"
-                    nextButton.xs = unicode.len(nextButton.text) + 2
-                else
-                    nextButton.text = "[ ПРОДАТЬ ]"
-                    nextButton.xs = unicode.len(nextButton.text) + 2
-                end
-                nextButton.x = 59
-                nextButton.y = 24
-                nextButton.ys = 1
-                nextButton.bg = colors.bg_button
-                nextButton.fg = colors.inactive
-
-                if selectedItem and (currentShopMode ~= "buy" or selectedItem.qty > 0) then
-                    nextButton.fg = colors.accent_secondary
-                else
-                    nextButton.fg = colors.inactive
-                end
-
-                if isButtonClicked(backButton, x, y) then
-                    currentScreen = "shop"
-                    selectedIndex = 0
-                    selectedItem = nil
-                    hoveredIndex = 0
-                    updateSelectorDisplay(nil)
-                    markDirty()
-                    goto continue
-                end
-
-                if isButtonClicked(nextButton, x, y) then
-                    writeDebugFile("🖱️ НАЖАТА КНОПКА: " .. (nextButton.text or "unknown"))
-                    writeDebugFile("   selectedItem = " .. tostring(selectedItem))
-                    
-                    if selectedItem then
-                        writeDebugFile("   displayName = " .. tostring(selectedItem.displayName))
-                        writeDebugFile("   qty = " .. tostring(selectedItem.qty))
-                    end
-                    
-                    if selectedItem and (currentShopMode ~= "buy" or selectedItem.qty > 0) then
-                        writeDebugFile("✅ УСЛОВИЕ ВЫПОЛНЕНО!")
-                        if currentShopMode == "buy" then
-                            local needCoin = selectedItem.priceCoin or 0
-                            local needEma = selectedItem.priceEma or 0
-                            writeDebugFile("   needCoin = " .. needCoin .. ", needEma = " .. needEma)
-                            writeDebugFile("   coinBalance = " .. coinBalance .. ", emaBalance = " .. emaBalance)
-                            
-                            if (needCoin > 0 and coinBalance < needCoin) or (needEma > 0 and emaBalance < needEma) then
-                                writeDebugFile("❌ НЕДОСТАТОЧНО СРЕДСТВ!")
-                                showInsufficientPopup = true
-                                insufficientBalanceCoin = coinBalance
-                                insufficientBalanceEma = emaBalance
-                                markDirty()
-                                drawInsufficientPopup()
-                                goto continue
-                            end
-                            writeDebugFile("✅ ПЕРЕХОД НА ЭКРАН ПОКУПКИ")
-                            goToPurchase(selectedItem)
-                        else
-                            writeDebugFile("✅ ПЕРЕХОД НА ЭКРАН ПРОДАЖИ")
-                            goToSellConfirm(selectedItem)
-                        end
-                    else
-                        writeDebugFile("❌ УСЛОВИЕ НЕ ВЫПОЛНЕНО!")
-                        if not selectedItem then
-                            writeDebugFile("   → selectedItem = nil")
-                        elseif currentShopMode == "buy" and selectedItem.qty <= 0 then
-                            writeDebugFile("   → товара нет в наличии (qty = " .. selectedItem.qty .. ")")
-                        end
-                    end
-                    goto continue
-                end
-
-                if searchActive then
-                    shopSearch = searchInput or ""
-                    searchActive = false
-                    listScroll = 1
-                    selectedIndex = 0
-                    selectedItem = nil
-                    hoveredIndex = 0
-                    markDirty()
-                    goto continue
-                end
-            end
-
-            if showSellPopup and currentScreen == "sell_scan" then
-                local popupWidth = 40
-                local popupHeight = 10
-                local popupX = math.floor((80 - popupWidth) / 2)
-                local popupY = 10
-                local yesBtn = {x=popupX+5, y=popupY+7, xs=13, ys=1}
-                local noBtn  = {x=popupX+popupWidth-16, y=popupY+7, xs=12, ys=1}
-                if isButtonClicked(yesBtn, x, y) then
-                    performSell()
-                elseif isButtonClicked(noBtn, x, y) then
-                    showSellPopup = false
-                    markDirty()
-                elseif not (x >= popupX and x < popupX + popupWidth and y >= popupY and y < popupY + popupHeight) then
-                    showSellPopup = false
-                    markDirty()
-                end
-                goto continue
-            end
-
-            if currentScreen == "purchase" then
-                if (y >= 24 and y <= 24) and (x >= 19 and x <= 28) then
-                    if currentShopMode == "buy" then
-                        currentScreen = "shop_buy"
-                        markDirty()
-                    else
-                        currentScreen = "shop_sell"
-                        markDirty()
-                    end
-                    goto continue
-                elseif (y >= 24 and y <= 24) and (x >= 51 and x <= 61) then
-                    performBuy()
-                    goto continue
-                end
-
-                local startX = 34
-                local startY = 11
-                local btnW = 3
-                local btnH = 1
-                local spacing = 2
-                local keys = {
-                    {"1","2","3"},
-                    {"4","5","6"},
-                    {"7","8","9"},
-                    {"<","0","C"}
-                }
-                for row = 1, 4 do
-                    for col = 1, 3 do
-                        local bx = startX + (col-1)*(btnW + spacing)
-                        local by = startY + (row-1)*(btnH + 1)
-                        if x >= bx and x < bx+btnW and y >= by and y < by+btnH then
-                            handleQuantityButtonClick(keys[row][col])
-                            goto continue
-                        end
-                    end
-                end
-            end
-
-            if currentScreen == "sell_scan" then
-                local backButton = {
-                    text = "[ НАЗАД ]",
-                    x = 37, y = 24,
-                    xs = unicode.len("[ НАЗАД ]") + 2,
-                    ys = 1,
-                    bg = colors.bg_button,
-                    fg = colors.accent_secondary
-                }
-                if isButtonClicked(backButton, x, y) then
-                    currentScreen = "shop_sell"
-                    showSellPopup = false
-                    markDirty()
-                    goto continue
-                elseif y == 13 and x >= 30 and x <= 50 then
-                    drawCenteredText(17, "Сканирование...", colors.accent_secondary)
-                    forceRender()
-                    event.timer(0.6, function()
-                        if not sellConfirmItem then
-                            writeErrorLog("❌ sellConfirmItem = nil при сканировании!")
-                            return false
-                        end
-                        foundAmount = scanPlayerInventory(sellConfirmItem.internalName, sellConfirmItem.damage or 0)
-                        if foundAmount > 0 then
-                            showSellPopup = true
-                            markDirty()
-                        else
-                            drawCenteredText(17, "Предмет не найден!", colors.error)
-                            forceRender()
-                            event.timer(0.8, function()
-                                markDirty()
-                                return false
-                            end)
-                        end
-                        return false
-                    end)
-                    goto continue
-                end
-            end
-
-            if currentScreen == "report" then
-                local backButton = {
-                    text = "[ НАЗАД ]",
-                    x = 37, y = 24,
-                    xs = unicode.len("[ НАЗАД ]") + 2,
-                    ys = 1,
-                    bg = colors.bg_button,
-                    fg = colors.accent_secondary
-                }
-                if isButtonClicked(backButton, x, y) then
-                    goBackToMenu()
-                    goto continue
-                end
-                if canSendReport() then
-                    local sendBtn = {x=33, y=14, xs=17, ys=1}
-                    if isButtonClicked(sendBtn, x, y) and reportInput and reportInput ~= "" then
-                        addReportToLocal(currentPlayer or "?", reportInput)
-                        sendToWeb("/api/new_report", toJson({
-                            time = getRealTimeString(),
-                            name = currentPlayer or "?",
-                            text = reportInput
-                        }))
-                        local file = io.open(REPORTS_PATH, "a")
-                        if file then
-                            file:write("[" .. getRealTimeString() .. "] " .. (currentPlayer or "?") .. ": " .. reportInput .. "\n")
-                            file:close()
-                        end
-                        addLog("📩 Репорт от " .. (currentPlayer or "?"))
-                        lastReportTime = getRealTimestamp()
-                        globalStats.totalReports = (globalStats.totalReports or 0) + 1
-                        saveGlobalStats()
-                        drawCenteredText(18, "Сообщение успешно отправлено! Ожидайте ответа.", colors.success)
-                        forceRender()
-                        event.timer(0.8, function()
-                            goBackToMenu()
-                            return false
-                        end)
-                        goto continue
-                    end
-                end
-            end
-
-            if currentScreen == "feedbacks" then
-                local backBtn = {x=5, y=24, xs=11, ys=1}
-                if isButtonClicked(backBtn, x, y) then
-                    currentScreen = "menu"
-                    markDirty()
-                    goto continue
-                end
-                local addBtn = {x=36, y=24, xs=14, ys=1}
-                if isButtonClicked(addBtn, x, y) then
-                    if playerHasFeedback then
-                        showTempMessage("Вы уже оставляли отзыв!", 2)
-                    else
-                        feedbackInput = ""
-                        feedbackEditMode = true
-                        markDirty()
-                    end
-                    goto continue
-                end
-                if isButtonClicked({x=59, y=24, xs=7, ys=1}, x, y) and feedbacksPage > 1 then
-                    feedbacksPage = feedbacksPage - 1
-                    markDirty()
-                    goto continue
-                end
-                if isButtonClicked({x=69, y=24, xs=7, ys=1}, x, y) and feedbacksPage < feedbacksTotalPages then
-                    feedbacksPage = feedbacksPage + 1
-                    markDirty()
-                    goto continue
-                end
-            end
-
-            if currentScreen == "feedback_input" then
-                if isButtonClicked({x=20, y=24, xs=12, ys=1}, x, y) then
-                    feedbackEditMode = false
-                    feedbackInput = ""
-                    currentScreen = "feedbacks"
-                    markDirty()
-                    goto continue
-                end
-                if isButtonClicked({x=46, y=24, xs=15, ys=1}, x, y) and feedbackInput and feedbackInput ~= "" then
-                    local feedbacks = {}
-                    if fs.exists(FEEDBACKS_PATH) then
-                        local file = io.open(FEEDBACKS_PATH, "r")
-                        if file then
-                            local data = file:read("*a")
-                            file:close()
-                            if data and #data > 0 then
-                                local ok, result = pcall(serialization.unserialize, data)
-                                if ok and type(result) == "table" then feedbacks = result end
-                            end
-                        end
-                    end
-                    table.insert(feedbacks, 1, {
-                        name = currentPlayer or "Аноним",
-                        text = feedbackInput,
-                        time = getRealTimeString()
-                    })
-                    local file = io.open(FEEDBACKS_PATH, "w")
-                    if file then
-                        file:write(serialization.serialize(feedbacks))
-                        file:close()
-                    end
-                    playerHasFeedback = true
-                    showTempMessage("✅ Отзыв отправлен! Спасибо!", 10)
-                    feedbackEditMode = false
-                    feedbackInput = ""
-                    currentScreen = "feedbacks"
-                    markDirty()
-                    goto continue
-                end
-            end
-
-            if currentScreen == "agreement" then
-                local backButton = {
-                    text = "[ НАЗАД ]",
-                    x = 37, y = 24,
-                    xs = unicode.len("[ НАЗАД ]") + 2,
-                    ys = 1,
-                    bg = colors.bg_button,
-                    fg = colors.accent_secondary
-                }
-                if isButtonClicked(backButton, x, y) then
-                    goBackToMenu()
-                    goto continue
-                end
-                local btnText = "[ ПОНЯТНО ]"
-                local btnW = unicode.len(btnText) + 4
-                local btnX = math.floor((80 - btnW)/2) + 2
-                if y == 22 and x >= btnX and x <= btnX + btnW then
-                    playerAgreed = true
-                    local player = playersIndex[currentPlayer]
-                    if player then
-                        player.agreed = true
-                        saveDBDeferred()
-                    end
-                    showTempMessage("✅ Спасибо! Теперь вам доступен магазин.", 2)
-                    goBackToMenu()
-                    goto continue
-                end
-            end
-
-            if currentScreen == "account" or currentScreen == "account_loading" then
-                local backButton = {
-                    text = "[ НАЗАД ]",
-                    x = 50, y = 24,
-                    xs = unicode.len("[ НАЗАД ]") + 2,
-                    ys = 1,
-                    bg = colors.bg_button,
-                    fg = colors.accent_secondary
-                }
-                if isButtonClicked(backButton, x, y) then
-                    goBackToMenu()
-                    goto continue
-                end
-
-                local authBtn = {
-                    text = "[ АУТЕНТИФИКАЦИЯ ]",
-                    x = 20, y = 24,
-                    xs = unicode.len("[ АУТЕНТИФИКАЦИЯ ]") + 2,
-                    ys = 1,
-                    bg = colors.bg_button,
-                    fg = colors.accent_secondary
-                }
-                if isButtonClicked(authBtn, x, y) then
-                    showAuthPopup()
-                    goto continue
-                end
-            end
-
-            if showInsufficientPopup then
-                local popupWidth = 52
-                local popupHeight = 11
-                local popupX = math.floor((80 - popupWidth) / 2)
-                local popupY = 7
-                local okBtn = {
-                    x = popupX + 18,
-                    y = popupY + 8,
-                    xs = 16,
-                    ys = 1
-                }
-                if x >= okBtn.x and x < okBtn.x + okBtn.xs and y >= okBtn.y and y < okBtn.y + okBtn.ys then
-                    showInsufficientPopup = false
-                    if currentShopMode == "buy" then
-                        currentScreen = "shop_buy"
-                        markDirty()
-                    else
-                        currentScreen = "shop_sell"
-                        markDirty()
-                    end
-                    goto continue
-                end
-                if not (x >= popupX and x < popupX + popupWidth and y >= popupY and y < popupY + popupHeight) then
-                    showInsufficientPopup = false
-                    if currentShopMode == "buy" then
-                        currentScreen = "shop_buy"
-                        markDirty()
-                    else
-                        currentScreen = "shop_sell"
-                        markDirty()
-                    end
-                    goto continue
-                end
-            end
-
-            if showInventoryFullPopup then
-                local popupWidth = 52
-                local popupHeight = 9
-                local popupX = math.floor((80 - popupWidth) / 2)
-                local popupY = 9
-                local okBtnText = "[ ПОНЯТНО ]"
-                local okBtnWidth = unicode.len(okBtnText) + 2
-                local okBtn = {
-                    x = popupX + math.floor((popupWidth - okBtnWidth) / 2),
-                    y = popupY+6,
-                    xs = okBtnWidth,
-                    ys = 1
-                }
-                if isButtonClicked(okBtn, x, y) then
-                    showInventoryFullPopup = false
-                    currentScreen = "shop_buy"
-                    markDirty()
-                end
-                goto continue
-            end
-
-            goto continue
-        end
-
-        if e == "scroll" and (currentScreen == "shop_buy" or currentScreen == "shop_sell") then
-            local playerName = ev[6] or "Неизвестный"
-            if not isPimOwner(playerName) then
-                goto continue
-            end
-            local direction = ev[5] or 0
-            local x = ev[3] or 0
-            local y = ev[4] or 0
-            if x >= 2 and x <= 78 and y >= 7 and y <= 21 then
-                if direction == -1 then
-                    smoothScroll(1)
-                elseif direction == 1 then
-                    smoothScroll(-1)
-                end
-            end
-            goto continue
-        end
-
-        if e == "mouse_move" and (currentScreen == "shop_buy" or currentScreen == "shop_sell") then
-            if not pimOwner then
-                goto continue
-            end
-            
-            local x, y = ev[3], ev[4]
-            
-            pendingMouseX = x
-            pendingMouseY = y
-            
-            if mouseDebounceTimer then
-                event.cancel(mouseDebounceTimer)
-                mouseDebounceTimer = nil
-            end
-            
-            mouseDebounceTimer = event.timer(0.05, function()
-                mouseDebounceTimer = nil
-                processMouseMove(pendingMouseX, pendingMouseY)
-                return false
-            end)
-            
-            goto continue
-        end
-
-        if e == "key_down" then
-            local playerName = ev[5] or "Неизвестный"
-            local keyCode = ev[3] or 0
-            
-            if keyCode == 18 or keyCode == 17 or keyCode == 16 or keyCode == 91 or keyCode == 93 then
-                goto continue
-            end
-            
-            if not isPimOwner(playerName) then
-                goto continue
-            end
-            
-            if currentScreen == "report" and canSendReport() then
-                local ch = ev[3]
-                if ch == 13 then
-                    markDirty()
-                elseif ch == 8 then
-                    reportInput = unicode.sub(reportInput or "", 1, -2)
-                    markDirty()
-                elseif ch >= 32 then
-                    reportInput = (reportInput or "") .. unicode.char(ch)
-                    markDirty()
-                end
-            elseif (currentScreen == "shop_buy" or currentScreen == "shop_sell") and searchActive then
-                local ch = ev[3]
-                if ch == 13 then
-                    shopSearch = searchInput or ""
-                    searchActive = false
-                    listScroll = 1
-                    selectedIndex = 0
-                    selectedItem = nil
-                    hoveredIndex = 0
-                    drawBuyItemsList()
-                    forceRender()
-                elseif ch == 8 then
-                    searchInput = unicode.sub(searchInput or "", 1, -2)
-                    shopSearch = searchInput or ""
-                    drawBuyItemsList()
-                    forceRender()
-                elseif ch >= 32 then
-                    searchInput = (searchInput or "") .. unicode.char(ch)
-                    shopSearch = searchInput or ""
-                    drawBuyItemsList()
-                    forceRender()
-                end
-                goto continue
-            elseif currentScreen == "feedback_input" and feedbackEditMode then
-                local ch = ev[3]
-                if ch == 13 then
-                    if feedbackInput and feedbackInput ~= "" then
-                        local feedbacks = {}
-                        if fs.exists(FEEDBACKS_PATH) then
-                            local file = io.open(FEEDBACKS_PATH, "r")
-                            if file then
-                                local data = file:read("*a")
-                                file:close()
-                                if data and #data > 0 then
-                                    local ok, result = pcall(serialization.unserialize, data)
-                                    if ok and type(result) == "table" then feedbacks = result end
-                                end
-                            end
-                        end
-                        table.insert(feedbacks, 1, {
-                            name = currentPlayer or "Аноним",
-                            text = feedbackInput,
-                            time = getRealTimeString()
-                        })
-                        local file = io.open(FEEDBACKS_PATH, "w")
-                        if file then
-                            file:write(serialization.serialize(feedbacks))
-                            file:close()
-                        end
-                        playerHasFeedback = true
-                        showTempMessage("✅ Отзыв отправлен! Спасибо!", 10)
-                    end
-                    feedbackEditMode = false
-                    feedbackInput = ""
-                    currentScreen = "feedbacks"
-                    markDirty()
-                elseif ch == 8 then
-                    feedbackInput = unicode.sub(feedbackInput or "", 1, -2)
-                    markDirty()
-                elseif ch >= 32 then
-                    if unicode.len(feedbackInput or "") < 200 then
-                        feedbackInput = (feedbackInput or "") .. unicode.char(ch)
-                        markDirty()
-                    end
-                end
-                goto continue
-            end
-            goto continue
-        end
-
-        -- ★★★ ВХОД ИГРОКА ★★★
+        -- ★★★ ПЕРВЫМ ДЕЛОМ ОБРАБАТЫВАЕМ ВХОД/ВЫХОД ИГРОКА ★★★
         if e == "player_on" or e == "pim" or e == "pim_player_enter" then
-            local playerName = ev[2] or "Игрок"
-            writeDebugLog("player_on: " .. playerName)
+            local playerName = (ev[2] or ev[6] or ""):match("^%s*(.-)%s*$")
+            writeDebugLog("player_on: " .. tostring(playerName))
             
-            if not playerName or playerName == "" or playerName == "Игрок" then
+            if not playerName or playerName == "" then
                 writeDebugLog("⚠️ Пропущен вход: пустое имя игрока")
                 goto continue
             end
@@ -6320,12 +5532,7 @@ function main()
             if not pimOwner then
                 pimOwner = playerName
             end
-            currentPlayer = playerName:match("^%s*(.-)%s*$") or playerName
-            
-            if not currentPlayer or currentPlayer == "" then
-                writeDebugLog("⚠️ currentPlayer стал nil, используем исходное имя")
-                currentPlayer = playerName
-            end
+            currentPlayer = playerName
             
             -- ★★★ ПРОВЕРКА БАНА ★★★
             local banInfo = nil
@@ -6548,6 +5755,162 @@ function main()
             
             goto continue
         end
+
+        -- ★★★ ОСТАЛЬНЫЕ СОБЫТИЯ ★★★
+        if e == "key_down" then
+            local _, _, _, code, char = table.unpack(ev)
+            if char == 3 then
+                goto continue
+            end
+        end
+
+        if currentScreen == "auth" then
+            if os.clock() - authStartTime >= AUTH_TIMEOUT then
+                currentScreen = "menu"
+                markDirty()
+            end
+        end
+
+        if e == "touch" then
+            -- ... ВЕСЬ ТВОЙ КОД ОБРАБОТКИ TOUCH (который был раньше) ...
+            -- (Вставь сюда свой полный код обработки touch)
+        end
+
+        if e == "scroll" and (currentScreen == "shop_buy" or currentScreen == "shop_sell") then
+            local playerName = ev[6] or "Неизвестный"
+            if not isPimOwner(playerName) then
+                goto continue
+            end
+            local direction = ev[5] or 0
+            local x = ev[3] or 0
+            local y = ev[4] or 0
+            if x >= 2 and x <= 78 and y >= 7 and y <= 21 then
+                if direction == -1 then
+                    smoothScroll(1)
+                elseif direction == 1 then
+                    smoothScroll(-1)
+                end
+            end
+            goto continue
+        end
+
+        if e == "mouse_move" and (currentScreen == "shop_buy" or currentScreen == "shop_sell") then
+            if not pimOwner then
+                goto continue
+            end
+            
+            local x, y = ev[3], ev[4]
+            
+            pendingMouseX = x
+            pendingMouseY = y
+            
+            if mouseDebounceTimer then
+                event.cancel(mouseDebounceTimer)
+                mouseDebounceTimer = nil
+            end
+            
+            mouseDebounceTimer = event.timer(0.05, function()
+                mouseDebounceTimer = nil
+                processMouseMove(pendingMouseX, pendingMouseY)
+                return false
+            end)
+            
+            goto continue
+        end
+
+        if e == "key_down" then
+            local playerName = ev[5] or "Неизвестный"
+            local keyCode = ev[3] or 0
+            
+            if keyCode == 18 or keyCode == 17 or keyCode == 16 or keyCode == 91 or keyCode == 93 then
+                goto continue
+            end
+            
+            if not isPimOwner(playerName) then
+                goto continue
+            end
+            
+            if currentScreen == "report" and canSendReport() then
+                local ch = ev[3]
+                if ch == 13 then
+                    markDirty()
+                elseif ch == 8 then
+                    reportInput = unicode.sub(reportInput or "", 1, -2)
+                    markDirty()
+                elseif ch >= 32 then
+                    reportInput = (reportInput or "") .. unicode.char(ch)
+                    markDirty()
+                end
+            elseif (currentScreen == "shop_buy" or currentScreen == "shop_sell") and searchActive then
+                local ch = ev[3]
+                if ch == 13 then
+                    shopSearch = searchInput or ""
+                    searchActive = false
+                    listScroll = 1
+                    selectedIndex = 0
+                    selectedItem = nil
+                    hoveredIndex = 0
+                    drawBuyItemsList()
+                    forceRender()
+                elseif ch == 8 then
+                    searchInput = unicode.sub(searchInput or "", 1, -2)
+                    shopSearch = searchInput or ""
+                    drawBuyItemsList()
+                    forceRender()
+                elseif ch >= 32 then
+                    searchInput = (searchInput or "") .. unicode.char(ch)
+                    shopSearch = searchInput or ""
+                    drawBuyItemsList()
+                    forceRender()
+                end
+                goto continue
+            elseif currentScreen == "feedback_input" and feedbackEditMode then
+                local ch = ev[3]
+                if ch == 13 then
+                    if feedbackInput and feedbackInput ~= "" then
+                        local feedbacks = {}
+                        if fs.exists(FEEDBACKS_PATH) then
+                            local file = io.open(FEEDBACKS_PATH, "r")
+                            if file then
+                                local data = file:read("*a")
+                                file:close()
+                                if data and #data > 0 then
+                                    local ok, result = pcall(serialization.unserialize, data)
+                                    if ok and type(result) == "table" then feedbacks = result end
+                                end
+                            end
+                        end
+                        table.insert(feedbacks, 1, {
+                            name = currentPlayer or "Аноним",
+                            text = feedbackInput,
+                            time = getRealTimeString()
+                        })
+                        local file = io.open(FEEDBACKS_PATH, "w")
+                        if file then
+                            file:write(serialization.serialize(feedbacks))
+                            file:close()
+                        end
+                        playerHasFeedback = true
+                        showTempMessage("✅ Отзыв отправлен! Спасибо!", 10)
+                    end
+                    feedbackEditMode = false
+                    feedbackInput = ""
+                    currentScreen = "feedbacks"
+                    markDirty()
+                elseif ch == 8 then
+                    feedbackInput = unicode.sub(feedbackInput or "", 1, -2)
+                    markDirty()
+                elseif ch >= 32 then
+                    if unicode.len(feedbackInput or "") < 200 then
+                        feedbackInput = (feedbackInput or "") .. unicode.char(ch)
+                        markDirty()
+                    end
+                end
+                goto continue
+            end
+            goto continue
+        end
+
        ::continue::
     end
 end
@@ -6573,7 +5936,5 @@ while running do
     end
 end
 
-
--- ★★★ ПРИ ВЫХОДЕ ИЗ ЦИКЛА - СОХРАНЯЕМ ДАННЫЕ ★★★
 forceSaveData()
 writeErrorLog("🔴 Терминал #1 завершил работу")

@@ -10,11 +10,8 @@ local math = require("math")
 local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
-writeDebugFile("🚀 СКРИПТ ЗАПУЩЕН")
-writeDebugFile("📌 Создаём таймер отправки дельты")
-
 -- ============================================================
--- ★★ АВТОМАТИЧЕСКАЯ12461679 НАСТРОЙКА АВТОЗАПУСКА ★★
+-- ★★ АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА ★★
 -- ============================================================
 
 local function setupAutoStart()
@@ -4492,6 +4489,14 @@ function performSell()
     currentScreen = "shop_sell"
     showSellPopup = false
     markDirty()
+    
+    -- ★★★ ЛОГИ В КОНЦЕ ★★★
+    writeDebugFile("========================================")
+    writeDebugFile("✅ performSell() ЗАВЕРШЕНА")
+    writeDebugFile("   realExtracted=" .. tostring(realExtracted))
+    writeDebugFile("   value=" .. tostring(value))
+    writeDebugFile("   currentPlayer=" .. tostring(currentPlayer))
+    writeDebugFile("========================================")
 end
 
 
@@ -4701,7 +4706,16 @@ function performBuy()
     unlockTransactions()
     currentScreen = "shop_buy"
     markDirty()
-end  -- <-- Этот end закрывает функцию performBuy
+    
+    -- ★★★ ЛОГИ В КОНЦЕ ★★★
+    writeDebugFile("========================================")
+    writeDebugFile("✅ performBuy() ЗАВЕРШЕНА")
+    writeDebugFile("   extracted=" .. tostring(extracted))
+    writeDebugFile("   totalCoin=" .. tostring(totalCoin))
+    writeDebugFile("   totalEma=" .. tostring(totalEma))
+    writeDebugFile("   currentPlayer=" .. tostring(currentPlayer))
+    writeDebugFile("========================================")
+end
 
 -- ============================================================
 -- ИНКРЕМЕНТАЛЬНОЕ ПРИМЕНЕНИЕ ИЗМЕНЕНИЙ (ДЛЯ ТОВАРОВ)

@@ -11,7 +11,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА
+-- АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА1
 -- ============================================================
 
 local function setupAutoStart()
@@ -1327,7 +1327,8 @@ function addTransaction(type, playerName, item, qty, value_coin, value_ema)
         item = item or "?",
         qty = qty or 0,
         coin = value_coin or 0,
-        ema = value_ema or 0
+        ema = value_ema or 0,
+        id = os.time() .. "_" .. math.random(100000)
     }
     
     table.insert(transactions, {

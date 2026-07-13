@@ -11,7 +11,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ★★ АВТОМАТИЧЕСКАЯ1 НАСТРОЙКА АВТОЗАПУСКА ★★
+-- ★★ АВТОМАТИЧЕСКАЯ2 НАСТРОЙКА АВТОЗАПУСКА ★★
 -- ============================================================
 
 local function setupAutoStart()
@@ -5279,15 +5279,22 @@ function checkWebCommands()
     end
 end
 
-createTimer(COMMAND_CHECK_INTERVAL, function()
+-- ============================================================
+-- ТАЙМЕР ДЛЯ ПОЛУЧЕНИЯ КОМАНД С САЙТА 
+-- ============================================================
+
+event.timer(10, function()
+    writeDebugFile("📡 ТАЙМЕР checkWebCommands СРАБОТАЛ!")
     if not TRANSACTION_LOCK then
-        writeDebugLog("📡 Получение команд с сервера...")
+        writeDebugFile("📡 Вызываем checkWebCommands()")
         checkWebCommands()
     else
-        writeDebugLog("⏳ Пропущен checkWebCommands (транзакция активна)")
+        writeDebugFile("⏳ Транзакция активна, пропускаем")
     end
     return true
-end, true)
+end, math.huge)
+
+writeDebugFile("✅ Таймер checkWebCommands создан (event.timer)")
 
 -- ============================================================
 -- СОГЛАШЕНИЕ
@@ -6311,4 +6318,3 @@ end
 -- ★★★ ПРИ ВЫХОДЕ ИЗ ЦИКЛА - СОХРАНЯЕМ ДАННЫЕ ★★★
 forceSaveData()
 writeErrorLog("🔴 Терминал #1 завершил работу")
-

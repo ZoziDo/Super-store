@@ -11,7 +11,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ★★ АВТОМАТИЧЕСКАЯ12461678 НАСТРОЙКА АВТОЗАПУСКА ★★
+-- ★★ АВТОМАТИЧЕСКАЯ1246167 НАСТРОЙКА АВТОЗАПУСКА ★★
 -- ============================================================
 
 local function setupAutoStart()
@@ -3723,7 +3723,7 @@ function goToSell()
     markDirty()
 end
 
-unction goToSellConfirm(item)
+function goToSellConfirm(item)
     writeDebugFile(">>> goToSellConfirm()")
     if not item then
         writeDebugFile("❌ goToSellConfirm: item = nil!")

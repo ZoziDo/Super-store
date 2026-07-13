@@ -11,7 +11,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- АВТОМАТИЧЕСКАЯ55 НАСТРОЙКА АВТОЗАПУСКА
+-- АВТОМАТИЧЕСКАЯ556 НАСТРОЙКА АВТОЗАПУСКА
 -- ============================================================
 
 local function setupAutoStart()
@@ -2791,7 +2791,7 @@ function drawBuyButtons()
     drawButton(backButton)
     drawButton(nextButton)
     drawTempMessage()
-    flushBuffer()
+    flushBuffer() 
     writeDebugFile("========================================")
 end
 
@@ -2887,6 +2887,7 @@ function drawWelcomeScreen()
         end
     end
     
+    drawTempMessage()
     flushBuffer()
 end
 
@@ -2975,7 +2976,6 @@ function drawMainMenu()
         drawWelcomeScreen()
     end
     drawTempMessage()
-    flushBuffer()
 end
 
 function drawShopMenu()
@@ -2996,7 +2996,6 @@ function drawShopMenu()
         }
         drawButton(backButton)
         drawTempMessage()
-        flushBuffer()
         return
     end
     for _, btn in pairs(shopMenuButtons) do
@@ -3124,7 +3123,6 @@ function drawReportScreen()
         }
         drawButton(backButton)
         drawTempMessage()
-        flushBuffer()
         return
     end
 
@@ -3154,7 +3152,6 @@ function drawReportScreen()
     drawButton(backButton)
     drawCenteredText(16, "Ограничение: 1 репорт в сутки (сброс в 00:00 МСК)", colors.text_main)
     drawTempMessage()
-    flushBuffer()
 end
 
 -- ============================================================
@@ -3255,7 +3252,6 @@ function drawPurchaseScreen()
         local backBtn = {x = 37, y = 24, xs = unicode.len("[ НАЗАД ]") + 2, ys = 1, text = "[ НАЗАД ]", bg = colors.bg_button, fg = colors.accent_secondary}
         drawButton(backBtn)
         drawTempMessage()
-        flushBuffer()
         return
     end
 
@@ -3533,7 +3529,7 @@ function drawPartialPopup()
     }
     drawButton(okBtn)
     drawTempMessage()
-    flushBuffer()
+    flushBuffer() 
 end
 
 function drawInventoryFullPopup()
@@ -3593,7 +3589,6 @@ function goToBuy()
     if not playerAgreed then
         drawCenteredText(12, "Вы не приняли пользовательское соглашение!", colors.error)
         drawCenteredText(13, "Нажмите [Помощь] и ознакомьтесь с условиями.", colors.text_main)
-        flushBuffer()
         os.sleep(3)
         markDirty()
         return
@@ -3617,7 +3612,6 @@ function goToSell()
     if not playerAgreed then
         drawCenteredText(12, "Вы не приняли пользовательское соглашение!", colors.error)
         drawCenteredText(13, "Нажмите [Помощь] и ознакомьтесь с условиями.", colors.text_main)
-        flushBuffer()
         os.sleep(3)
         markDirty()
         return
@@ -3697,7 +3691,6 @@ function goToHelp()
         }
         drawButton(backButton)
         drawTempMessage()
-        flushBuffer()
         
         while currentScreen == "agreement" do
             local ev = {event.pull(0.5)}
@@ -4040,7 +4033,6 @@ function verifyAuthCode(code)
     writeDebugLog("verifyAuthCode: " .. code)
     
     drawCenteredText(15, "Проверка кода...", colors.accent_secondary)
-    flushBuffer()
     os.sleep(0.5)
     
     local success, response = pcall(function()
@@ -4357,7 +4349,6 @@ function performSell()
     showSellPopup = false
     markDirty()
     drawCenteredText(17, "Выполняется пополнение...", colors.accent_main)
-    flushBuffer()
     os.sleep(0.2)
 
     sellConfirmItem._processing = true
@@ -4366,7 +4357,6 @@ function performSell()
     if realExtracted == 0 then
         sellConfirmItem._processing = false
         drawCenteredText(17, "Не удалось изъять предметы! Проверьте инвентарь.", colors.error)
-        flushBuffer()
         os.sleep(2)
         unlockTransactions()
         currentScreen = "shop_sell"
@@ -4401,7 +4391,7 @@ function performSell()
     fillBuffer(2, 17, 78, 1, " ", colors.bg_main, colors.bg_main)
     local currencySymbol = (sellConfirmItem.internalName == "customnpcs:npcMoney") and "۞" or "₵"
     drawCenteredText(17, "Успешно! +" .. string.format("%.2f", value) .. " " .. currencySymbol, colors.success)
-    flushBuffer()
+
     os.sleep(0.8)
 
     unlockTransactions()
@@ -4448,7 +4438,6 @@ function performBuy()
     local actualQty = getActualItemQuantity(item.internalName, item.damage)
     if actualQty <= 0 then
         drawCenteredText(20, "Товар закончился! Обновление списка...", colors.error)
-        flushBuffer()
         os.sleep(0.8)
         loadBuyItems(true)
         unlockTransactions()
@@ -4466,7 +4455,6 @@ function performBuy()
 
     if qty <= 0 then
         drawCenteredText(20, "Выберите количество!", colors.error)
-        flushBuffer()
         os.sleep(0.8)
         unlockTransactions()
         currentScreen = "shop_buy"
@@ -4487,7 +4475,6 @@ function performBuy()
     end
 
     drawCenteredText(20, "Выполняется покупка...", colors.accent_main)
-    flushBuffer()
     os.sleep(0.4)
 
     local id = item.internalName
@@ -4613,7 +4600,6 @@ function performBuy()
         priceStr = priceStr .. string.format("%.2f", totalEma) .. "۞"
     end
     drawCenteredText(20, "Куплено " .. extracted .. " шт. за " .. priceStr, colors.success)
-    flushBuffer()
 
     loadBuyItems(true)
     for _, newItem in ipairs(shopItems) do
@@ -5248,7 +5234,6 @@ if not drawAgreementScreen then
         }
         drawButton(backButton)
         drawTempMessage()
-        flushBuffer()
         
         while currentScreen == "agreement" do
             local ev = {event.pull(0.5)}
@@ -5599,7 +5584,6 @@ function main()
                     goto continue
                 elseif y == 13 and x >= 30 and x <= 50 then
                     drawCenteredText(17, "Сканирование...", colors.accent_secondary)
-                    flushBuffer()
                     os.sleep(0.6)
                     if not sellConfirmItem then
                         writeErrorLog("❌ sellConfirmItem = nil при сканировании!")
@@ -5611,7 +5595,6 @@ function main()
                         markDirty()
                     else
                         drawCenteredText(17, "Предмет не найден!", colors.error)
-                        flushBuffer()
                         os.sleep(0.8)
                         markDirty()
                     end
@@ -5651,7 +5634,6 @@ function main()
                         globalStats.totalReports = (globalStats.totalReports or 0) + 1
                         saveGlobalStats()
                         drawCenteredText(18, "Сообщение успешно отправлено! Ожидайте ответа.", colors.success)
-                        flushBuffer()
                         os.sleep(0.8)
                         goBackToMenu()
                         goto continue
@@ -6080,7 +6062,6 @@ function main()
                 drawCenteredText(22, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", colors.accent_secondary)
                 
                 drawTempMessage()
-                flushBuffer()
                 
                 while true do
                     local ev2 = {event.pull(1)}
@@ -6149,7 +6130,6 @@ function main()
                 
                 if player.banned then
                     drawCenteredText(20, "Вы забанены!", colors.error)
-                    flushBuffer()
                     os.sleep(2)
                     currentPlayer = nil
                     currentScreen = "welcome"

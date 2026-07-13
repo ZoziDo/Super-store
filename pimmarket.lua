@@ -11,7 +11,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ★★ АВТОМАТИЧЕСКАЯ12 НАСТРОЙКА АВТОЗАПУСКА ★★
+-- ★★ АВТОМАТИЧЕСКАЯ124 НАСТРОЙКА АВТОЗАПУСКА ★★
 -- ============================================================
 
 local function setupAutoStart()
@@ -1794,54 +1794,64 @@ function parseJSON(json_str)
         end
     end
 
-    function parseString()
-        if str:sub(pos, pos) ~= '"' then return nil
-        pos = pos + 1
-        local start = pos
-        local result = ""
-        while pos <= len do
-            local ch = str:sub(pos, pos)
-            if ch == '"' then
-                result = result .. str:sub(start, pos-1)
-                pos = pos + 1
-                return result
-            elseif ch == '\\' then
-                result = result .. str:sub(start, pos-1)
-                pos = pos + 1
-                if pos > len then return nil
-                local esc = str:sub(pos, pos)
-                local map = {
-                    ['"'] = '"',
-                    ['\\'] = '\\',
-                    ['/'] = '/',
-                    b = '\b',
-                    f = '\f',
-                    n = '\n',
-                    r = '\r',
-                    t = '\t'
-                }
-                if map[esc] then
-                    result = result .. map[esc]
-                elseif esc == 'u' then
-                    local hex = str:sub(pos+1, pos+4)
-                    if #hex == 4 then
-                        local code = tonumber(hex, 16)
-                        if code then
-                            result = result .. unicode.char(code)
-                            pos = pos + 4
-                        end
-                    end
-                else
-                    result = result .. '\\' .. esc
-                end
-                pos = pos + 1
-                start = pos
-            else
-                pos = pos + 1
-            end
-        end
-        return nil
+   ✅ Нашёл ошибку!
+В функции parseString() отсутствует end для первого if.
+Исправленный код функции:
+Замени всю функцию parseString() на этот вариант:
+Luafunction parseString()
+    if str:sub(pos, pos) ~= '"' then 
+        return nil 
     end
+    
+    pos = pos + 1
+    local start = pos
+    local result = ""
+    
+    while pos <= len do
+        local ch = str:sub(pos, pos)
+        if ch == '"' then
+            result = result .. str:sub(start, pos-1)
+            pos = pos + 1
+            return result
+        elseif ch == '\\' then
+            result = result .. str:sub(start, pos-1)
+            pos = pos + 1
+            if pos > len then return nil end
+            
+            local esc = str:sub(pos, pos)
+            local map = {
+                ['"'] = '"',
+                ['\\'] = '\\',
+                ['/'] = '/',
+                b = '\b',
+                f = '\f',
+                n = '\n',
+                r = '\r',
+                t = '\t'
+            }
+            
+            if map[esc] then
+                result = result .. map[esc]
+            elseif esc == 'u' then
+                local hex = str:sub(pos+1, pos+4)
+                if #hex == 4 then
+                    local code = tonumber(hex, 16)
+                    if code then
+                        result = result .. unicode.char(code)
+                        pos = pos + 4
+                    end
+                end
+            else
+                result = result .. '\\' .. esc
+            end
+            pos = pos + 1
+            start = pos
+        else
+            pos = pos + 1
+        end
+    end
+    return nil
+end
 
     local function parseNumber()
         local start = pos

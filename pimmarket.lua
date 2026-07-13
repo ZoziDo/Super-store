@@ -11,7 +11,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ★★ АВТОМАТИЧЕСКАЯ1245 НАСТРОЙКА АВТОЗАПУСКА ★★
+-- ★★ АВТОМАТИЧЕСКАЯ1246 НАСТРОЙКА АВТОЗАПУСКА ★★
 -- ============================================================
 
 local function setupAutoStart()
@@ -1851,7 +1851,7 @@ function parseJSON(json_str)
         return nil
     end
 
-    local function parseNumber()
+    function parseNumber()
         local start = pos
         while pos <= len do
             local ch = str:sub(pos, pos)
@@ -1930,7 +1930,7 @@ function parseJSON(json_str)
         return obj
     end
 
-    local function parseValue()
+    function parseValue()
         skipSpace()
         if pos > len then 
             return nil
@@ -6159,5 +6159,8 @@ while running do
     end
 end
 
+
+-- ★★★ ПРИ ВЫХОДЕ ИЗ ЦИКЛА - СОХРАНЯЕМ ДАННЫЕ ★★★
 forceSaveData()
 writeErrorLog("🔴 Терминал #1 завершил работу")
+

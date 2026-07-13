@@ -3109,8 +3109,7 @@ function drawWelcomeScreen()
         end
     end
     
-    -- ★★★ ПРИНУДИТЕЛЬНЫЙ РЕНДЕР ★★★
-    forceRender()
+    -- ★★★ НЕ ДОБАВЛЯЙ forceRender() ЗДЕСЬ! ★★★
 end
 
 function drawMainMenu()
@@ -5616,6 +5615,7 @@ MOUSE_DEBOUNCE = 0.05
 function main()
     writeDebugLog("🚀 main() запущен")
     drawWelcomeScreen()
+    forceRender()  -- ★★★ ДОБАВЬ ЭТУ СТРОКУ ★★★
     
     writeErrorLog("🟢 Терминал #1 (PIM MARKET) запущен")
 

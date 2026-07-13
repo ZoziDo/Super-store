@@ -11,7 +11,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- АВТОМАТИЧЕСКАЯ246 НАСТРОЙКА АВТОЗАПУСКА12333151
+-- АВТОМАТИЧЕСКАЯ246 НАСТРОЙКА АВТОЗАПУСКА44444
 -- ============================================================
 
 local function setupAutoStart()
@@ -2612,7 +2612,6 @@ function getFilteredItems()
 end
 
 function drawBuyItemsList()
-    writeDebugLog("drawBuyItemsList()")
     filteredItems = getFilteredItems()
     local maxScroll = math.max(1, #filteredItems - visibleRows + 1)
     listScroll = math.max(1, math.min(listScroll or 1, maxScroll))
@@ -2646,6 +2645,8 @@ function drawBuyItemsList()
     if selectedItem then
         updateSelectorDisplay(selectedItem)
     end
+    
+    -- ★★★ НЕ ПЕРЕРИСОВЫВАЕМ КНОПКИ ЗДЕСЬ ★★★
 end
 
 function smoothScroll(steps)
@@ -3066,6 +3067,51 @@ function drawReportScreen()
     drawFlexButton(backButton)
     gpu.setForeground(colors.text_main)
     drawCenteredText(16, "Ограничение: 1 репорт в сутки (сброс в 00:00 МСК)", colors.text_main)
+    drawTempMessage()
+end
+
+-- ============================================================
+-- КНОПКИ МАГАЗИНА
+-- ============================================================
+
+function drawBuyButton()
+    local nextButton = {}
+    if currentShopMode == "buy" then
+        nextButton.text = "[ КУПИТЬ ]"
+        nextButton.xs = unicode.len(nextButton.text) + 2
+    else
+        nextButton.text = "[ ПРОДАТЬ ]"
+        nextButton.xs = unicode.len(nextButton.text) + 2
+    end
+    nextButton.x = 59
+    nextButton.y = 24
+    nextButton.ys = 1
+    nextButton.bg = colors.bg_button
+    
+    -- Определяем активна ли кнопка
+    local isActive = selectedItem and (currentShopMode ~= "buy" or selectedItem.qty > 0)
+    if isActive then
+        nextButton.fg = colors.accent_secondary
+    else
+        nextButton.fg = colors.inactive
+    end
+    
+    -- Рисуем только эту кнопку
+    drawFlexButton(nextButton)
+end
+
+function drawBuyButtons()
+    local backButton = {
+        text = "[ НАЗАД ]",
+        x = 37, y = 24,
+        xs = unicode.len("[ НАЗАД ]") + 2,
+        ys = 1,
+        bg = colors.bg_button,
+        fg = colors.accent_secondary
+    }
+    
+    drawFlexButton(backButton)
+    drawBuyButton()  -- Используем новую функцию для кнопки Купить/Продать
     drawTempMessage()
 end
 
@@ -5367,7 +5413,6 @@ function main()
                     
                     if item and (currentShopMode ~= "buy" or item.qty > 0) then
                         -- ★★★ ИСПРАВЛЕНИЕ: ОБНОВЛЯЕМ ТОЛЬКО ВЫБРАННЫЙ РЯД ★★★
-                        -- Сначала сбрасываем подсветку старого выбранного
                         local oldSelectedIndex = selectedIndex
                         selectedIndex = clickedIndex
                         selectedItem = item
@@ -5375,7 +5420,6 @@ function main()
                         
                         -- Перерисовываем только старый и новый ряды
                         if oldSelectedIndex > 0 and oldSelectedIndex ~= clickedIndex then
-                            -- Перерисовываем старый ряд (снимаем подсветку)
                             local oldRow = oldSelectedIndex - listScroll + 1
                             if oldRow >= 1 and oldRow <= visibleRows then
                                 local oldItem = filteredItems[oldSelectedIndex]
@@ -5391,6 +5435,9 @@ function main()
                             drawSingleRow(6 + newRow, item, false, true, clickedIndex)
                         end
                         
+                        -- ★★★ ОБНОВЛЯЕМ КНОПКУ "КУПИТЬ/ПРОДАТЬ" ★★★
+                        drawBuyButton()
+                        
                         updateSelectorDisplay(selectedItem)
                     end
                     goto continue
@@ -5401,7 +5448,7 @@ function main()
                     if total > visibleRows then
                         local clickPos = y - 6
                         listScroll = math.floor((clickPos - 1) * (total - visibleRows) / visibleRows) + 1
-                        drawBuyItemsList()  -- При скролле нужно перерисовать всё
+                        drawBuyItemsList()
                     end
                     goto continue
                 end
@@ -5424,9 +5471,12 @@ function main()
                     filteredItems = getFilteredItems()
                     drawBuyItemsList()
                     redrawSearchField()
+                    -- ★★★ ОБНОВЛЯЕМ КНОПКУ (ТОВАР НЕ ВЫБРАН - СЕРАЯ) ★★★
+                    drawBuyButton()
                     goto continue
                 end
 
+                -- ★★★ ОСТАЛЬНЫЕ КНОПКИ ОБРАБАТЫВАЕМ КАК ОБЫЧНО ★★★
                 local backButton = {
                     text = "[ НАЗАД ]",
                     x = 37, y = 24,
@@ -5435,6 +5485,18 @@ function main()
                     bg = colors.bg_button,
                     fg = colors.accent_secondary
                 }
+
+                if isButtonClicked(backButton, x, y) then
+                    currentScreen = "shop"
+                    selectedIndex = 0
+                    selectedItem = nil
+                    hoveredIndex = 0
+                    updateSelectorDisplay(nil)
+                    markDirty()
+                    goto continue
+                end
+
+                -- ★★★ ОБРАБОТКА КЛИКА ПО КНОПКЕ "КУПИТЬ/ПРОДАТЬ" ★★★
                 local nextButton = {}
                 if currentShopMode == "buy" then
                     nextButton.text = "[ КУПИТЬ ]"
@@ -5447,22 +5509,13 @@ function main()
                 nextButton.y = 24
                 nextButton.ys = 1
                 nextButton.bg = colors.bg_button
-                nextButton.fg = colors.inactive
-
-                if selectedItem and (currentShopMode ~= "buy" or selectedItem.qty > 0) then
+                
+                -- Определяем активна ли кнопка
+                local isActive = selectedItem and (currentShopMode ~= "buy" or selectedItem.qty > 0)
+                if isActive then
                     nextButton.fg = colors.accent_secondary
                 else
                     nextButton.fg = colors.inactive
-                end
-
-                if isButtonClicked(backButton, x, y) then
-                    currentScreen = "shop"
-                    selectedIndex = 0
-                    selectedItem = nil
-                    hoveredIndex = 0
-                    updateSelectorDisplay(nil)
-                    markDirty()
-                    goto continue
                 end
 
                 if isButtonClicked(nextButton, x, y) then

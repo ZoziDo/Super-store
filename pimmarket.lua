@@ -11,7 +11,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- АВТОМАТИЧЕСКАЯ246 НАСТРОЙКА АВТОЗАПУСКА99999
+-- АВТОМАТИЧЕСКАЯ246 НАСТРОЙКА АВТОЗАПУСКА111
 -- ============================================================
 
 local function setupAutoStart()
@@ -1521,11 +1521,6 @@ function sendStats()
         writeErrorLog("⚠️ Файл /home/shop_items.lua не найден")
     end
     
-    if #playerList > 0 and playerList[1] then
-        playerList[1].system_info = sysInfo
-        writeDebugLog("📊 Системные данные добавлены к игроку: " .. playerList[1].name)
-    end
-    
     local payload = {
         players = playerList,
         admins = admins,
@@ -1558,7 +1553,7 @@ createTimer(60, function()
     return true
 end, true)
 
-createTimer(30, function()
+createTimer(120, function()
     if not TRANSACTION_LOCK then
         local sysInfo = getSystemInfo()
         sendToWeb("/api/system_info", toJson(sysInfo))
@@ -4016,7 +4011,10 @@ function showAuthPopup()
                 if isButtonClicked(confirmBtn, x, y) then
                     if authCodeInput and #authCodeInput == 6 then
                         isEditing = false
+                        -- ★★★ ВЫЗЫВАЕМ verifyAuthCode И ВЫХОДИМ ИЗ ПОП-АПА ★★★
                         verifyAuthCode(authCodeInput)
+                        -- ★★★ ПОСЛЕ verifyAuthCode МЫ УЖЕ В МЕНЮ, ВЫХОДИМ ИЗ ЦИКЛА ★★★
+                        break
                     else
                         gpu.setForeground(colors.error)
                         gpu.set(popupX + 3, popupY + 13, " Введите 6-значный код!")
@@ -4033,6 +4031,7 @@ function showAuthPopup()
                     if authCodeInput and #authCodeInput == 6 then
                         isEditing = false
                         verifyAuthCode(authCodeInput)
+                        break  -- ★★★ ВЫХОДИМ ИЗ ЦИКЛА ★★★
                     else
                         gpu.setForeground(colors.error)
                         gpu.set(popupX + 3, popupY + 13, " Введите 6-значный код!")
@@ -4262,12 +4261,16 @@ function verifyAuthCode(code)
                 
                 addLog("🔗 Аккаунт привязан: " .. boundPlayer .. " -> " .. currentPlayer)
                 
+                -- ★★★ ОТОБРАЖАЕМ СООБЩЕНИЕ ОБ УСПЕХЕ ★★★
                 drawCenteredText(15, "✅ Аккаунт успешно привязан!", colors.success)
                 drawCenteredText(16, "Теперь вы можете пользоваться магазином", colors.text_main)
                 
                 syncCurrentPlayer()
                 os.sleep(2)
-                goBackToMenu()
+                
+                -- ★★★ ВЫХОДИМ ИЗ ПОП-АПА И ВОЗВРАЩАЕМСЯ В МЕНЮ ★★★
+                currentScreen = "menu"  -- Устанавливаем экран меню
+                goBackToMenu()          -- Возвращаемся в меню
             else
                 drawCenteredText(15, "❌ Ошибка: игрок не найден", colors.error)
                 os.sleep(2)

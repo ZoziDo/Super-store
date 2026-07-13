@@ -11,7 +11,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- АВТОМАТИЧЕСКАЯ246667 НАСТРОЙКА АВТОЗАПУСКА
+-- АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА
 -- ============================================================
 
 local function setupAutoStart()
@@ -852,6 +852,7 @@ function renderCurrentScreen()
         drawBuyStatic()
         drawBuyItemsList()
         drawBuyButtons()
+        forceRender()  -- ★★★ ПРИНУДИТЕЛЬНЫЙ РЕНДЕР ★★★
     elseif currentScreen == "sell_scan" then
         drawSellScanScreen()
     elseif currentScreen == "purchase" then
@@ -1087,14 +1088,12 @@ function drawFlexButton(btn)
         return
     end
     writeDebugLog("drawFlexButton: " .. (btn.text or "?"))
-    gpu.setBackground(btn.bg)
-    gpu.fill(btn.x, btn.y, btn.xs, btn.ys, " ")
-    gpu.setForeground(btn.fg)
+    
+    bufferFill(btn.x, btn.y, btn.xs, btn.ys, " ", btn.fg or colors.text_main, btn.bg or colors.bg_button)
     local text = btn.text or ""
     local textX = btn.x + math.floor((btn.xs - unicode.len(text)) / 2)
     local textY = btn.y + math.floor((btn.ys - 1) / 2)
-    gpu.set(textX, textY, text)
-    gpu.setBackground(colors.bg_main)
+    bufferSet(textX, textY, text, btn.fg or colors.text_main, btn.bg or colors.bg_button)
 end
 
 function drawPopupBorder(x, y, w, h, color)
@@ -2697,33 +2696,60 @@ end
 
 function drawBuyStatic()
     writeDebugLog("drawBuyStatic()")
-    clear()
-    drawScreenBorder()
+    
+    -- Рисуем рамку через буфер
+    bufferSet(1, 1, "┌", colors.accent_secondary)
+    bufferFill(2, 1, 78, 1, "─", colors.accent_secondary)
+    bufferSet(80, 1, "┐", colors.accent_secondary)
+    for y = 2, 24 do
+        bufferSet(1, y, "│", colors.accent_secondary)
+        bufferSet(80, y, "│", colors.accent_secondary)
+    end
+    bufferSet(1, 24, "└", colors.accent_secondary)
+    bufferFill(2, 24, 78, 1, "─", colors.accent_secondary)
+    bufferSet(80, 24, "┘", colors.accent_secondary)
+
+    -- Баланс
     drawBalanceLine(3, 1)
 
-    if currentShopMode == "buy" then
-        gpu.setForeground(colors.accent_secondary)
-        gpu.set(3, 3, "Магазин продаёт")
+    -- Заголовок
+    local title = currentShopMode == "buy" and "Магазин продаёт" or "Магазин покупает"
+    bufferSet(3, 3, title, colors.accent_secondary)
+
+    -- Поле поиска
+    local searchX = 42
+    local searchText = ""
+    if searchActive then
+        searchText = (searchInput or "") .. "_"
     else
-        gpu.setForeground(colors.accent_secondary)
-        gpu.set(3, 3, "Магазин покупает")
+        searchText = (shopSearch == "" and "Поиск..." or (shopSearch or ""))
+    end
+    bufferFill(searchX, 3, 23, 1, " ", colors.accent_main, colors.bg_button)
+    bufferSet(searchX + 1, 3, unicode.sub(searchText, 1, 21), colors.accent_main, colors.bg_button)
+
+    -- Кнопка "СТЕРЕТЬ"
+    local clearText = "[ СТЕРЕТЬ ]"
+    local clearWidth = unicode.len(clearText) + 2
+    local clearX = searchX + 23 + 1
+    bufferFill(clearX, 3, clearWidth, 1, " ", colors.accent_secondary, colors.error)
+    local textX = clearX + math.floor((clearWidth - unicode.len(clearText)) / 2)
+    bufferSet(textX, 3, clearText, colors.accent_secondary, colors.error)
+
+    -- Заголовки колонок
+    bufferFill(2, 5, 76, 1, " ", colors.text_bright, colors.bg_button)
+    bufferSet(3, 5, "Название", colors.text_bright, colors.bg_button)
+    bufferSet(42, 5, "Кол-во", colors.text_bright, colors.bg_button)
+    if currentShopMode == "buy" then
+        bufferSet(55, 5, "Coina", colors.text_bright, colors.bg_button)
+        bufferSet(67, 5, "ЭМЫ", colors.text_bright, colors.bg_button)
+    else
+        bufferSet(65, 5, "Цена", colors.text_bright, colors.bg_button)
     end
 
-    redrawSearchField()
-
-    gpu.setBackground(colors.bg_button)
-    gpu.fill(2, 5, 76, 1, " ")
-    gpu.setForeground(colors.text_bright)
-    gpu.set(3, 5, "Название")
-    gpu.set(42, 5, "Кол-во")
-    if currentShopMode == "buy" then
-        gpu.set(55, 5, "Coina")
-        gpu.set(67, 5, "ЭМЫ")
-    else
-        gpu.set(65, 5, "Цена")
-    end
-    gpu.setBackground(colors.bg_main)
-
+    -- Очищаем область списка
+    bufferFill(2, 6, 76, 15, " ", colors.text_main, colors.bg_main)
+    
+    -- Временное сообщение
     drawTempMessage()
 end
 
@@ -2750,6 +2776,7 @@ function drawSingleRow(y, item, isHovered, isSelected, itemIndex)
         fg = colors.accent_main
     end
     
+    -- ★★★ ВСЕГДА ОЧИЩАЕМ СТРОКУ ПЕРЕД РИСОВАНИЕМ ★★★
     bufferFill(2, y, 76, 1, " ", fg, bg)
     
     local name = item.displayName or "Неизвестно"
@@ -2782,21 +2809,24 @@ function drawScrollBar()
     local barX = 78
     local barY = 7
     local barHeight = 15
-    gpu.setBackground(colors.bg_main)
-    gpu.fill(barX, barY, 2, barHeight, " ")
+    
+    -- ★★★ ОЧИЩАЕМ ОБЛАСТЬ СКРОЛЛБАРА ★★★
+    bufferFill(barX, barY, 2, barHeight, " ", colors.text_main, colors.bg_main)
+    
     if total <= visibleRows then 
         return
     end
     
-    gpu.setBackground(colors.bg_secondary)
-    gpu.fill(barX, barY, 2, barHeight, " ")
+    -- Фон скроллбара
+    bufferFill(barX, barY, 2, barHeight, " ", colors.text_main, colors.bg_secondary)
+    
     local thumbHeight = math.max(2, math.floor(barHeight * visibleRows / total))
     local maxPos = barHeight - thumbHeight
     local thumbPos = math.floor((listScroll - 1) * maxPos / (total - visibleRows)) + 1
     thumbPos = math.min(thumbPos, maxPos + 1)
-    gpu.setBackground(colors.accent_main)
-    gpu.fill(barX, barY + thumbPos - 1, 2, thumbHeight, " ")
-    gpu.setBackground(colors.bg_main)
+    
+    -- Ползунок
+    bufferFill(barX, barY + thumbPos - 1, 2, thumbHeight, " ", colors.text_main, colors.accent_main)
 end
 
 function getFilteredItems()
@@ -2858,17 +2888,17 @@ end
 function drawBuyItemsList()
     writeDebugLog("drawBuyItemsList()")
     filteredItems = getFilteredItems()
-    local maxScroll = math.max(1, #filteredItems - visibleRows + 1)
+    local total = #filteredItems
+    local maxScroll = math.max(1, total - visibleRows + 1)
     listScroll = math.max(1, math.min(listScroll or 1, maxScroll))
 
-    if #filteredItems == 0 then
-        gpu.setBackground(colors.bg_main)
-        gpu.fill(2, 7, 78, visibleRows, " ")
+    -- ★★★ ОЧИЩАЕМ ОБЛАСТЬ СПИСКА ПЕРЕД РИСОВАНИЕМ ★★★
+    bufferFill(2, 6, 76, 15, " ", colors.text_main, colors.bg_main)
+
+    if total == 0 then
         local msg = "ПО ТВОЕМУ ЗАПРОСУ, НИЧЕГО НЕ НАЙДЕНО!"
         local msgX = math.floor((80 - unicode.len(msg)) / 2) + 1
-        local msgY = 14
-        gpu.setForeground(colors.error)
-        gpu.set(msgX, msgY, msg)
+        bufferSet(msgX, 14, msg, colors.error)
     else
         for i = 1, visibleRows do
             local itemIndex = listScroll + i - 1
@@ -2880,8 +2910,8 @@ function drawBuyItemsList()
             if item then
                 drawSingleRow(y, item, isHovered, isSelected, itemIndex)
             else
-                gpu.setBackground(colors.bg_main)
-                gpu.fill(2, y, 76, 1, " ")
+                -- Очищаем пустые строки
+                bufferFill(2, y, 76, 1, " ", colors.text_main, colors.bg_main)
             end
         end
     end
@@ -2935,6 +2965,10 @@ end
 
 function drawBuyButtons()
     writeDebugFile("========== drawBuyButtons() ==========")
+    
+    -- ★★★ ОЧИЩАЕМ ОБЛАСТЬ КНОПОК ★★★
+    bufferFill(2, 24, 76, 1, " ", colors.text_main, colors.bg_main)
+    
     local backButton = {
         text = "[ НАЗАД ]",
         x = 37, y = 24,
@@ -2943,6 +2977,7 @@ function drawBuyButtons()
         bg = colors.bg_button,
         fg = colors.accent_secondary
     }
+    
     local nextButton = {}
     if currentShopMode == "buy" then
         nextButton.text = "[ КУПИТЬ ]"
@@ -2955,23 +2990,11 @@ function drawBuyButtons()
     nextButton.y = 24
     nextButton.ys = 1
     nextButton.bg = colors.bg_button
-    nextButton.fg = colors.inactive
-
-    writeDebugFile("🔍 selectedItem = " .. tostring(selectedItem))
-    if selectedItem then
-        writeDebugFile("   displayName = " .. tostring(selectedItem.displayName))
-        writeDebugFile("   qty = " .. tostring(selectedItem.qty))
-        writeDebugFile("   currentShopMode = " .. tostring(currentShopMode))
-    else
-        writeDebugFile("   selectedItem = nil")
-    end
-
+    
     if selectedItem and (currentShopMode ~= "buy" or selectedItem.qty > 0) then
         nextButton.fg = colors.accent_secondary
-        writeDebugFile("✅ Кнопка АКТИВНА")
     else
         nextButton.fg = colors.inactive
-        writeDebugFile("❌ Кнопка НЕ АКТИВНА")
     end
 
     drawFlexButton(backButton)
@@ -3085,33 +3108,42 @@ end
 
 function drawMainMenu()
     writeDebugLog("drawMainMenu()")
-    clear()
-    drawScreenBorder()
+    
+    -- ★★★ НЕ ОЧИЩАЕМ ВЕСЬ ЭКРАН, А ТОЛЬКО ОБНОВЛЯЕМ НУЖНЫЕ ОБЛАСТИ ★★★
+    
+    -- Рисуем рамку (только если её нет или она изменилась)
+    bufferSet(1, 1, "┌", colors.accent_secondary)
+    bufferFill(2, 1, 78, 1, "─", colors.accent_secondary)
+    bufferSet(80, 1, "┐", colors.accent_secondary)
+    for y = 2, 24 do
+        bufferSet(1, y, "│", colors.accent_secondary)
+        bufferSet(80, y, "│", colors.accent_secondary)
+    end
+    bufferSet(1, 24, "└", colors.accent_secondary)
+    bufferFill(2, 24, 78, 1, "─", colors.accent_secondary)
+    bufferSet(80, 24, "┘", colors.accent_secondary)
     
     if currentPlayer then
+        -- Приветствие
         local hello1 = "Добро пожаловать, "
         local hello2 = currentPlayer .. "!"
         local full1 = hello1 .. hello2
         local x1 = math.floor((80 - unicode.len(full1))/2) + 2
-        gpu.setForeground(colors.success)
-        gpu.set(x1, 4, hello1)
-        gpu.setForeground(colors.text_bright)
-        gpu.set(x1 + unicode.len(hello1), 4, hello2)
+        bufferSet(x1, 4, hello1, colors.success)
+        bufferSet(x1 + unicode.len(hello1), 4, hello2, colors.text_bright)
 
+        -- Баланс
         local coin = coinBalance or 0.0
         local ema = emaBalance or 0.0
         
-        gpu.setForeground(colors.white)
         local balanceText = "Баланс: " .. string.format("%.2f", coin) .. " Coina ₵"
         local balanceX = math.floor((80 - unicode.len(balanceText .. " | ЭМЫ: " .. string.format("%.2f", ema) .. " ۞")) / 2) + 1
-        gpu.set(balanceX, 5, "Баланс: ")
-        gpu.setForeground(colors.accent_main)
-        gpu.set(balanceX + unicode.len("Баланс: "), 5, string.format("%.2f", coin) .. " Coina ₵")
-        gpu.setForeground(colors.white)
-        gpu.set(balanceX + unicode.len("Баланс: ") + unicode.len(string.format("%.2f", coin) .. " Coina ₵"), 5, " | ")
-        gpu.setForeground(colors.tomato)
-        gpu.set(balanceX + unicode.len("Баланс: ") + unicode.len(string.format("%.2f", coin) .. " Coina ₵") + unicode.len(" | "), 5, "ЭМЫ: " .. string.format("%.2f", ema) .. " ۞")
+        bufferSet(balanceX, 5, "Баланс: ", colors.white)
+        bufferSet(balanceX + unicode.len("Баланс: "), 5, string.format("%.2f", coin) .. " Coina ₵", colors.accent_main)
+        bufferSet(balanceX + unicode.len("Баланс: ") + unicode.len(string.format("%.2f", coin) .. " Coina ₵"), 5, " | ", colors.white)
+        bufferSet(balanceX + unicode.len("Баланс: ") + unicode.len(string.format("%.2f", coin) .. " Coina ₵") + unicode.len(" | "), 5, "ЭМЫ: " .. string.format("%.2f", ema) .. " ۞", colors.tomato)
         
+        -- Статус привязки
         local boundInfo = ""
         local boundColor = colors.error
         
@@ -3125,31 +3157,57 @@ function drawMainMenu()
             boundColor = colors.error
         end
         
-        gpu.setForeground(boundColor)
         local boundX = math.floor((80 - unicode.len(boundInfo)) / 2) + 1
-        gpu.set(boundX, 2, boundInfo)
+        bufferSet(boundX, 2, boundInfo, boundColor)
 
+        -- Сообщение о соглашении
         if not playerAgreed then
-            gpu.setForeground(colors.accent_secondary)
             if showShopDenied then
-                drawCenteredText(8, "Доступ запрещён. Примите соглашение [Соглашение]", colors.error)
+                bufferSet(math.floor((80 - unicode.len("Доступ запрещён. Примите соглашение [Соглашение]")) / 2) + 1, 8, "Доступ запрещён. Примите соглашение [Соглашение]", colors.error)
             else
-                drawCenteredText(8, "Вы не приняли пользовательское соглашение! Нажмите [Соглашение]", colors.accent_secondary)
+                bufferSet(math.floor((80 - unicode.len("Вы не приняли пользовательское соглашение! Нажмите [Соглашение]")) / 2) + 1, 8, "Вы не приняли пользовательское соглашение! Нажмите [Соглашение]", colors.accent_secondary)
             end
+        else
+            -- Очищаем строку с сообщением
+            bufferFill(2, 8, 76, 1, " ", colors.text_main, colors.bg_main)
         end
 
+        -- Кнопки меню
         for _, btn in pairs(menuButtons) do
-            drawButton(btn)
+            bufferFill(btn.x, btn.y, btn.xs, btn.ys, " ", btn.fg or colors.text_main, btn.bg or colors.bg_button)
+            local text = btn.text or ""
+            local textX = btn.x + math.floor((btn.xs - unicode.len(text)) / 2)
+            local textY = btn.y + math.floor((btn.ys - 1) / 2)
+            bufferSet(textX, textY, text, btn.fg or colors.text_main, btn.bg or colors.bg_button)
         end
         
-        gpu.setForeground(colors.error)
-        gpu.set(4, 24, "[ ПОДДЕРЖКА ]")
-        gpu.set(35, 24, "[ СОГЛАШЕНИЕ ]")
-        gpu.set(68, 24, "[ ОТЗЫВЫ ]")
+        -- Нижние кнопки
+        bufferSet(4, 24, "[ ПОДДЕРЖКА ]", colors.error)
+        bufferSet(35, 24, "[ СОГЛАШЕНИЕ ]", colors.error)
+        bufferSet(68, 24, "[ ОТЗЫВЫ ]", colors.error)
+        
+        -- ★★★ ОЧИЩАЕМ ОСТАЛЬНЫЕ ОБЛАСТИ, ЧТОБЫ НЕ БЫЛО "МУСОРА" ★★★
+        -- Очищаем область между приветствием и кнопками (строки 6-7, 9-16, 18-23)
+        bufferFill(2, 6, 76, 1, " ", colors.text_main, colors.bg_main)  -- строка 6
+        bufferFill(2, 7, 76, 1, " ", colors.text_main, colors.bg_main)  -- строка 7
+        bufferFill(2, 9, 76, 8, " ", colors.text_main, colors.bg_main)  -- строки 9-16
+        bufferFill(2, 18, 76, 6, " ", colors.text_main, colors.bg_main) -- строки 18-23
+        
     else
         drawWelcomeScreen()
     end
-    drawTempMessage()
+    
+    -- Рисуем временное сообщение
+    if tempMessage and tempMessage ~= "" then
+        bufferFill(1, 25, 80, 1, " ", colors.success, colors.bg_main)
+        local x = math.floor((80 - unicode.len(tempMessage)) / 2) + 1
+        bufferSet(x, 25, tempMessage, colors.success, colors.bg_main)
+    else
+        bufferFill(1, 25, 80, 1, " ", colors.text_main, colors.bg_main)
+    end
+    
+    -- ★★★ ПРИНУДИТЕЛЬНО ОТРИСОВЫВАЕМ БУФЕР ★★★
+    forceRender()
 end
 
 function drawShopMenu()
@@ -3815,16 +3873,19 @@ function goBackToMenu()
     writeDebugLog("goBackToMenu()")
     showShopDenied = false
     currentScreen = "menu"
-    markDirty()
+    -- ★★★ НЕ ИСПОЛЬЗУЙ markDirty() - ИСПОЛЬЗУЙ forceRender() ★★★
     updateSelectorDisplay(nil)
     pcall(selector.setSlot, 0, nil)
     pcall(selector.setSlot, 1, nil)
+    drawMainMenu()
+    forceRender()
 end
 
 function goToShop()
     writeDebugLog("goToShop()")
     currentScreen = "shop"
-    markDirty()
+    drawShopMenu()
+    forceRender()
 end
 
 function goToBuy()
@@ -3850,7 +3911,12 @@ function goToBuy()
     searchActive = false
     searchInput = ""
     loadBuyItems()
-    markDirty()
+    
+    -- ★★★ ПРИНУДИТЕЛЬНО РИСУЕМ ВСЕ СРАЗУ ★★★
+    drawBuyStatic()
+    drawBuyItemsList()
+    drawBuyButtons()
+    forceRender()
 end
 
 function goToSell()
@@ -3877,7 +3943,12 @@ function goToSell()
     searchActive = false
     searchInput = ""
     loadSellItems()
-    markDirty()
+    
+    -- ★★★ ПРИНУДИТЕЛЬНО РИСУЕМ ВСЕ СРАЗУ ★★★
+    drawBuyStatic()
+    drawBuyItemsList()
+    drawBuyButtons()
+    forceRender()
 end
 
 function goToSellConfirm(item)

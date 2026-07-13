@@ -11,7 +11,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ★★ АВТОМАТИЧЕСКАЯ1235 НАСТРОЙКА АВТОЗАПУСКА ★★
+-- ★★ АВТОМАТИЧЕСКАЯ12356 НАСТРОЙКА АВТОЗАПУСКА ★★
 -- ============================================================
 
 local function setupAutoStart()
@@ -800,7 +800,10 @@ function getSystemInfo()
 end
 
 function formatUptime(seconds)
-    if not seconds or seconds < 0 then return "—"
+    if not seconds or seconds < 0 then 
+        return "—" 
+    end 
+    
     local days = math.floor(seconds / 86400)
     local hours = math.floor((seconds % 86400) / 3600)
     local minutes = math.floor((seconds % 3600) / 60)

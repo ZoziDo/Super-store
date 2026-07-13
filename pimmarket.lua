@@ -3,17 +3,15 @@ local event = require("event")
 local gpu = component.gpu
 local unicode = require("unicode")
 local serialization = require("serialization")
-local keyboard = require("keyboard")
 local computer = require("computer")
 local fs = require("filesystem")
-local shell = require("shell")
 local internet = require("internet")
 local math = require("math")
 local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ★★ АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА1 ★★
+-- ★★ АВТОМАТИЧЕСКАЯ1 НАСТРОЙКА АВТОЗАПУСКА ★★
 -- ============================================================
 
 local function setupAutoStart()
@@ -21,7 +19,6 @@ local function setupAutoStart()
     local io = require("io")
     local os = require("os")
     
-    -- 1. Создаём startup.lua
     local startupFile = "/home/startup.lua"
     if not fs.exists(startupFile) then
         print("📝 Создаём автозапуск: " .. startupFile)
@@ -32,12 +29,8 @@ local function setupAutoStart()
 local shell = require("shell")
 local computer = require("computer")
 
--- Ждём загрузки всех компонентов
 os.sleep(3)
-
--- Запускаем магазин в фоновом режиме
 shell.execute("lua /home/pimmarket.lua &")
-
 print("✅ PIM MARKET запущен")
 ]])
             file:close()
@@ -46,7 +39,6 @@ print("✅ PIM MARKET запущен")
         end
     end
     
-    -- 2. Создаём .shrc как запасной вариант
     local shrcFile = "/home/.shrc"
     if not fs.exists(shrcFile) then
         local file = io.open(shrcFile, "w")
@@ -61,11 +53,9 @@ print("✅ PIM MARKET запущен")
     return true
 end
 
--- Запускаем настройку (только если это первый запуск)
 if not fs.exists("/home/.autostart_done") then
     local success = setupAutoStart()
     if success then
-        -- Создаём маркер, чтобы не создавать повторно
         local file = io.open("/home/.autostart_done", "w")
         if file then
             file:write("autostart_configured_" .. os.date("%Y-%m-%d %H:%M:%S"))
@@ -74,8 +64,6 @@ if not fs.exists("/home/.autostart_done") then
         print("🎯 Автозагрузка настроена!")
     end
 end
-
--- ★★★ КОНЕЦ БЛОКА АВТОЗАПУСКА ★★★
 
 pcall(function()
     event.ignore("interrupted", function() end)
@@ -89,7 +77,7 @@ if not event.shouldInterrupt then
 end
 
 -- ============================================================
--- ВРЕМЯ1
+-- ВРЕМЯ
 -- ============================================================
 
 tmpfs = component.proxy(computer.tmpAddress())
@@ -112,15 +100,150 @@ end
 -- ★★★ ОЧИСТКА СТРОК ОТ НЕВИДИМЫХ СИМВОЛОВ ★★★
 -- ============================================================
 function cleanString(str)
-    if not str then return "" end
-    -- Удаляем все управляющие символы (коды 0-31 и 127)
+    if not str then return ""
     str = str:gsub("[%c]", "")
-    -- Убираем лишние пробелы
     str = str:gsub("%s+", " ")
-    -- Обрезаем пробелы по краям
     str = str:match("^%s*(.-)%s*$") or ""
     return str
 end
+
+-- ============================================================
+-- ★★★ НОВАЯ СИСТЕМА ЛОГИРОВАНИЯ ★★★
+-- ============================================================
+
+LOG_LEVELS = {
+    DEBUG = 0,
+    INFO = 1,
+    WARNING = 2,
+    ERROR = 3,
+    CRITICAL = 4
+}
+
+CURRENT_LOG_LEVEL = LOG_LEVELS.INFO
+
+function writeLog(level, msg)
+    if level < CURRENT_LOG_LEVEL then
+        return
+    end
+    
+    local levelName = "INFO"
+    if level == LOG_LEVELS.DEBUG then levelName = "DEBUG" end
+    if level == LOG_LEVELS.WARNING then levelName = "WARNING" end
+    if level == LOG_LEVELS.ERROR then levelName = "ERROR" end
+    if level == LOG_LEVELS.CRITICAL then levelName = "CRITICAL" end
+    
+    addLogEntry(msg, levelName)
+    
+    if level == LOG_LEVELS.CRITICAL then
+        sendErrorToWeb(msg, "CRITICAL")
+    end
+end
+
+function writeDebugLog(msg)
+    writeLog(LOG_LEVELS.DEBUG, msg)
+end
+
+function writeErrorLog(msg)
+    writeLog(LOG_LEVELS.ERROR, msg)
+end
+
+-- ============================================================
+-- ★★★ МЕНЕДЖЕР ТАЙМЕРОВ ★★★
+-- ============================================================
+
+timers = {}
+
+function createTimer(interval, callback, repeat)
+    local timerId = event.timer(interval, callback, repeat and math.huge or 1)
+    table.insert(timers, timerId)
+    return timerId
+end
+
+function clearAllTimers()
+    for _, id in ipairs(timers) do
+        pcall(event.cancel, id)
+    end
+    timers = {}
+end
+
+-- ============================================================
+-- ★★★ GRACEFUL SHUTDOWN - ПЛАВНОЕ ЗАВЕРШЕНИЕ ★★★
+-- ============================================================
+
+-- Флаг, что мы в процессе завершения
+isShuttingDown = false
+
+-- Функция для безопасного сохранения всех данных
+function saveAllData()
+    writeDebugLog("💾 Сохранение всех данных...")
+    
+    -- 1. Сохраняем игроков
+    if dbDirty then
+        saveDB()
+        writeDebugLog("   ✅ Игроки сохранены")
+    end
+    
+    -- 2. Сохраняем статистику
+    saveGlobalStats()
+    writeDebugLog("   ✅ Статистика сохранена")
+    
+    -- 3. Отправляем все логи
+    flushLogQueue()
+    writeDebugLog("   ✅ Логи отправлены")
+    
+    -- 4. Сохраняем pending изменения
+    if #pending_buffer > 0 then
+        save_pending_buffer()
+        writeDebugLog("   ✅ Буфер изменений сохранён")
+    end
+    
+    writeDebugLog("💾 Все данные сохранены!")
+end
+
+-- Функция для асинхронного сохранения (не блокирует GUI)
+function asyncSaveData()
+    if isShuttingDown then
+        return  -- Уже сохраняем
+    end
+    
+    isShuttingDown = true
+    
+    -- Сохраняем в фоне через 0.1 секунду
+    event.timer(0.1, function()
+        pcall(saveAllData)
+        isShuttingDown = false
+        return false
+    end)
+end
+
+-- Функция для принудительного сохранения (блокирует до завершения)
+function forceSaveData()
+    isShuttingDown = true
+    saveAllData()
+    isShuttingDown = false
+end
+
+-- ★★★ КОНЕЦ БЛОКА GRACEFUL SHUTDOWN ★★★      
+
+-- ============================================================
+-- ★★★ ОБРАБОТЧИК ВЫКЛЮЧЕНИЯ КОМПЬЮТЕРА ★★★
+-- ============================================================
+
+-- Слушаем событие выключения (если есть)
+event.listen("computer_shutdown", function()
+    writeErrorLog("⏻ Компьютер выключается! Сохраняем данные...")
+    forceSaveData()
+    writeErrorLog("✅ Данные сохранены перед выключением")
+end)
+
+-- Также сохраняем при завершении процесса
+event.listen("terminate", function()
+    writeErrorLog("⏻ Процесс завершается! Сохраняем данные...")
+    forceSaveData()
+    writeErrorLog("✅ Данные сохранены перед завершением")
+end)
+
+-- ★★★ КОНЕЦ БЛОКА ОБРАБОТЧИКА ★★★            
 
 -- ============================================================
 -- ★★★ ЗАЩИТА ОТ ЗАВИСАНИЙ ★★★
@@ -147,15 +270,20 @@ function unlockTransactions()
 end
 
 function safeExit()
-    writeErrorLog("🔴 Терминал #1 (PIM MARKET) остановлен")
     writeDebugLog("🚪 Безопасный выход")
     
-    -- ★★★ БЕЗОПАСНО ЛОГГИРУЕМ ИГРОКА ★★★
+    -- ★★★ 1. МГНОВЕННО ПОМЕЧАЕМ, ЧТО ВЫХОДИМ ★★★
+    isShuttingDown = true
+    
+    -- ★★★ 2. ЛОГГИРУЕМ ВЫХОД ИГРОКА ★★★
     if currentPlayer ~= nil then
+        addLog("👤 Выход: " .. currentPlayer)
         writeDebugLog("👤 Выход игрока: " .. tostring(currentPlayer))
+    else
+        writeDebugLog("🚪 Выход без игрока")
     end
     
-    -- Сбрасываем все переменные состояния
+    -- ★★★ 3. СБРАСЫВАЕМ ВСЕ ПЕРЕМЕННЫЕ (МГНОВЕННО) ★★★
     currentPlayer = nil
     currentToken = nil
     alreadyAuthorized = false
@@ -169,7 +297,7 @@ function safeExit()
         writeDebugLog("🔓 Блокировка сброшена при выходе")
     end
     
-    -- Сбрасываем все UI переменные
+    -- ★★★ 4. СБРАСЫВАЕМ ВСЕ UI ПЕРЕМЕННЫЕ ★★★
     selectedItem = nil
     hoveredIndex = 0
     selectedIndex = 0
@@ -194,105 +322,110 @@ function safeExit()
         tempMessageTimer = nil
     end
     
-    -- Сбрасываем селектор
+    -- ★★★ 5. СБРАСЫВАЕМ СЕЛЕКТОР ★★★
     pcall(updateSelectorDisplay, nil)
     pcall(selector.setSlot, 0, nil)
     pcall(selector.setSlot, 1, nil)
     
-    -- Принудительно отрисовываем экран приветствия
+    -- ★★★ 6. ОСТАНАВЛИВАЕМ ВСЕ ТАЙМЕРЫ ★★★
+    clearAllTimers()
+    writeDebugLog("⏹️ Все таймеры остановлены")
+    
+    -- ★★★ 7. МГНОВЕННО РИСУЕМ ЭКРАН ПРИВЕТСТВИЯ ★★★
     drawWelcomeScreen()
+    writeDebugLog("🖥️ Экран приветствия отображён")
+    
+    -- ★★★ 8. АСИНХРОННО СОХРАНЯЕМ ДАННЫЕ (В ФОНЕ) ★★★
+    -- Это НЕ БЛОКИРУЕТ GUI!
+    asyncSaveData()
+    writeDebugLog("💾 Запущено фоновое сохранение данных")
+    
+    -- ★★★ 9. СБРАСЫВАЕМ ФЛАГ ВЫХОДА ★★★
+    isShuttingDown = false
     
     writeDebugLog("✅ Безопасный выход завершён")
+    writeErrorLog("🔴 Терминал #1 (PIM MARKET) остановлен")
 end
+
+-- ============================================================
+-- ★★★ ЕДИНЫЙ ТАЙМЕР PIM (ОБЪЕДИНЕННЫЙ) ★★★
+-- ============================================================
+
+PIM_CHECK_INTERVAL = 5
+pimCheckTimer = nil
+pimCheckLock = false
+
+function unifiedPimCheck()
+    if pimCheckLock then return end
+    pimCheckLock = true
+    
+    local success, err = pcall(function()
+        if not currentPlayer then
+            pimCheckLock = false
+            return
+        end
+        
+        local pimAddr = getPimAddr()
+        if not pimAddr then
+            safeExit()
+            pimCheckLock = false
+            return
+        end
+        
+        local pim = component.proxy(pimAddr)
+        local playerOnPim = nil
+        
+        local methods = {"getPlayer", "getPlayerName", "getUsername"}
+        for _, method in ipairs(methods) do
+            if pim[method] then
+                local ok, result = pcall(pim[method], pim)
+                if ok and result and result ~= "" then
+                    playerOnPim = result
+                    break
+                end
+            end
+        end
+        
+        if not playerOnPim then
+            local ok, result = pcall(function()
+                return pim.player
+            end)
+            if ok and result and result ~= "" then
+                playerOnPim = result
+            end
+        end
+        
+        if (not playerOnPim or playerOnPim == "") and currentPlayer then
+            safeExit()
+        elseif playerOnPim and playerOnPim ~= currentPlayer then
+            safeExit()
+        end
+    end)
+    
+    pimCheckLock = false
+end
+
+function startUnifiedPimCheck()
+    if pimCheckTimer then
+        event.cancel(pimCheckTimer)
+        pimCheckTimer = nil
+    end
+    
+    pimCheckTimer = createTimer(PIM_CHECK_INTERVAL, function()
+        if not TRANSACTION_LOCK then
+            unifiedPimCheck()
+        end
+        return true
+    end, true)
+end
+
+startUnifiedPimCheck()
 
 -- ============================================================
 -- ВЕБ-ИНТЕГРАЦИЯ
 -- ============================================================
 
 WEB_URL = "https://zozido.pythonanywhere.com"
-
--- ★★★ ОТДЕЛЬНЫЙ ТАЙМЕР ДЛЯ ПРИНУДИТЕЛЬНОЙ ПРОВЕРКИ КОМАНД ★★★
--- Принудительная проверка команд каждые 3 секунды (даже если транзакции заблокированы)
-event.timer(3, function()
-    local success, err = pcall(function()
-        writeErrorLog("📡 ПРИНУДИТЕЛЬНАЯ ПРОВЕРКА КОМАНД...")
-        
-        local url = WEB_URL .. "/api/commands"
-        local response = internet.request(url)
-        
-        if response then
-            local body = ""
-            for chunk in response do
-                body = body .. chunk
-            end
-            
-            if body and #body > 0 then
-                writeErrorLog("📥 Получено: " .. #body .. " байт")
-                local data = parseJSON(body)
-                
-                if data and data.commands then
-                    for _, cmd in ipairs(data.commands) do
-                        if cmd.command == "terminal_control" then
-                            local action = cmd.data.action
-                            writeErrorLog("🚨 ПОЛУЧЕНА КОМАНДА: " .. action)
-                            
-                            if action == "shutdown" then
-                                writeErrorLog("⏻ ВЫКЛЮЧЕНИЕ ТЕРМИНАЛА")
-                                os.sleep(0.3)
-                                
-                                -- Пробуем все варианты
-                                local shutdown_attempts = {
-                                    function() computer.shutdown() end,
-                                    function() os.execute("shutdown -h now") end,
-                                    function() os.execute("shutdown") end,
-                                    function() os.exit(0) end
-                                }
-                                
-                                for i, func in ipairs(shutdown_attempts) do
-                                    local ok, err = pcall(func)
-                                    if ok then
-                                        writeErrorLog("✅ Выключение успешно (способ " .. i .. ")")
-                                        break
-                                    else
-                                        writeErrorLog("⚠️ Способ " .. i .. " не сработал: " .. tostring(err))
-                                    end
-                                end
-                                
-                            elseif action == "reboot" then
-                                writeErrorLog("🔄 ПЕРЕЗАГРУЗКА ТЕРМИНАЛА")
-                                os.sleep(0.3)
-                                
-                                -- Пробуем все варианты
-                                local reboot_attempts = {
-                                    function() computer.reboot() end,
-                                    function() os.execute("reboot") end,
-                                    function() os.execute("shutdown -r now") end,
-                                    function() os.exit(1) end
-                                }
-                                
-                                for i, func in ipairs(reboot_attempts) do
-                                    local ok, err = pcall(func)
-                                    if ok then
-                                        writeErrorLog("✅ Перезагрузка успешна (способ " .. i .. ")")
-                                        break
-                                    else
-                                        writeErrorLog("⚠️ Способ " .. i .. " не сработал: " .. tostring(err))
-                                    end
-                                end
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end)
-    
-    if not success then
-        writeErrorLog("❌ Ошибка в принудительной проверке: " .. tostring(err))
-    end
-    
-    return true
-end, math.huge)
 
 function toJson(val)
     if type(val) == "string" then
@@ -328,15 +461,13 @@ function toJson(val)
 end
 
 function sendToWeb(endpoint, jsonData)
-    local success = pcall(function()
+    pcall(function()
         internet.request(WEB_URL .. endpoint, jsonData, {
             ["Content-Type"] = "application/json",
-            ["Connection"] = "close"
+            ["Connection"] = "close",
+            ["Timeout"] = 3
         })
     end)
-    if not success then
-        writeErrorLog("❌ Ошибка отправки на сервер: " .. endpoint)
-    end
 end
 
 -- ============================================================
@@ -346,7 +477,7 @@ end
 logQueue = {}
 
 function addLogEntry(text, level)
-    if not text then text = "?" end
+    if not text then text = "?"
     level = level or "INFO"
     local entry = {
         text = text,
@@ -371,15 +502,30 @@ end
 
 LOG_FLUSH_INTERVAL = 15
 function flushLogQueue()
-    if #logQueue == 0 then return end
+    if #logQueue == 0 then return
+    
+    -- ★★★ КОПИРУЕМ ЛОГИ ★★★
     local batch = {}
     for _, e in ipairs(logQueue) do
         table.insert(batch, { time = e.time, text = e.text, level = e.level })
     end
-    sendToWeb("/api/logs_batch", toJson({ logs = batch }))
+    
+    -- ★★★ ОТПРАВЛЯЕМ (С ЗАЩИТОЙ ОТ ОШИБОК) ★★★
+    local success, err = pcall(function()
+        sendToWeb("/api/logs_batch", toJson({ logs = batch }))
+    end)
+    
+    if not success then
+        writeDebugLog("⚠️ Не удалось отправить логи: " .. tostring(err))
+        -- Логи остаются в очереди для повторной отправки
+        return
+    end
+    
+    -- ★★★ ОЧИЩАЕМ ОЧЕРЕДЬ ТОЛЬКО ПОСЛЕ УСПЕШНОЙ ОТПРАВКИ ★★★
     logQueue = {}
+    writeDebugLog("📤 Отправлено " .. #batch .. " логов")
 end
-event.timer(LOG_FLUSH_INTERVAL, flushLogQueue, math.huge)
+createTimer(LOG_FLUSH_INTERVAL, flushLogQueue, true)
 
 function addLog(text)
     addLogEntry(text, "INFO")
@@ -393,17 +539,6 @@ function sendErrorToWeb(error_msg, level)
         level = level,
         time = timestamp
     }))
-end
-
-ERROR_LOG = "/home/errors.log"
-
-function writeErrorLog(msg)
-    addLogEntry(msg, "ERROR")
-    sendErrorToWeb(msg, "ERROR")
-end
-
-function writeDebugLog(msg)
-    -- Отладочные логи отключены
 end
 
 function safeCall(func, ...)
@@ -450,23 +585,115 @@ colors = {
 }
 
 -- ============================================================
+-- ★★★ DIRTY FLAG - УПРАВЛЕНИЕ ПЕРЕРИСОВКОЙ ★★★
+-- ============================================================
+
+guiDirty = true
+renderTimer = nil
+lastRenderedScreen = ""
+
+function markDirty()
+    guiDirty = true
+    if not renderTimer then
+        renderTimer = event.timer(0.1, function()
+            renderTimer = nil
+            if guiDirty then
+                renderCurrentScreen()
+                guiDirty = false
+            end
+            return false
+        end)
+    end
+end
+
+function forceRender()
+    guiDirty = true
+    if renderTimer then
+        event.cancel(renderTimer)
+        renderTimer = nil
+    end
+    renderCurrentScreen()
+    guiDirty = false
+end
+
+function renderCurrentScreen()
+    if currentScreen == "welcome" then
+        drawWelcomeScreen()
+    elseif currentScreen == "menu" then
+        drawMainMenu()
+    elseif currentScreen == "shop" then
+        drawShopMenu()
+    elseif currentScreen == "shop_buy" or currentScreen == "shop_sell" then
+        drawBuyStatic()
+        drawBuyItemsList()
+        drawBuyButtons()
+    elseif currentScreen == "account" then
+        drawAccount({balance=coinBalance, emaBalance=emaBalance, transactions=playerTransactions, regDate=playerRegDate, agreed=playerAgreed})
+    elseif currentScreen == "report" then
+        drawReportScreen()
+    elseif currentScreen == "feedbacks" then
+        drawFeedbacksList()
+    elseif currentScreen == "feedback_input" then
+        drawFeedbackInputScreen()
+    elseif currentScreen == "agreement" then
+        if type(drawAgreementScreen) == "function" then
+            drawAgreementScreen()
+        end
+    elseif currentScreen == "sell_scan" then
+        drawSellScanScreen()
+    elseif currentScreen == "purchase" then
+        drawPurchaseScreen()
+    elseif currentScreen == "auth_popup" then
+        showAuthPopup()
+    elseif currentScreen == "qr_popup" then
+        showQRCodePopup()
+    end
+    drawTempMessage()
+end
+
+-- ============================================================
+-- ★★★ DEBOUNCE ДЛЯ СОБЫТИЙ МЫШИ ★★★
+-- ============================================================
+
+mouseDebounceTimer = nil
+pendingMouseX = 0
+pendingMouseY = 0
+
+function processMouseMove(x, y)
+    if currentScreen ~= "shop_buy" and currentScreen ~= "shop_sell" then
+        return
+    end
+    
+    if y >= 7 and y <= 21 and x >= 2 and x <= 77 then
+        local rel = y - 6
+        local newHover = (listScroll or 1) + rel - 1
+        if newHover <= #filteredItems and newHover ~= hoveredIndex then
+            hoveredIndex = newHover
+            drawBuyItemsList()
+        end
+    else
+        if hoveredIndex ~= 0 then
+            hoveredIndex = 0
+            drawBuyItemsList()
+        end
+    end
+end
+
+-- ============================================================
 -- СИСТЕМНЫЕ ДАННЫЕ ДЛЯ ТЕРМИНАЛОВ
 -- ============================================================
 
 function getSystemInfo()
     local info = {}
     
-    -- 1. Время работы
     local uptime = computer.uptime()
     info.uptime_seconds = uptime
     info.uptime_human = formatUptime(uptime)
     
-    -- 2. Время запуска
     local realTime = getRealTimestamp()
     local bootTime = realTime - uptime
     info.boot_time = os.date("%d.%m.%Y %H:%M:%S", bootTime)
     
-    -- 3. CPU
     info.cpu_load = 0
     info.cpu_percent = "N/A"
     if computer.getCPUUsage then
@@ -477,7 +704,6 @@ function getSystemInfo()
         end
     end
     
-    -- 4. Память
     info.memory_total = 0
     info.memory_used = 0
     info.memory_free = 0
@@ -505,7 +731,6 @@ function getSystemInfo()
         end
     end
     
-    -- 5. Диск
     info.disk_used_percent = "N/A"
     local fs = require("filesystem")
     local paths = {"/", "/home", "/tmp", "/lib"}
@@ -520,7 +745,6 @@ function getSystemInfo()
         end
     end
     
-    -- 6. IP адрес
     info.ip = "N/A"
     if computer.getLocalIP then
         local ok, ip = pcall(computer.getLocalIP)
@@ -529,14 +753,12 @@ function getSystemInfo()
         end
     end
     
-    -- ★★★ 7. Игрок через PIM (ИСПРАВЛЕНО) ★★★
     info.current_player = "—"
     local pimAddr = getPimAddr()
     if pimAddr then
         local pim = component.proxy(pimAddr)
         local player = nil
         
-        -- ★★★ БЕЗОПАСНО ПОЛУЧАЕМ ИМЯ ИГРОКА ★★★
         if pim.getPlayer then
             local ok, result = pcall(pim.getPlayer, pim)
             if ok and result then
@@ -558,7 +780,6 @@ function getSystemInfo()
             end
         end
         
-        -- ★★★ ПОСЛЕДНЯЯ ПОПЫТКА ★★★
         if not player then
             local ok, result = pcall(function()
                 return pim.player
@@ -568,7 +789,6 @@ function getSystemInfo()
             end
         end
         
-        -- ★★★ БЕЗОПАСНО ПРИСВАИВАЕМ ★★★
         if player and player ~= "" then
             info.current_player = player
         end
@@ -579,9 +799,8 @@ function getSystemInfo()
     return info
 end
 
--- Форматирование времени работы
 function formatUptime(seconds)
-    if not seconds or seconds < 0 then return "—" end
+    if not seconds or seconds < 0 then return "—"
     local days = math.floor(seconds / 86400)
     local hours = math.floor((seconds % 86400) / 3600)
     local minutes = math.floor((seconds % 3600) / 60)
@@ -726,8 +945,6 @@ function drawAccountLoading()
     drawTempMessage()
 end
 
-drawcountLoading = drawAccountLoading
-
 function isButtonClicked(btn, x, y)
     if not btn then
         writeErrorLog("❌ isButtonClicked: btn = nil!")
@@ -754,6 +971,43 @@ globalStats = { totalReports = 0, totalBuys = 0, totalSells = 0, totalRevenue = 
 transactions = {}
 pending_buffer = {}
 retry_delay = 10
+
+-- ============================================================
+-- ★★★ ИНДЕКСЫ ДЛЯ БЫСТРОГО ПОИСКА ИГРОКОВ ★★★
+-- ============================================================
+
+playersIndex = {}
+
+function syncPlayerIndex()
+    playersIndex = {}
+    for name, data in pairs(players) do
+        if name and data then
+            playersIndex[name] = data
+        end
+    end
+    writeDebugLog("🔄 Индекс игроков обновлён: " .. #playersIndex .. " записей")
+end
+
+function findPlayer(name)
+    if not name then return nil end
+    return playersIndex[name]
+end
+
+function updatePlayerData(name, data)
+    if not name then return false end
+    players[name] = data
+    playersIndex[name] = data
+    writeDebugLog("💾 Игрок обновлён: " .. name)
+    return true
+end
+
+function deletePlayer(name)
+    if not name then return false end
+    players[name] = nil
+    playersIndex[name] = nil
+    writeDebugLog("🗑️ Игрок удалён: " .. name)
+    return true
+end
 
 function loadReportsFromFile()
     if fs.exists(REPORTS_FILE) then
@@ -926,13 +1180,13 @@ function send_pending_changes()
     end
 end
 
-event.timer(10, function()
+createTimer(10, function()
     if #pending_buffer > 0 then
         writeDebugLog("📤 Отправка дельты (буфер: " .. #pending_buffer .. ")")
         send_pending_changes()
     end
     return true
-end, math.huge)
+end, true)
 
 function ensureFileExists(path, defaultData)
     writeDebugLog("ensureFileExists: " .. path)
@@ -990,6 +1244,9 @@ if fs.exists(DB_PATH) then
     end
 end
 
+-- ★★★ ИНИЦИАЛИЗИРУЕМ ИНДЕКС ПОСЛЕ ЗАГРУЗКИ ИГРОКОВ ★★★
+syncPlayerIndex()
+
 if fs.exists(STATS_PATH) then
     local file = io.open(STATS_PATH, "r")
     local raw = file:read("*a")
@@ -1028,7 +1285,7 @@ function saveDBDeferred()
 end
 
 function flushDB()
-    if not dbDirty then return end
+    if not dbDirty then return
     if TRANSACTION_LOCK then
         writeDebugLog("⏳ Отложено сохранение (транзакция активна)")
         return
@@ -1037,7 +1294,7 @@ function flushDB()
     dbDirty = false
 end
 
-event.timer(SAVE_DB_INTERVAL, flushDB, math.huge)
+createTimer(SAVE_DB_INTERVAL, flushDB, true)
 
 function saveGlobalStats()
     writeDebugLog("saveGlobalStats()")
@@ -1047,16 +1304,16 @@ function saveGlobalStats()
 end
 
 function isAdmin(playerName)
-    if not playerName then return false end
+    if not playerName then return false
     for _, name in ipairs(admins) do
-        if name == playerName then return true end
+        if name == playerName then return true
     end
     return false
 end
 
 function addAdmin(playerName)
-    if not playerName or playerName == "" then return false end
-    if isAdmin(playerName) then return false end
+    if not playerName or playerName == "" then return false
+    if isAdmin(playerName) then return false
     table.insert(admins, playerName)
     local file = io.open(ADMINS_PATH, "w")
     if file then
@@ -1068,8 +1325,8 @@ function addAdmin(playerName)
 end
 
 function removeAdmin(playerName)
-    if not playerName or playerName == "" then return false end
-    if #admins <= 1 then return false end
+    if not playerName or playerName == "" then return false
+    if #admins <= 1 then return false
     for i, name in ipairs(admins) do
         if name == playerName then
             table.remove(admins, i)
@@ -1116,8 +1373,9 @@ function addTransaction(type, playerName, item, qty, value_coin, value_ema)
     while #transactions > 100 do table.remove(transactions, 1) end
     
     if playerName and playerName ~= "?" then
-        if not players[playerName] then
-            players[playerName] = {
+        local player = playersIndex[playerName]
+        if not player then
+            player = {
                 balance = 0,
                 emaBalance = 0,
                 transactions = 0,
@@ -1127,17 +1385,32 @@ function addTransaction(type, playerName, item, qty, value_coin, value_ema)
                 transactionsList = {},
                 regDate = getRealTimeString()
             }
+            players[playerName] = player
+            playersIndex[playerName] = player
             writeDebugLog("➕ Создан новый игрок в addTransaction: " .. playerName)
+            addLog("✅ Новый игрок: " .. playerName)
         end
         
-        players[playerName].transactions = (players[playerName].transactions or 0) + 1
-        if not players[playerName].transactionsList then
-            players[playerName].transactionsList = {}
+        player.transactions = (player.transactions or 0) + 1
+        if not player.transactionsList then
+            player.transactionsList = {}
         end
-        table.insert(players[playerName].transactionsList, transactionRecord)
+        table.insert(player.transactionsList, transactionRecord)
         saveDBDeferred()
-        writeDebugLog("📊 Транзакции игрока " .. playerName .. ": " .. players[playerName].transactions)
-        writeDebugLog("📋 Список теперь содержит " .. #players[playerName].transactionsList .. " записей")
+        writeDebugLog("📊 Транзакции игрока " .. playerName .. ": " .. player.transactions)
+        writeDebugLog("📋 Список теперь содержит " .. #player.transactionsList .. " записей")
+        
+        local currency = ""
+        if value_coin > 0 and value_ema > 0 then
+            currency = string.format("%.2f₵ + %.2f۞", value_coin, value_ema)
+        elseif value_coin > 0 then
+            currency = string.format("%.2f₵", value_coin)
+        elseif value_ema > 0 then
+            currency = string.format("%.2f۞", value_ema)
+        end
+        local action = type == "buy" and "🛒 Купил" or "💰 Продал"
+        addLog(string.format("%s %s: %s x%d за %s", action, playerName, item, qty, currency))
+        
     else
         writeErrorLog("⚠️ Некорректное имя игрока при добавлении транзакции: " .. tostring(playerName))
     end
@@ -1178,7 +1451,6 @@ end
 function sendStats()
     writeDebugLog("📊 sendStats() начат (резервный дамп)")
     
-    -- ★★★ ПОЛУЧАЕМ СИСТЕМНЫЕ ДАННЫЕ (С ЗАЩИТОЙ) ★★★
     local sysInfo = {}
     local ok, result = pcall(getSystemInfo)
     if ok and result then
@@ -1277,13 +1549,11 @@ function sendStats()
         writeErrorLog("⚠️ Файл /home/shop_items.lua не найден")
     end
     
-    -- ★★★ ДОБАВЛЯЕМ system_info В ПЕРВОГО ИГРОКА (для обратной совместимости) ★★★
     if #playerList > 0 and playerList[1] then
         playerList[1].system_info = sysInfo
         writeDebugLog("📊 Системные данные добавлены к игроку: " .. playerList[1].name)
     end
     
-    -- ★★★ ФОРМИРУЕМ PAYLOAD ★★★
     local payload = {
         players = playerList,
         admins = admins,
@@ -1299,7 +1569,6 @@ function sendStats()
         transactions = allPlayerTransactions,
         buy_items = buyItems,
         sell_items = sellItems,
-        -- ★★★ ОТПРАВЛЯЕМ system_info НА КОРНЕВОМ УРОВНЕ ★★★
         system_info = sysInfo
     }
     
@@ -1310,19 +1579,21 @@ function sendStats()
     sendToWeb("/api/update", jsonData)
 end
 
-event.timer(60, sendStats, math.huge)
+createTimer(60, function()
+    if not TRANSACTION_LOCK then
+        pcall(sendStats)
+    end
+    return true
+end, true)
 
--- ★★★ СЮДА ВСТАВЛЯЕМ ТАЙМЕР ДЛЯ СИСТЕМНЫХ ДАННЫХ ★★★
--- Принудительная отправка системных данных каждые 30 секунд
-event.timer(30, function()
+createTimer(30, function()
     if not TRANSACTION_LOCK then
         local sysInfo = getSystemInfo()
-        -- Отправляем отдельно, чтобы сервер точно получил
         sendToWeb("/api/system_info", toJson(sysInfo))
         writeDebugLog("📊 Отправлены системные данные отдельным пакетом")
     end
     return true
-end, math.huge)
+end, true)
 
 function safeDoFile(path)
     writeDebugLog("safeDoFile: " .. path)
@@ -1380,14 +1651,14 @@ PUSH_DIRECTION = "down"
 PULL_DIRECTION = "up"
 
 function normalizeName(name)
-    if not name then return "" end
+    if not name then return ""
     local lastColon = name:match(".*:([^:]+)$")
     return lastColon or name
 end
 
 function namesMatch(name1, name2)
-    if not name1 or not name2 then return false end
-    if name1 == name2 then return true end
+    if not name1 or not name2 then return false
+    if name1 == name2 then return true
     local short1 = normalizeName(name1)
     local short2 = normalizeName(name2)
     return short1 == short2
@@ -1421,14 +1692,13 @@ authStartTime = 0
 AUTH_TIMEOUT = 3
 alreadyAuthorized = false
 
--- ★★★ ДЛЯ АУТЕНТИФИКАЦИИ ★★★
 authCodeInput = ""
 boundPlayer = nil
--- ★★★ КЭШ СТАТУСА ПРИВЯЗКИ ★★★
+
 bindingCache = {
     isBound = false,
     lastCheck = 0,
-    checkInterval = 10  -- проверять раз в 10 секунд
+    checkInterval = 10
 }
 
 shopItems = {}
@@ -1483,8 +1753,6 @@ feedbackInput = ""
 feedbackEditMode = false
 playerHasFeedback = false
 
-
-
 -- ============================================================
 -- JSON ПАРСЕР
 -- ============================================================
@@ -1510,7 +1778,7 @@ function parseJSON(json_str)
     end
 
     function parseString()
-        if str:sub(pos, pos) ~= '"' then return nil end
+        if str:sub(pos, pos) ~= '"' then return nil
         pos = pos + 1
         local start = pos
         local result = ""
@@ -1523,7 +1791,7 @@ function parseJSON(json_str)
             elseif ch == '\\' then
                 result = result .. str:sub(start, pos-1)
                 pos = pos + 1
-                if pos > len then return nil end
+                if pos > len then return nil
                 local esc = str:sub(pos, pos)
                 local map = {
                     ['"'] = '"',
@@ -1538,7 +1806,6 @@ function parseJSON(json_str)
                 if map[esc] then
                     result = result .. map[esc]
                 elseif esc == 'u' then
-                    -- ★★★ ОБРАБОТКА UNICODE ★★★
                     local hex = str:sub(pos+1, pos+4)
                     if #hex == 4 then
                         local code = tonumber(hex, 16)
@@ -1570,7 +1837,7 @@ function parseJSON(json_str)
     end
 
     function parseArray()
-        if str:sub(pos, pos) ~= '[' then return nil end
+        if str:sub(pos, pos) ~= '[' then return nil
         pos = pos + 1
         local arr = {}
         skipSpace()
@@ -1580,7 +1847,7 @@ function parseJSON(json_str)
         end
         while true do
             local val = parseValue()
-            if val == nil then break end
+            if val == nil then break
             table.insert(arr, val)
             skipSpace()
             local ch = str:sub(pos, pos)
@@ -1592,7 +1859,7 @@ function parseJSON(json_str)
     end
 
     function parseObject()
-        if str:sub(pos, pos) ~= '{' then return nil end
+        if str:sub(pos, pos) ~= '{' then return nil
         pos = pos + 1
         local obj = {}
         skipSpace()
@@ -1603,13 +1870,13 @@ function parseJSON(json_str)
         while true do
             skipSpace()
             local key = parseString()
-            if not key then break end
+            if not key then break
             skipSpace()
-            if str:sub(pos, pos) ~= ':' then break end
+            if str:sub(pos, pos) ~= ':' then break
             pos = pos + 1
             skipSpace()
             local val = parseValue()
-            if val == nil then break end
+            if val == nil then break
             obj[key] = val
             skipSpace()
             local ch = str:sub(pos, pos)
@@ -1622,7 +1889,7 @@ function parseJSON(json_str)
 
     function parseValue()
         skipSpace()
-        if pos > len then return nil end
+        if pos > len then return nil
         local ch = str:sub(pos, pos)
 
         if ch == '"' then
@@ -1658,21 +1925,22 @@ end
 -- ============================================================
 
 function isPimOwner(playerName)
-    if not playerName or not pimOwner then return false end
+    if not playerName or not pimOwner then return false
     return playerName == pimOwner
 end
 
 function syncCurrentPlayer()
-    if not currentPlayer then return end
+    if not currentPlayer then return
     
     writeDebugLog("🔄 Синхронизация игрока: " .. currentPlayer)
     
-    if players[currentPlayer] then
-        coinBalance = players[currentPlayer].balance or 0
-        emaBalance = players[currentPlayer].emaBalance or 0
-        playerTransactions = players[currentPlayer].transactions or 0
-        playerRegDate = players[currentPlayer].regDate or ""
-        playerAgreed = players[currentPlayer].agreed or false
+    local player = playersIndex[currentPlayer]
+    if player then
+        coinBalance = player.balance or 0
+        emaBalance = player.emaBalance or 0
+        playerTransactions = player.transactions or 0
+        playerRegDate = player.regDate or ""
+        playerAgreed = player.agreed or false
         
         writeDebugLog("✅ Синхронизирован: Coin=" .. coinBalance .. ", EMA=" .. emaBalance)
         return true
@@ -1683,7 +1951,7 @@ function syncCurrentPlayer()
 end
 
 function checkBindingStatus()
-    if not currentPlayer then return end
+    if not currentPlayer then return
     
     local checkSuccess, checkResponse = pcall(function()
         return internet.request(WEB_URL .. "/api/player_binding?game_player=" .. currentPlayer, nil, {
@@ -1707,30 +1975,27 @@ function checkBindingStatus()
                 clearBoundPlayer()
                 addLog("🔓 Привязка отозвана на сервере")
                 if currentScreen == "menu" or currentScreen == "account" then
-                    drawMainMenu()
+                    markDirty()
                 end
             elseif not wasBound and isBound then
                 boundPlayer = currentPlayer
                 saveBoundPlayer(currentPlayer)
                 addLog("🔗 Привязка восстановлена на сервере")
                 if currentScreen == "menu" or currentScreen == "account" then
-                    drawMainMenu()
+                    markDirty()
                 end
             end
         end
     end
 end
 
--- ★★★ ВСТАВЬТЕ СЮДА ★★★
 function getBindingStatus()
     local now = os.clock()
     
-    -- Если кэш ещё свежий, возвращаем сохранённое значение
     if bindingCache.lastCheck > 0 and (now - bindingCache.lastCheck) < bindingCache.checkInterval then
         return bindingCache.isBound
     end
     
-    -- Обновляем статус с сервера
     local isBound = false
     local checkSuccess, checkResponse = pcall(function()
         return internet.request(WEB_URL .. "/api/player_binding?game_player=" .. currentPlayer, nil, {
@@ -1755,30 +2020,28 @@ function getBindingStatus()
         end
     end
     
-    -- Сохраняем в кэш
     bindingCache.isBound = isBound
     bindingCache.lastCheck = now
     
     return isBound
 end
 
--- Запускаем проверку каждые 30 секунд
-event.timer(30, function()
+createTimer(30, function()
     if not TRANSACTION_LOCK then
         checkBindingStatus()
     end
     return true
-end, math.huge)
+end, true)
 
 function updateSelectorDisplay(item)
-    if not selector then return end
+    if not selector then return
     if not item then
         pcall(selector.setSlot, 0, nil)
         pcall(selector.setSlot, 1, nil)
         return
     end
     local raw = item.internalName or item.name or item.displayName
-    if not raw then return end
+    if not raw then return
     local id = raw
     if not id:find(":") then
         id = "minecraft:" .. id
@@ -1790,7 +2053,7 @@ function updateSelectorDisplay(item)
 end
 
 function sortableName(name)
-    if not name then return "" end
+    if not name then return ""
     local lower = string.lower(name)
     local result = lower:gsub("(%d+)", function(d)
         return string.format("%08d", tonumber(d))
@@ -1799,7 +2062,7 @@ function sortableName(name)
 end
 
 function toLowerCase(str)
-    if not str then return "" end
+    if not str then return ""
     str = string.lower(str)
     str = str:gsub("А", "а"):gsub("Б", "б"):gsub("В", "в"):gsub("Г", "г"):gsub("Д", "д")
     str = str:gsub("Е", "е"):gsub("Ё", "ё"):gsub("Ж", "ж"):gsub("З", "з"):gsub("И", "и")
@@ -1812,7 +2075,7 @@ function toLowerCase(str)
 end
 
 function canSendReport()
-    if not lastReportTime then return true end
+    if not lastReportTime then return true
     local now = getRealTimestamp()
     local reportDate = os.date("*t", lastReportTime)
     local nowDate = os.date("*t", now)
@@ -1823,7 +2086,7 @@ function canSendReport()
 end
 
 function getActualItemQuantity(internalName, damage)
-    if not component.isAvailable("me_interface") then return 0 end
+    if not component.isAvailable("me_interface") then return 0
     local me = component.me_interface
     local items = me.getItemsInNetwork()
     local total = 0
@@ -1844,21 +2107,7 @@ function showTempMessage(msg, duration)
     tempMessageTimer = event.timer(duration or 2, function()
         tempMessage = ""
         tempMessageTimer = nil
-        if currentScreen == "shop_buy" or currentScreen == "shop_sell" then
-            drawBuyStatic()
-            drawBuyItemsList()
-            drawBuyButtons()
-        elseif currentScreen == "menu" then
-            drawMainMenu()
-        elseif currentScreen == "shop" then
-            drawShopMenu()
-        elseif currentScreen == "account" then
-            drawAccount({balance=coinBalance, emaBalance=emaBalance, transactions=playerTransactions, regDate=playerRegDate, agreed=playerAgreed})
-        elseif currentScreen == "feedbacks" then
-            drawFeedbacksList()
-        else
-            drawTempMessage()
-        end
+        markDirty()
     end)
     drawTempMessage()
 end
@@ -1962,10 +2211,8 @@ function loadSellItems()
     writeDebugLog("loadSellItems: загружено " .. #shopItems .. " товаров")
 end
 
--- ★★★ ФАЙЛ ДЛЯ СОХРАНЕНИЯ ПРИВЯЗКИ ★★★
 BOUND_PLAYER_FILE = "/home/bound_player.dat"
 
--- Функции для сохранения/загрузки привязки
 function saveBoundPlayer(playerName)
     if playerName and playerName ~= "" then
         local file = io.open(BOUND_PLAYER_FILE, "w")
@@ -2035,11 +2282,11 @@ end
 function extractToME(targetName, amount, targetDamage)
     writeDebugLog("extractToME: " .. tostring(targetName) .. " x" .. tostring(amount))
     local pimAddr = getPimAddr()
-    if not pimAddr or amount <= 0 then return 0 end
+    if not pimAddr or amount <= 0 then return 0
     targetDamage = targetDamage or 0
     local extracted = 0
     for slot = 1, 36 do
-        if extracted >= amount then break end
+        if extracted >= amount then break
         local stack = component.invoke(pimAddr, "getStackInSlot", slot)
         if stack then
             local qty = stack.size or stack.qty or 0
@@ -2264,7 +2511,7 @@ function drawScrollBar()
     local barHeight = 15
     gpu.setBackground(colors.bg_main)
     gpu.fill(barX, barY, 2, barHeight, " ")
-    if total <= visibleRows then return end
+    if total <= visibleRows then return
     gpu.setBackground(colors.bg_secondary)
     gpu.fill(barX, barY, 2, barHeight, " ")
     local thumbHeight = math.max(2, math.floor(barHeight * visibleRows / total))
@@ -2314,7 +2561,7 @@ function getFilteredItems()
     maxItemWidth = 0
     for _, item in ipairs(filtered) do
         local len = unicode.len(item.displayName or item.internalName or "")
-        if len > maxItemWidth then maxItemWidth = len end
+        if len > maxItemWidth then maxItemWidth = len
     end
     writeDebugLog("getFilteredItems: найдено " .. #filtered .. " товаров")
     return filtered
@@ -2339,7 +2586,7 @@ function drawBuyItemsList()
         for i = 1, visibleRows do
             local itemIndex = listScroll + i - 1
             local item = filteredItems[itemIndex]
-            if not item then break end
+            if not item then break
             local y = 6 + i
             local isSelected = (itemIndex == selectedIndex)
             local isHovered = (itemIndex == hoveredIndex)
@@ -2360,7 +2607,7 @@ function smoothScroll(steps)
     local maxScroll = math.max(1, total - visibleRows + 1)
     local newScroll = (listScroll or 1) + steps
     newScroll = math.max(1, math.min(newScroll, maxScroll))
-    if newScroll == listScroll then return end
+    if newScroll == listScroll then return
     if math.abs(steps) == 1 and total > visibleRows then
         if steps > 0 then
             gpu.copy(2, 8, 76, visibleRows - 1, 0, -1)
@@ -2476,14 +2723,14 @@ function drawWelcomeScreen()
     }
     
     local gradient = {
-        0x003D33,  -- 1: тёмно-бирюзовый
-        0x005A4C,  -- 2
-        0x007A66,  -- 3
-        0x009980,  -- 4
-        0x00B899,  -- 5
-        0x00D4B3,  -- 6
-        0x00E5C9,  -- 7: основной цвет
-        0x33FFD6,  -- 8: ярко-бирюзовый
+        0x003D33,
+        0x005A4C,
+        0x007A66,
+        0x009980,
+        0x00B899,
+        0x00D4B3,
+        0x00E5C9,
+        0x33FFD6,
     }
     
     local diamX = 17
@@ -2497,14 +2744,12 @@ function drawWelcomeScreen()
     
     local cx = 41
     
-    -- ★★★ ПРОВЕРЯЕМ РЕЖИМ ОБСЛУЖИВАНИЯ ★★★
     if shopPaused then
         gpu.setForeground(colors.error)
         drawCenteredText(21, " РЕЖИМ ОБСЛУЖИВАНИЯ", colors.error)
         drawCenteredText(22, " Магазин временно закрыт", colors.error)
         drawCenteredText(23, " Пожалуйста, зайдите позже", colors.text_main)
     else
-        -- ★★★ ЕСЛИ РЕЖИМ НЕ ВКЛЮЧЁН — ПОКАЗЫВАЕМ VIP SHOP ★★★
         if currentPlayer and currentPlayer ~= "" then
             gpu.setForeground(text_color)
             gpu.set(cx - 2, 21, "VIP SHOP")
@@ -2556,11 +2801,9 @@ function drawMainMenu()
         gpu.setForeground(colors.tomato)
         gpu.set(balanceX + unicode.len("Баланс: ") + unicode.len(string.format("%.2f", coin) .. " Coina ₵") + unicode.len(" | "), 5, "ЭМЫ: " .. string.format("%.2f", ema) .. " ۞")
         
-        -- ★★★ СТАТУС ПРИВЯЗКИ (ИЗ КЭША) ★★★
         local boundInfo = ""
         local boundColor = colors.error
         
-        -- Используем кэшированный статус
         local isBound = getBindingStatus()
         
         if isBound then
@@ -2682,10 +2925,9 @@ function drawAccount(data)
     gpu.setForeground(agreeColor)
     gpu.set(agreeX + unicode.len(agreeLabel), 15, agreeStatus)
 
-    -- ★★★ КНОПКА АУТЕНТИФИКАЦИИ (слева от [НАЗАД]) ★★★
     local authBtn = {
         text = "[ АУТЕНТИФИКАЦИЯ ]",
-        x = 20,  -- положение слева
+        x = 20,
         y = 24,
         xs = unicode.len("[ АУТЕНТИФИКАЦИЯ ]") + 2,
         ys = 1,
@@ -2693,7 +2935,6 @@ function drawAccount(data)
         fg = colors.accent_secondary
     }
 
-    -- Кнопка НАЗАД (смещаем вправо)
     local backButton = {
         text = "[ НАЗАД ]",
         x = 50,
@@ -3260,7 +3501,7 @@ function goBackToMenu()
     writeDebugLog("goBackToMenu()")
     showShopDenied = false
     currentScreen = "menu"
-    drawMainMenu()
+    markDirty()
     updateSelectorDisplay(nil)
     pcall(selector.setSlot, 0, nil)
     pcall(selector.setSlot, 1, nil)
@@ -3269,7 +3510,7 @@ end
 function goToShop()
     writeDebugLog("goToShop()")
     currentScreen = "shop"
-    drawShopMenu()
+    markDirty()
 end
 
 function goToBuy()
@@ -3278,7 +3519,7 @@ function goToBuy()
         drawCenteredText(12, "Вы не приняли пользовательское соглашение!", colors.error)
         drawCenteredText(13, "Нажмите [Помощь] и ознакомьтесь с условиями.", colors.text_main)
         os.sleep(3)
-        drawMainMenu()
+        markDirty()
         return
     end
     currentScreen = "shop_buy"
@@ -3292,9 +3533,7 @@ function goToBuy()
     searchActive = false
     searchInput = ""
     loadBuyItems()
-    drawBuyStatic()
-    drawBuyItemsList()
-    drawBuyButtons()
+    markDirty()
 end
 
 function goToSell()
@@ -3303,7 +3542,7 @@ function goToSell()
         drawCenteredText(12, "Вы не приняли пользовательское соглашение!", colors.error)
         drawCenteredText(13, "Нажмите [Помощь] и ознакомьтесь с условиями.", colors.text_main)
         os.sleep(3)
-        drawMainMenu()
+        markDirty()
         return
     end
 
@@ -3317,11 +3556,8 @@ function goToSell()
     shopSearch = ""
     searchActive = false
     searchInput = ""
-
     loadSellItems()
-    drawBuyStatic()
-    drawBuyItemsList()
-    drawBuyButtons()
+    markDirty()
 end
 
 function goToSellConfirm(item)
@@ -3333,7 +3569,7 @@ function goToSellConfirm(item)
     sellConfirmItem = item
     foundAmount = 0
     showSellPopup = false
-    drawSellScanScreen()
+    markDirty()
 end
 
 function goToPurchase(item)
@@ -3344,21 +3580,21 @@ function goToPurchase(item)
     end
     purchaseItem = item
     purchaseQuantity = 1
-    drawPurchaseScreen()
+    markDirty()
 end
 
 function goToReport()
     writeDebugLog("goToReport()")
     currentScreen = "report"
     reportInput = ""
-    drawReportScreen()
+    markDirty()
 end
 
 function goToHelp()
     writeDebugLog("goToHelp()")
     currentScreen = "agreement"
     if type(drawAgreementScreen) == "function" then
-        drawAgreementScreen()
+        markDirty()
     else
         drawCenteredText(10, "СОГЛАШЕНИЕ НЕ ЗАГРУЖЕНО", colors.error)
         drawCenteredText(12, "Файл agreement.lua отсутствует", colors.text_main)
@@ -3396,17 +3632,11 @@ function goToAccount()
         return
     end
     currentScreen = "account_loading"
-    drawAccountLoading()
-    local player = players[currentPlayer]
+    markDirty()
+    local player = playersIndex[currentPlayer]
     if player then
         currentScreen = "account"
-        drawAccount({
-            balance = player.balance or 0,
-            emaBalance = player.emaBalance or 0,
-            transactions = player.transactions or 0,
-            regDate = playerRegDate or "Неизвестно",
-            agreed = playerAgreed
-        })
+        markDirty()
     end
 end
 
@@ -3427,42 +3657,28 @@ function handleQuantityButtonClick(btnText)
             purchaseQuantity = purchaseItem.qty
         end
     end
-    drawPurchaseScreen()
+    markDirty()
 end
 
 -- ============================================================
 -- ★★★ АУТЕНТИФИКАЦИЯ (ПРИВЯЗКА АККАУНТА) ★★★
 -- ============================================================
 
--- ★★★ ПОПАП АУТЕНТИФИКАЦИИ (ВСЁ В ОДНОМ ОКНЕ) ★★★
 function showAuthPopup()
     writeDebugLog("showAuthPopup()")
     currentScreen = "auth_popup"
     authCodeInput = authCodeInput or ""
     
-    -- Сохраняем фон
-    local savedScreen = currentScreen
-    local savedContent = {}
-    for y = 1, 25 do
-        savedContent[y] = {}
-        for x = 1, 80 do
-            savedContent[y][x] = gpu.get(x, y)
-        end
-    end
-    
-    -- Рисуем попап
     local popupWidth = 50
     local popupHeight = 16
     local popupX = math.floor((80 - popupWidth) / 2) + 1
     local popupY = math.floor((25 - popupHeight) / 2)
     
-    -- Затемняем фон
     gpu.setBackground(0x000000)
     gpu.fill(1, 1, 80, 25, " ")
     gpu.setBackground(0x0A0A1A)
     gpu.fill(popupX, popupY, popupWidth, popupHeight, " ")
     
-    -- Рамка
     gpu.setForeground(0x00FFCC)
     gpu.fill(popupX, popupY, popupWidth, 1, "=")
     gpu.fill(popupX, popupY + popupHeight - 1, popupWidth, 1, "=")
@@ -3475,31 +3691,26 @@ function showAuthPopup()
     gpu.set(popupX, popupY + popupHeight - 1, "+")
     gpu.set(popupX + popupWidth - 1, popupY + popupHeight - 1, "+")
     
-    -- Заголовок
     gpu.setForeground(0x00FFCC)
     gpu.set(popupX + math.floor((popupWidth - 22) / 2) + 1, popupY + 1, "🔐 АУТЕНТИФИКАЦИЯ")
     
-    -- Информация об игроке
     gpu.setForeground(colors.white)
     gpu.set(popupX + 3, popupY + 3, "👤 Игрок: ")
     gpu.setForeground(colors.accent_main)
     gpu.set(popupX + 15, popupY + 3, currentPlayer or "Неизвестно")
     
-    -- Проверяем привязку
     local savedBound = loadBoundPlayer()
     local isBound = (boundPlayer and boundPlayer ~= "") or (savedBound and savedBound ~= "")
     
     if isBound then
         local displayName = boundPlayer or savedBound
         
-        -- ★★★ ЕСЛИ ПРИВЯЗАН ★★★
         gpu.setForeground(colors.success)
         gpu.set(popupX + 3, popupY + 5, "✅ Аккаунт ПРИВЯЗАН к: " .. displayName)
         
         gpu.setForeground(colors.text_main)
         gpu.set(popupX + 3, popupY + 7, "   Для отвязки нажмите кнопку ниже")
         
-        -- Кнопка ОТВЯЗАТЬ
         local unbindBtn = {
             text = "[ ОТВЯЗАТЬ ]",
             x = popupX + 5,
@@ -3511,7 +3722,6 @@ function showAuthPopup()
         }
         drawFlexButton(unbindBtn)
         
-        -- Кнопка ЗАКРЫТЬ (справа)
         local closeBtn = {
             text = "[ ЗАКРЫТЬ ]",
             x = popupX + popupWidth - 12,
@@ -3523,14 +3733,13 @@ function showAuthPopup()
         }
         drawFlexButton(closeBtn)
         
-        -- Обработка нажатий
         while currentScreen == "auth_popup" do
             local ev = {event.pull(0.5)}
             
             if ev[1] == "player_off" or ev[1] == "pim_player_leave" then
                 writeDebugLog("👤 Игрок ушёл с PIM во время аутентификации")
                 currentScreen = "welcome"
-                drawWelcomeScreen()
+                markDirty()
                 break
             end
             
@@ -3550,13 +3759,11 @@ function showAuthPopup()
         end
         
     else
-        -- ★★★ ЕСЛИ НЕ ПРИВЯЗАН ★★★
         gpu.setForeground(colors.text_main)
         gpu.set(popupX + 3, popupY + 5, "📋 Введите код из браузера:")
         gpu.setForeground(colors.inactive)
         gpu.set(popupX + 3, popupY + 6, "   (код отображается на сайте)")
         
-        -- Поле ввода кода
         gpu.setBackground(0x000000)
         gpu.fill(popupX + 5, popupY + 8, popupWidth - 10, 3, " ")
         gpu.setBackground(0x1A1A2E)
@@ -3571,7 +3778,6 @@ function showAuthPopup()
         gpu.set(codeX, popupY + 9, displayCode)
         gpu.setBackground(0x0A0A1A)
         
-         -- ★★★ КНОПКИ ★★★
         local closeBtn = {
             text = "[ ЗАКРЫТЬ ]",
             x = popupX + popupWidth - 12,
@@ -3590,23 +3796,10 @@ function showAuthPopup()
             bg = colors.bg_button,
             fg = colors.success
         }
-        -- ★★★ КНОПКА QR CODE ВРЕМЕННО ОТКЛЮЧЕНА ★★★
-        --[[
-        local qrBtn = {
-            text = "[ QR CODE ]",
-            x = popupX + 22,
-            y = popupY + popupHeight - 3,
-            xs = 10,
-            ys = 1,
-            bg = colors.bg_button,
-            fg = 0x00FFCC
-        }
-        drawFlexButton(qrBtn)
-        --]]
+        
         drawFlexButton(closeBtn)
         drawFlexButton(confirmBtn)
         
-        -- Обработка ввода
         local isEditing = true
         while currentScreen == "auth_popup" and isEditing do
             local ev = {event.pull(0.5)}
@@ -3614,7 +3807,7 @@ function showAuthPopup()
             if ev[1] == "player_off" or ev[1] == "pim_player_leave" then
                 writeDebugLog("👤 Игрок ушёл с PIM во время аутентификации")
                 currentScreen = "welcome"
-                drawWelcomeScreen()
+                markDirty()
                 break
             end
             
@@ -3635,23 +3828,15 @@ function showAuthPopup()
                         gpu.setForeground(colors.error)
                         gpu.set(popupX + 3, popupY + 13, " Введите 6-значный код!")
                         os.sleep(1.5)
-                        showAuthPopup()
+                        markDirty()
                     end
                     break
                 end
                 
-                -- ★★★ ОБРАБОТКА КНОПКИ QR CODE (ВРЕМЕННО ОТКЛЮЧЕНА) ★★★
-                --[[
-                if isButtonClicked(qrBtn, x, y) then
-                    showQRCodePopup()
-                    break
-                end
-                --]]
-                
             elseif ev[1] == "key_down" then
                 local ch = ev[3]
                 
-                if ch == 13 then -- Enter
+                if ch == 13 then
                     if authCodeInput and #authCodeInput == 6 then
                         isEditing = false
                         verifyAuthCode(authCodeInput)
@@ -3659,18 +3844,18 @@ function showAuthPopup()
                         gpu.setForeground(colors.error)
                         gpu.set(popupX + 3, popupY + 13, " Введите 6-значный код!")
                         os.sleep(1.5)
-                        showAuthPopup()
+                        markDirty()
                     end
                     break
                     
-                elseif ch == 8 then -- Backspace
+                elseif ch == 8 then
                     authCodeInput = unicode.sub(authCodeInput or "", 1, -2)
-                    showAuthPopup()
+                    markDirty()
                     
-                elseif ch >= 48 and ch <= 57 then -- Цифры 0-9
+                elseif ch >= 48 and ch <= 57 then
                     if unicode.len(authCodeInput or "") < 6 then
                         authCodeInput = (authCodeInput or "") .. unicode.char(ch)
-                        showAuthPopup()
+                        markDirty()
                     end
                 end
             end
@@ -3678,7 +3863,6 @@ function showAuthPopup()
     end
 end
 
--- ★★★ ПОПАП ПОДТВЕРЖДЕНИЯ ОТВЯЗКИ ★★★
 function showUnbindConfirmPopup()
     writeDebugLog("showUnbindConfirmPopup()")
     
@@ -3687,13 +3871,11 @@ function showUnbindConfirmPopup()
     local popupX = math.floor((80 - popupWidth) / 2) + 1
     local popupY = math.floor((25 - popupHeight) / 2)
     
-    -- Затемняем фон
     gpu.setBackground(0x000000)
     gpu.fill(popupX - 2, popupY - 2, popupWidth + 4, popupHeight + 4, " ")
     gpu.setBackground(0x0A0A1A)
     gpu.fill(popupX, popupY, popupWidth, popupHeight, " ")
     
-    -- Рамка (красная для предупреждения)
     gpu.setForeground(colors.error)
     gpu.fill(popupX, popupY, popupWidth, 1, "═")
     gpu.fill(popupX, popupY + popupHeight - 1, popupWidth, 1, "═")
@@ -3706,7 +3888,6 @@ function showUnbindConfirmPopup()
     gpu.set(popupX, popupY + popupHeight - 1, "╚")
     gpu.set(popupX + popupWidth - 1, popupY + popupHeight - 1, "╝")
     
-    -- ★★★ ЗАГОЛОВОК (ЦЕНТРИРОВАННЫЙ) ★★★
     local titleText = "ПОДТВЕРЖДЕНИЕ"
     local titleLen = unicode.len(titleText)
     gpu.setForeground(colors.error)
@@ -3720,7 +3901,6 @@ function showUnbindConfirmPopup()
     gpu.set(popupX + 3, popupY + 6, "После отвязки доступ к магазину")
     gpu.set(popupX + 3, popupY + 7, "будет ограничен до новой привязки.")
     
-    -- Кнопки
     local yesBtn = {
         text = "[ ДА, ОТВЯЗАТЬ ]",
         x = popupX + 5,
@@ -3742,15 +3922,13 @@ function showUnbindConfirmPopup()
     drawFlexButton(yesBtn)
     drawFlexButton(noBtn)
     
-    -- Обработка
     while true do
         local ev = {event.pull(0.5)}
         
-        -- ★★★ ОБРАБОТКА ВЫХОДА С PIM ★★★
         if ev[1] == "player_off" or ev[1] == "pim_player_leave" then
             writeDebugLog("👤 Игрок ушёл с PIM во время подтверждения отвязки")
-            currentScreen = "welcome"      -- ← было "menu", стало "welcome"
-            drawWelcomeScreen()            -- ← было drawMainMenu(), стало drawWelcomeScreen()
+            currentScreen = "welcome"
+            markDirty()
             break
         end
         
@@ -3801,7 +3979,6 @@ function verifyAuthCode(code)
             if data.player then
                 boundPlayer = data.player
                 saveBoundPlayer(data.player)
-                -- ★★★ ОБНОВЛЯЕМ КЭШ ★★★
                 bindingCache.isBound = true
                 bindingCache.lastCheck = os.clock()
                 addLog("🔗 Аккаунт привязан: " .. boundPlayer)
@@ -3820,12 +3997,12 @@ function verifyAuthCode(code)
             end
             
             os.sleep(2)
-            showAuthPopup()
+            markDirty()
         end
     else
         drawCenteredText(15, "❌ Ошибка соединения с сервером", colors.error)
         os.sleep(2)
-        showAuthPopup()
+        markDirty()
     end
 end
 
@@ -3858,7 +4035,6 @@ function unbindAccount()
             boundPlayer = nil
             clearBoundPlayer()
             
-            -- Показываем успех
             gpu.setForeground(colors.success)
             gpu.set(28, 17, "✅ Аккаунт ОТВЯЗАН!")
             gpu.setForeground(colors.text_main)
@@ -3871,34 +4047,26 @@ function unbindAccount()
             gpu.setForeground(colors.error)
             gpu.set(20, 17, "❌ " .. errorMsg)
             os.sleep(2)
-            showAuthPopup()
+            markDirty()
         end
     else
         gpu.setForeground(colors.error)
         gpu.set(20, 17, "❌ Ошибка соединения")
         os.sleep(2)
-        showAuthPopup()
+        markDirty()
     end
 end
-
-
--- ============================================================
--- ★★★ QR-КОД ДЛЯ АУТЕНТИФИКАЦИИ (ПО ЦЕНТРУ) ★★★
--- ============================================================
 
 function showQRCodePopup()
     writeDebugLog("showQRCodePopup()")
     currentScreen = "qr_popup"
     
-    -- Меняем разрешение на 160x50
     local oldWidth, oldHeight = gpu.getResolution()
     gpu.setResolution(160, 50)
     
-    -- Очищаем экран
     gpu.setBackground(0x000000)
     gpu.fill(1, 1, 160, 50, " ")
     
-    -- Рамка
     gpu.setForeground(0x00FFCC)
     gpu.fill(1, 1, 160, 1, "=")
     gpu.fill(1, 50, 160, 1, "=")
@@ -3911,27 +4079,23 @@ function showQRCodePopup()
     gpu.set(1, 50, "+")
     gpu.set(160, 50, "+")
     
-    -- Заголовок (центр: 80)
     local titleText = "QR-КОД ДЛЯ ВХОДА"
     local titleX = 80 - math.floor(#titleText / 2) + 2
     gpu.setForeground(0x00FFCC)
     gpu.set(titleX, 2, titleText)
     
-    -- Игрок (центр: 80)
     local playerText = "Игрок: " .. (currentPlayer or "?")
     local playerX = 80 - math.floor(#playerText / 2)   
     gpu.setForeground(colors.white)
     gpu.set(playerX, 4, playerText)
     
-    -- Подсказка (центр: 80)
     local hintText = "Отсканируйте QR-код для входа на сайт"
     local hintX = 80 - math.floor(#hintText / 2) + 11
     gpu.setForeground(colors.inactive)
     gpu.set(hintX, 5, hintText)
     
-    -- QR-КОД 37x37 (центр: (160-37)/2 = 61)
     local qrY = 7
-    local qrX = 44  -- ровно по центру
+    local qrX = 44
     
     local asciiQR = [[
 █████████████████████████████████████████████████████████████████████
@@ -3973,7 +4137,6 @@ function showQRCodePopup()
 █████████████████████████████████████████████████████████████████████
 ]]
     
-    -- Выводим QR-код
     local lines = {}
     for line in asciiQR:gmatch("[^\n]+") do
         table.insert(lines, line)
@@ -3983,22 +4146,19 @@ function showQRCodePopup()
         gpu.set(qrX, qrY + i - 1, line)
     end
     
-    -- Ссылка (центр: 80)
     local linkText = "Ссылка: https://zozido.pythonanywhere.com/"
     local linkX = 80 - math.floor(#linkText / 2) + 1
     gpu.setForeground(colors.inactive)
     gpu.set(linkX, qrY + 39, linkText)
     
-    -- Подсказка внизу (центр: 80)
     local bottomHint = "[ Нажмите ЗАКРЫТЬ или ESC для возврата ]"
     local bottomHintX = 80 - math.floor(#bottomHint / 2) + 12
     gpu.setForeground(colors.text_main)
     gpu.set(bottomHintX, 48, bottomHint)
     
-    -- Кнопка ЗАКРЫТЬ (центр: 80, ширина 12)
     local closeBtn = {
         text = "[ ЗАКРЫТЬ ]",
-        x = 80 - 6,  -- ровно по центру (12/2 = 6)
+        x = 80 - 6,
         y = 49,
         xs = 12,
         ys = 1,
@@ -4007,7 +4167,6 @@ function showQRCodePopup()
     }
     drawFlexButton(closeBtn)
     
-    -- Обработка нажатий
     while currentScreen == "qr_popup" do
         local ev = {event.pull(0.5)}
         
@@ -4026,25 +4185,19 @@ function showQRCodePopup()
         end
     end
     
-    -- Возвращаем старый размер
     gpu.setResolution(oldWidth, oldHeight)
-    showAuthPopup()
+    markDirty()
 end
 
--- ============================================================
--- ★★★ ДЕКОДИРОВАНИЕ BASE64 (БЕЗОПАСНО ДЛЯ КИРИЛЛИЦЫ) ★★★
--- ============================================================
 function decodeBase64(data)
-    if not data or data == "" then return "" end
+    if not data or data == "" then return ""
     
     local b64chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
     local result = {}
     local padding = 0
     
-    -- Удаляем все лишние символы
     data = data:gsub('[^A-Za-z0-9+/=]', '')
     
-    -- Считаем padding
     if data:sub(-1) == '=' then padding = padding + 1 end
     if data:sub(-2, -1) == '==' then padding = padding + 1 end
     
@@ -4081,8 +4234,7 @@ function performSell()
     if not playerAgreed then
         drawCenteredText(17, "Сначала примите пользовательское соглашение", colors.error)
         os.sleep(2)
-        currentScreen = "menu"
-        drawMainMenu()
+        markDirty()
         return
     end
 
@@ -4106,7 +4258,7 @@ function performSell()
     end
 
     showSellPopup = false
-    drawSellScanScreen()
+    markDirty()
     drawCenteredText(17, "Выполняется пополнение...", colors.accent_main)
     os.sleep(0.2)
 
@@ -4119,9 +4271,7 @@ function performSell()
         os.sleep(2)
         unlockTransactions()
         currentScreen = "shop_sell"
-        drawBuyStatic()
-        drawBuyItemsList()
-        drawBuyButtons()
+        markDirty()
         return
     end
 
@@ -4133,10 +4283,11 @@ function performSell()
     end
     playerTransactions = playerTransactions + 1
 
-    if currentPlayer and players[currentPlayer] then
-        players[currentPlayer].balance = coinBalance
-        players[currentPlayer].emaBalance = emaBalance
-        players[currentPlayer].transactions = playerTransactions
+    if currentPlayer and playersIndex[currentPlayer] then
+        local player = playersIndex[currentPlayer]
+        player.balance = coinBalance
+        player.emaBalance = emaBalance
+        player.transactions = playerTransactions
         saveDB()
         writeDebugLog("💾 Баланс сохранён после продажи для " .. currentPlayer .. ": Coin=" .. coinBalance .. ", EMA=" .. emaBalance)
     else
@@ -4157,17 +4308,14 @@ function performSell()
     unlockTransactions()
     currentScreen = "shop_sell"
     showSellPopup = false
-    drawBuyStatic()
-    drawBuyItemsList()
-    drawBuyButtons()
+    markDirty()
 end
 
 function performBuy()
     if not playerAgreed then
         drawCenteredText(20, "Сначала примите пользовательское соглашение", colors.error)
         os.sleep(2)
-        currentScreen = "menu"
-        drawMainMenu()
+        markDirty()
         return
     end
 
@@ -4193,10 +4341,8 @@ function performBuy()
         os.sleep(0.8)
         loadBuyItems(true)
         unlockTransactions()
-        drawBuyStatic()
-        drawBuyItemsList()
-        drawBuyButtons()
         currentScreen = "shop_buy"
+        markDirty()
         return
     end
 
@@ -4204,7 +4350,7 @@ function performBuy()
     if qty > actualQty then
         qty = actualQty
         purchaseQuantity = qty
-        drawPurchaseScreen()
+        markDirty()
     end
 
     if qty <= 0 then
@@ -4212,9 +4358,7 @@ function performBuy()
         os.sleep(0.8)
         unlockTransactions()
         currentScreen = "shop_buy"
-        drawBuyStatic()
-        drawBuyItemsList()
-        drawBuyButtons()
+        markDirty()
         return
     end
 
@@ -4225,7 +4369,7 @@ function performBuy()
         insufficientBalanceCoin = coinBalance
         insufficientBalanceEma = emaBalance
         unlockTransactions()
-        drawPurchaseScreen()
+        markDirty()
         drawInsufficientPopup()
         return
     end
@@ -4292,7 +4436,7 @@ function performBuy()
     if extracted == 0 then
         showInventoryFullPopup = true
         unlockTransactions()
-        drawPurchaseScreen()
+        markDirty()
         drawInventoryFullPopup()
         return
     end
@@ -4304,10 +4448,11 @@ function performBuy()
         emaBalance = emaBalance - actuallySpentEma
         playerTransactions = playerTransactions + 1
 
-        if currentPlayer and players[currentPlayer] then
-            players[currentPlayer].balance = coinBalance
-            players[currentPlayer].emaBalance = emaBalance
-            players[currentPlayer].transactions = playerTransactions
+        if currentPlayer and playersIndex[currentPlayer] then
+            local player = playersIndex[currentPlayer]
+            player.balance = coinBalance
+            player.emaBalance = emaBalance
+            player.transactions = playerTransactions
             saveDB()
             writeDebugLog("💾 Баланс сохранён (част.) для " .. currentPlayer .. ": Coin=" .. coinBalance .. ", EMA=" .. emaBalance)
         end
@@ -4321,7 +4466,7 @@ function performBuy()
         partialItem = item
         showPartialPopup = true
         unlockTransactions()
-        drawPurchaseScreen()
+        markDirty()
         drawPartialPopup()
         return
     end
@@ -4330,10 +4475,11 @@ function performBuy()
     emaBalance = emaBalance - totalEma
     playerTransactions = playerTransactions + 1
 
-    if currentPlayer and players[currentPlayer] then
-        players[currentPlayer].balance = coinBalance
-        players[currentPlayer].emaBalance = emaBalance
-        players[currentPlayer].transactions = playerTransactions
+    if currentPlayer and playersIndex[currentPlayer] then
+        local player = playersIndex[currentPlayer]
+        player.balance = coinBalance
+        player.emaBalance = emaBalance
+        player.transactions = playerTransactions
         saveDB()
         writeDebugLog("💾 Баланс сохранён (полн.) для " .. currentPlayer .. ": Coin=" .. coinBalance .. ", EMA=" .. emaBalance)
     else
@@ -4345,9 +4491,9 @@ function performBuy()
     gpu.setBackground(colors.bg_main)
     gpu.fill(2, 20, 78, 1, " ")
     local priceStr = ""
-    if totalCoin > 0 then priceStr = priceStr .. string.format("%.2f", totalCoin) .. "₵" end
+    if totalCoin > 0 then priceStr = priceStr .. string.format("%.2f", totalCoin) .. "₵"
     if totalEma > 0 then
-        if priceStr ~= "" then priceStr = priceStr .. " + " end
+        if priceStr ~= "" then priceStr = priceStr .. " + "
         priceStr = priceStr .. string.format("%.2f", totalEma) .. "۞"
     end
     drawCenteredText(20, "Куплено " .. extracted .. " шт. за " .. priceStr, colors.success)
@@ -4362,9 +4508,7 @@ function performBuy()
     os.sleep(0.8)
     unlockTransactions()
     currentScreen = "shop_buy"
-    drawBuyStatic()
-    drawBuyItemsList()
-    drawBuyButtons()
+    markDirty()
 end
 
 -- ============================================================
@@ -4545,9 +4689,7 @@ function applyIncrementalChanges(itemsFile, changes, itemType)
         cacheTimestamp = 0
         loadBuyItems(true)
         if currentScreen == "shop_buy" then
-            drawBuyStatic()
-            drawBuyItemsList()
-            drawBuyButtons()
+            markDirty()
         end
     end
 
@@ -4555,15 +4697,23 @@ function applyIncrementalChanges(itemsFile, changes, itemType)
     return true
 end
 
+-- ============================================================
+-- ★★★ ИСПРАВЛЕННЫЙ checkWebCommands ★★★
+-- ============================================================
+
 function checkWebCommands()
-    if currentPlayer then syncCurrentPlayer() end
+    if currentPlayer then syncCurrentPlayer()
     writeDebugLog("🔍 checkWebCommands() запущена в " .. getRealTimeHM())
 
     local success, err = pcall(function()
         local url = WEB_URL .. "/api/commands"
         writeDebugLog("📡 Запрос к: " .. url)
 
-        local response = internet.request(url)
+        local response = internet.request(url, nil, {
+            ["Connection"] = "close",
+            ["Timeout"] = 2
+        })
+        
         if not response then
             writeDebugLog("⚠️ Нет ответа от сервера")
             return
@@ -4638,23 +4788,25 @@ function checkWebCommands()
                     goto continue
                 end
                 
-                if players[playerName] then
+                local player = playersIndex[playerName]
+                if player then
                     if d.balance then
-                        players[playerName].balance = tonumber(d.balance) or 0
+                        player.balance = tonumber(d.balance) or 0
                     end
                     if d.emaBalance then
-                        players[playerName].emaBalance = tonumber(d.emaBalance) or 0
+                        player.emaBalance = tonumber(d.emaBalance) or 0
                     end
                     saveDBDeferred()
                     addLog("💰 Баланс обновлён: " .. playerName)
+                    markDirty()
                     
                     local balance_change = {
                         id = "bal_" .. os.time() .. "_" .. math.random(100000),
                         type = "update_balance",
                         data = {
                             player = playerName,
-                            balance = players[playerName].balance,
-                            emaBalance = players[playerName].emaBalance
+                            balance = player.balance,
+                            emaBalance = player.emaBalance
                         }
                     }
                     add_pending_change(balance_change)
@@ -4726,19 +4878,7 @@ function checkWebCommands()
                 end
                 
                 sendStats()
-                
-                if currentScreen == "welcome" then
-                    drawWelcomeScreen()
-                elseif currentScreen == "auth" then
-                    drawAuthScreen()
-                elseif currentScreen == "menu" then
-                    drawMainMenu()
-                elseif currentScreen == "shop" then
-                    drawShopMenu()
-                elseif currentScreen == "shop_buy" or currentScreen == "shop_sell" then
-                    currentScreen = "menu"
-                    drawMainMenu()
-                end
+                markDirty()
                 
                 sendResult(true, shopPaused and "Магазин на паузе" or "Магазин активен")
                 goto continue
@@ -4756,7 +4896,6 @@ function checkWebCommands()
                 goto continue
             end
             
-            -- ★★★ ДОБАВЬ ЭТОТ БЛОК ★★★
             if cmd.command == "terminal_control" then
                 local action = d.action
                 writeErrorLog("🚨 ПОЛУЧЕНА КОМАНДА: " .. action)
@@ -4764,11 +4903,8 @@ function checkWebCommands()
                 if action == "shutdown" then
                     writeErrorLog("⏻ ВЫКЛЮЧЕНИЕ ТЕРМИНАЛА")
                     sendResult(true, "Терминал выключается...")
-                    
-                    -- Даем время на отправку ответа
                     os.sleep(0.5)
                     
-                    -- ПРОБУЕМ ВСЕ ВАРИАНТЫ
                     local shutdown_attempts = {
                         function() computer.shutdown() end,
                         function() os.execute("shutdown -h now") end,
@@ -4789,10 +4925,8 @@ function checkWebCommands()
                 elseif action == "reboot" then
                     writeErrorLog("🔄 ПЕРЕЗАГРУЗКА ТЕРМИНАЛА")
                     sendResult(true, "Терминал перезагружается...")
-                    
                     os.sleep(0.5)
                     
-                    -- ПРОБУЕМ ВСЕ ВАРИАНТЫ
                     local reboot_attempts = {
                         function() computer.reboot() end,
                         function() os.execute("reboot") end,
@@ -4813,7 +4947,6 @@ function checkWebCommands()
                 goto continue
             end
             
-            -- ★★★ КОМАНДА ОТВЯЗКИ (ПРАВИЛЬНОЕ МЕСТО - ПОСЛЕ toggle_ban) ★★★
             if cmd.command == "unbind_player" then
                 local playerName = d.player
                 writeDebugLog("📥 Получена команда отвязки для: " .. playerName)
@@ -4821,17 +4954,10 @@ function checkWebCommands()
                 if currentPlayer == playerName then
                     boundPlayer = nil
                     clearBoundPlayer()
-                    -- ★★★ ОБНОВЛЯЕМ КЭШ ★★★
                     bindingCache.isBound = false
-                    bindingCache.lastCheck = 0  -- сброс кэша
+                    bindingCache.lastCheck = 0
                     addLog("🔓 Аккаунт отвязан по команде сервера: " .. playerName)
-                    
-                    -- Обновляем интерфейс
-                    if currentScreen == "menu" then
-                        drawMainMenu()
-                    elseif currentScreen == "account" then
-                        goToAccount()
-                    end
+                    markDirty()
                     
                     sendResult(true, "Аккаунт отвязан")
                 else
@@ -4925,7 +5051,7 @@ function checkWebCommands()
     end
 end
 
-event.timer(COMMAND_CHECK_INTERVAL, function()
+createTimer(COMMAND_CHECK_INTERVAL, function()
     if not TRANSACTION_LOCK then
         writeDebugLog("📡 Получение команд с сервера...")
         checkWebCommands()
@@ -4933,7 +5059,7 @@ event.timer(COMMAND_CHECK_INTERVAL, function()
         writeDebugLog("⏳ Пропущен checkWebCommands (транзакция активна)")
     end
     return true
-end, math.huge)
+end, true)
 
 -- ============================================================
 -- СОГЛАШЕНИЕ
@@ -5003,14 +5129,6 @@ function main()
     while true do
         local ev = {event.pull(0.5)}
         local e = ev[1]
-        
-        -- ★★★ ДИАГНОСТИКА ВСЕХ СОБЫТИЙ ★★★
-        if e ~= nil then
-            writeErrorLog("📌 СОБЫТИЕ: " .. tostring(e))
-            if e == "player_off" or e == "pim_player_leave" then
-                writeErrorLog("🔥 ВЫХОД С PIM ОБНАРУЖЕН!")
-            end
-        end
 
         if e == "key_down" then
             local _, _, _, code, char = table.unpack(ev)
@@ -5022,7 +5140,7 @@ function main()
         if currentScreen == "auth" then
             if os.clock() - authStartTime >= AUTH_TIMEOUT then
                 currentScreen = "menu"
-                drawMainMenu()
+                markDirty()
             end
         end
 
@@ -5043,7 +5161,7 @@ function main()
                                 goToShop()
                             else
                                 showShopDenied = true
-                                drawMainMenu()
+                                markDirty()
                             end
                         elseif name == "account" then
                             showShopDenied = false
@@ -5053,30 +5171,25 @@ function main()
                     end
                 end
                 
-                -- ★★★ ОБРАБОТКА ДОПОЛНИТЕЛЬНЫХ КНОПОК ★★★
-                
-                -- Кнопка ПОДДЕРЖКА (координаты с главного меню)
                 if x >= 4 and x < 4 + unicode.len("[ ПОДДЕРЖКА ]") and y == 24 then
                     goToReport()
                     goto continue
                 end
                 
-                -- Кнопка СОГЛАШЕНИЕ
                 if x >= 35 and x < 35 + unicode.len("[ СОГЛАШЕНИЕ ]") and y == 24 then
                     if type(drawAgreementScreen) == "function" then
                         currentScreen = "agreement"
-                        drawAgreementScreen()
+                        markDirty()
                     else
                         showTempMessage("Файл соглашения не найден!", 2)
                     end
                     goto continue
                 end
                 
-                -- Кнопка ОТЗЫВЫ
                 if x >= 68 and x < 68 + unicode.len("[ ОТЗЫВЫ ]") and y == 24 then
                     currentScreen = "feedbacks"
                     feedbacksPage = 1
-                    drawFeedbacksList()
+                    markDirty()
                     goto continue
                 end
                 
@@ -5117,8 +5230,7 @@ function main()
                         selectedItem = item
                         hoveredIndex = 0
                         updateSelectorDisplay(selectedItem)
-                        drawBuyItemsList()
-                        drawBuyButtons()
+                        markDirty()
                     end
                     goto continue
                 end
@@ -5128,7 +5240,7 @@ function main()
                     if total > visibleRows then
                         local clickPos = y - 6
                         listScroll = math.floor((clickPos - 1) * (total - visibleRows) / visibleRows) + 1
-                        drawBuyItemsList()
+                        markDirty()
                     end
                     goto continue
                 end
@@ -5136,8 +5248,7 @@ function main()
                 if y == 3 and x >= 42 and x <= 64 then
                     searchActive = true
                     searchInput = shopSearch or ""
-                    redrawSearchField()
-                    drawBuyItemsList()
+                    markDirty()
                     goto continue
                 end
 
@@ -5145,13 +5256,11 @@ function main()
                     shopSearch = ""
                     searchInput = ""
                     searchActive = false
-                    redrawSearchField()
                     listScroll = 1
                     selectedIndex = 0
                     selectedItem = nil
                     hoveredIndex = 0
-                    drawBuyItemsList()
-                    drawBuyButtons()
+                    markDirty()
                     goto continue
                 end
 
@@ -5189,7 +5298,7 @@ function main()
                     selectedItem = nil
                     hoveredIndex = 0
                     updateSelectorDisplay(nil)
-                    drawShopMenu()
+                    markDirty()
                     goto continue
                 end
 
@@ -5202,9 +5311,7 @@ function main()
                                 showInsufficientPopup = true
                                 insufficientBalanceCoin = coinBalance
                                 insufficientBalanceEma = emaBalance
-                                drawBuyStatic()
-                                drawBuyItemsList()
-                                drawBuyButtons()
+                                markDirty()
                                 drawInsufficientPopup()
                                 goto continue
                             end
@@ -5223,11 +5330,10 @@ function main()
                     selectedIndex = 0
                     selectedItem = nil
                     hoveredIndex = 0
-                    drawBuyItemsList()
-                    drawBuyButtons()
+                    markDirty()
                     goto continue
                 end
-            end  -- ★ Закрываем if currentScreen == "shop_buy" or currentScreen == "shop_sell" ★
+            end
 
             if showSellPopup and currentScreen == "sell_scan" then
                 local popupWidth = 40
@@ -5240,10 +5346,10 @@ function main()
                     performSell()
                 elseif isButtonClicked(noBtn, x, y) then
                     showSellPopup = false
-                    drawSellScanScreen()
+                    markDirty()
                 elseif not (x >= popupX and x < popupX + popupWidth and y >= popupY and y < popupY + popupHeight) then
                     showSellPopup = false
-                    drawSellScanScreen()
+                    markDirty()
                 end
                 goto continue
             end
@@ -5252,14 +5358,10 @@ function main()
                 if (y >= 24 and y <= 24) and (x >= 19 and x <= 28) then
                     if currentShopMode == "buy" then
                         currentScreen = "shop_buy"
-                        drawBuyStatic()
-                        drawBuyItemsList()
-                        drawBuyButtons()
+                        markDirty()
                     else
                         currentScreen = "shop_sell"
-                        drawBuyStatic()
-                        drawBuyItemsList()
-                        drawBuyButtons()
+                        markDirty()
                     end
                     goto continue
                 elseif (y >= 24 and y <= 24) and (x >= 51 and x <= 61) then
@@ -5302,9 +5404,7 @@ function main()
                 if isButtonClicked(backButton, x, y) then
                     currentScreen = "shop_sell"
                     showSellPopup = false
-                    drawBuyStatic()
-                    drawBuyItemsList()
-                    drawBuyButtons()
+                    markDirty()
                     goto continue
                 elseif y == 13 and x >= 30 and x <= 50 then
                     drawCenteredText(17, "Сканирование...", colors.accent_secondary)
@@ -5316,11 +5416,11 @@ function main()
                     foundAmount = scanPlayerInventory(sellConfirmItem.internalName, sellConfirmItem.damage or 0)
                     if foundAmount > 0 then
                         showSellPopup = true
-                        drawSellScanScreen()
+                        markDirty()
                     else
                         drawCenteredText(17, "Предмет не найден!", colors.error)
                         os.sleep(0.8)
-                        drawSellScanScreen()
+                        markDirty()
                     end
                     goto continue
                 end
@@ -5369,7 +5469,7 @@ function main()
                 local backBtn = {x=5, y=24, xs=11, ys=1}
                 if isButtonClicked(backBtn, x, y) then
                     currentScreen = "menu"
-                    drawMainMenu()
+                    markDirty()
                     goto continue
                 end
                 local addBtn = {x=36, y=24, xs=14, ys=1}
@@ -5379,18 +5479,18 @@ function main()
                     else
                         feedbackInput = ""
                         feedbackEditMode = true
-                        drawFeedbackInputScreen()
+                        markDirty()
                     end
                     goto continue
                 end
                 if isButtonClicked({x=59, y=24, xs=7, ys=1}, x, y) and feedbacksPage > 1 then
                     feedbacksPage = feedbacksPage - 1
-                    drawFeedbacksList()
+                    markDirty()
                     goto continue
                 end
                 if isButtonClicked({x=69, y=24, xs=7, ys=1}, x, y) and feedbacksPage < feedbacksTotalPages then
                     feedbacksPage = feedbacksPage + 1
-                    drawFeedbacksList()
+                    markDirty()
                     goto continue
                 end
             end
@@ -5400,7 +5500,7 @@ function main()
                     feedbackEditMode = false
                     feedbackInput = ""
                     currentScreen = "feedbacks"
-                    drawFeedbacksList()
+                    markDirty()
                     goto continue
                 end
                 if isButtonClicked({x=46, y=24, xs=15, ys=1}, x, y) and feedbackInput and feedbackInput ~= "" then
@@ -5431,7 +5531,7 @@ function main()
                     feedbackEditMode = false
                     feedbackInput = ""
                     currentScreen = "feedbacks"
-                    drawFeedbacksList()
+                    markDirty()
                     goto continue
                 end
             end
@@ -5454,7 +5554,7 @@ function main()
                 local btnX = math.floor((80 - btnW)/2) + 2
                 if y == 22 and x >= btnX and x <= btnX + btnW then
                     playerAgreed = true
-                    local player = players[currentPlayer]
+                    local player = playersIndex[currentPlayer]
                     if player then
                         player.agreed = true
                         saveDBDeferred()
@@ -5508,14 +5608,10 @@ function main()
                     showInsufficientPopup = false
                     if currentShopMode == "buy" then
                         currentScreen = "shop_buy"
-                        drawBuyStatic()
-                        drawBuyItemsList()
-                        drawBuyButtons()
+                        markDirty()
                     else
                         currentScreen = "shop_sell"
-                        drawBuyStatic()
-                        drawBuyItemsList()
-                        drawBuyButtons()
+                        markDirty()
                     end
                     goto continue
                 end
@@ -5523,14 +5619,10 @@ function main()
                     showInsufficientPopup = false
                     if currentShopMode == "buy" then
                         currentScreen = "shop_buy"
-                        drawBuyStatic()
-                        drawBuyItemsList()
-                        drawBuyButtons()
+                        markDirty()
                     else
                         currentScreen = "shop_sell"
-                        drawBuyStatic()
-                        drawBuyItemsList()
-                        drawBuyButtons()
+                        markDirty()
                     end
                     goto continue
                 end
@@ -5552,15 +5644,13 @@ function main()
                 if isButtonClicked(okBtn, x, y) then
                     showInventoryFullPopup = false
                     currentScreen = "shop_buy"
-                    drawBuyStatic()
-                    drawBuyItemsList()
-                    drawBuyButtons()
+                    markDirty()
                 end
                 goto continue
             end
 
             goto continue
-        end  -- ★ Закрываем if e == "touch" ★
+        end
 
         if e == "scroll" and (currentScreen == "shop_buy" or currentScreen == "shop_sell") then
             local playerName = ev[6] or "Неизвестный"
@@ -5584,26 +5674,23 @@ function main()
             if not pimOwner then
                 goto continue
             end
-            local now = os.clock()
-            if now - lastMouseMoveTime < MOUSE_DEBOUNCE then
-                goto continue
-            end
-            lastMouseMoveTime = now
             
             local x, y = ev[3], ev[4]
-            if y >= 7 and y <= 21 and x >= 2 and x <= 77 then
-                local rel = y - 6
-                local newHover = (listScroll or 1) + rel - 1
-                if newHover <= #filteredItems and newHover ~= hoveredIndex then
-                    hoveredIndex = newHover
-                    drawBuyItemsList()
-                end
-            else
-                if hoveredIndex ~= 0 then
-                    hoveredIndex = 0
-                    drawBuyItemsList()
-                end
+            
+            pendingMouseX = x
+            pendingMouseY = y
+            
+            if mouseDebounceTimer then
+                event.cancel(mouseDebounceTimer)
+                mouseDebounceTimer = nil
             end
+            
+            mouseDebounceTimer = event.timer(0.05, function()
+                mouseDebounceTimer = nil
+                processMouseMove(pendingMouseX, pendingMouseY)
+                return false
+            end)
+            
             goto continue
         end
 
@@ -5622,13 +5709,13 @@ function main()
             if currentScreen == "report" and canSendReport() then
                 local ch = ev[3]
                 if ch == 13 then
-                    drawReportScreen()
+                    markDirty()
                 elseif ch == 8 then
                     reportInput = unicode.sub(reportInput or "", 1, -2)
-                    drawReportScreen()
+                    markDirty()
                 elseif ch >= 32 then
                     reportInput = (reportInput or "") .. unicode.char(ch)
-                    drawReportScreen()
+                    markDirty()
                 end
             elseif (currentScreen == "shop_buy" or currentScreen == "shop_sell") and searchActive then
                 local ch = ev[3]
@@ -5639,18 +5726,15 @@ function main()
                     selectedIndex = 0
                     selectedItem = nil
                     hoveredIndex = 0
-                    drawBuyItemsList()
-                    drawBuyButtons()
+                    markDirty()
                 elseif ch == 8 then
                     searchInput = unicode.sub(searchInput or "", 1, -2)
                     shopSearch = searchInput or ""
-                    redrawSearchField()
-                    drawBuyItemsList()
+                    markDirty()
                 elseif ch >= 32 then
                     searchInput = (searchInput or "") .. unicode.char(ch)
                     shopSearch = searchInput or ""
-                    redrawSearchField()
-                    drawBuyItemsList()
+                    markDirty()
                 end
                 goto continue
             elseif currentScreen == "feedback_input" and feedbackEditMode then
@@ -5685,14 +5769,14 @@ function main()
                     feedbackEditMode = false
                     feedbackInput = ""
                     currentScreen = "feedbacks"
-                    drawFeedbacksList()
+                    markDirty()
                 elseif ch == 8 then
                     feedbackInput = unicode.sub(feedbackInput or "", 1, -2)
-                    drawFeedbackInputScreen()
+                    markDirty()
                 elseif ch >= 32 then
                     if unicode.len(feedbackInput or "") < 200 then
                         feedbackInput = (feedbackInput or "") .. unicode.char(ch)
-                        drawFeedbackInputScreen()
+                        markDirty()
                     end
                 end
                 goto continue
@@ -5704,7 +5788,6 @@ function main()
             local playerName = ev[2] or "Игрок"
             writeDebugLog("player_on: " .. playerName)
             
-            -- ★★★ ПРОВЕРКА: если уже есть игрок - выходим ★★★
             if currentPlayer and currentPlayer ~= "" then
                 writeDebugLog("⚠️ Игрок уже авторизован: " .. currentPlayer .. ", игнорируем вход: " .. playerName)
                 goto continue
@@ -5745,7 +5828,6 @@ function main()
             end
         
             if banInfo then
-                -- ★★★ ДЕКОДИРУЕМ ПРИЧИНУ ★★★
                 local reason = "Не указана"
                 if banInfo.reason_b64 then
                     reason = decodeBase64(banInfo.reason_b64)
@@ -5756,9 +5838,8 @@ function main()
                 
                 local admin = cleanString(banInfo.admin or "Система")
                 
-                -- ★★★ ФОРМАТИРУЕМ ДАТЫ ★★★
                 local function formatDate(isoDate)
-                    if not isoDate or isoDate == "" then return "" end
+                    if not isoDate or isoDate == "" then return ""
                     local year, month, day = isoDate:match("(%d+)-(%d+)-(%d+)")
                     if year and month and day then
                         return day .. "." .. month .. "." .. year
@@ -5810,16 +5891,17 @@ function main()
                 pimOwner = nil
                 alreadyAuthorized = false
                 currentScreen = "welcome"
+                markDirty()
                 goto continue
             end
             
             if alreadyAuthorized then
                 if currentScreen == "auth" or currentScreen == "account_loading" then
                     currentScreen = "menu"
-                    drawMainMenu()
+                    markDirty()
                 end
                 getBindingStatus()
-                drawMainMenu()
+                markDirty()
             else
                 writeDebugLog("Новый вход: " .. playerName)
                 coinBalance = 0.0
@@ -5828,7 +5910,7 @@ function main()
                 currentScreen = "auth"
                 authStartTime = os.clock()
                 
-                local player = players[currentPlayer]
+                local player = playersIndex[currentPlayer]
                 if not player then
                     player = { 
                         balance = 0, 
@@ -5841,6 +5923,7 @@ function main()
                         regDate = getRealTimeString()
                     }
                     players[currentPlayer] = player
+                    playersIndex[currentPlayer] = player
                     saveDBDeferred()
                     addLog("✅ Новый игрок: " .. currentPlayer)
                     writeDebugLog("Создан новый игрок: " .. currentPlayer)
@@ -5867,7 +5950,7 @@ function main()
                     os.sleep(2)
                     currentPlayer = nil
                     currentScreen = "welcome"
-                    drawWelcomeScreen()
+                    markDirty()
                 else
                     currentToken = tostring(math.floor(math.random() * 900000000 + 100000000))
                     coinBalance = player.balance or 0
@@ -5884,7 +5967,7 @@ function main()
                     end
                     
                     currentScreen = "menu"
-                    drawMainMenu()
+                    markDirty()
                     addLog("👤 Вход: " .. currentPlayer)
                     sendToWeb("/api/new_log", toJson({
                         time = getRealTimeHM(),
@@ -5899,51 +5982,6 @@ function main()
         if e == "player_off" or e == "pim_player_leave" then
             local playerName = ev[2] or "Игрок"
             writeDebugLog("player_off: " .. playerName)
-            writeErrorLog("🔥 ВЫХОД С PIM ОБНАРУЖЕН: " .. playerName)
-            
-            -- ★★★ ЗАДЕРЖКА ПЕРЕД ОБРАБОТКОЙ ★★★
-            -- Ждём 0.5 секунды, чтобы убедиться, что это реальный выход, а не "моргание"
-            os.sleep(0.5)
-            
-            -- ★★★ ПРОВЕРЯЕМ, СТОИТ ЛИ ИГРОК НА PIM ★★★
-            local pimAddr = getPimAddr()
-            if pimAddr then
-                local pim = component.proxy(pimAddr)
-                local playerOnPim = nil
-                
-                if pim.getPlayer then
-                    local ok, result = pcall(pim.getPlayer, pim)
-                    if ok and result and result ~= "" then
-                        playerOnPim = result
-                    end
-                end
-                if not playerOnPim and pim.getPlayerName then
-                    local ok, result = pcall(pim.getPlayerName, pim)
-                    if ok and result and result ~= "" then
-                        playerOnPim = result
-                    end
-                end
-                if not playerOnPim and pim.getUsername then
-                    local ok, result = pcall(pim.getUsername, pim)
-                    if ok and result and result ~= "" then
-                        playerOnPim = result
-                    end
-                end
-                if not playerOnPim then
-                    local ok, result = pcall(function()
-                        return pim.player
-                    end)
-                    if ok and result and result ~= "" then
-                        playerOnPim = result
-                    end
-                end
-                
-                -- ★★★ ЕСЛИ ИГРОК ВСЁ ЕЩЁ НА PIM - НЕ СБРАСЫВАЕМ ★★★
-                if playerOnPim and playerOnPim == currentPlayer then
-                    writeErrorLog("✅ Игрок всё ещё на PIM, отменяем выход")
-                    goto continue
-                end
-            end
             
             addLog("👤 Выход: " .. playerName)
             sendToWeb("/api/new_log", toJson({
@@ -5969,11 +6007,9 @@ function main()
                 end
             end
             
-            -- ★★★ ПРОВЕРКА: вызываем safeExit только если это текущий игрок ★★★
             if currentPlayer and playerName == currentPlayer then
                 safeExit()
             else
-                -- Если это не текущий игрок, но pimOwner совпадает - сбрасываем
                 if playerName == pimOwner then
                     safeExit()
                 end
@@ -5985,12 +6021,9 @@ function main()
     end
 end
 
-
--- ============================================================
--- ЗАПУСК
--- ============================================================
-
-while true do
+-- ★★★ ЗАПУСК С ЗАЩИТОЙ ★★★
+local running = true
+while running do
     local ok, err = pcall(main)
     if not ok then
         local msg = "💥 ГЛОБАЛЬНАЯ ОШИБКА: " .. tostring(err)
@@ -5999,6 +6032,17 @@ while true do
         local stack = debug.traceback()
         writeErrorLog("Стек вызовов:\n" .. stack)
         print(stack)
+        
+        -- ★★★ ЕСЛИ ОШИБКА КРИТИЧЕСКАЯ - ВЫХОДИМ ★★★
+        if err and type(err) == "string" and err:find("shutdown") then
+            running = false
+            break
+        end
+        
         os.sleep(5)
     end
 end
+
+-- ★★★ ПРИ ВЫХОДЕ ИЗ ЦИКЛА - СОХРАНЯЕМ ДАННЫЕ ★★★
+forceSaveData()
+writeErrorLog("🔴 Терминал #1 завершил работу")

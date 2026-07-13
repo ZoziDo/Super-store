@@ -11,7 +11,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА
+-- АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА1233
 -- ============================================================
 
 local function setupAutoStart()
@@ -3108,17 +3108,25 @@ function drawReportScreen()
         return
     end
 
-    -- ★★★ ИЗМЕНЕНО: ВМЕСТО colors.black_fon ИСПОЛЬЗУЕМ colors.bg_input ★★★
-    gpu.setBackground(colors.bg_input)  -- <--- ЗДЕСЬ ИЗМЕНЕНИЕ
-    gpu.fill(10, 9, 60, 3, " ")
+    gpu.setBackground(colors.bg_input)
+    gpu.fill(11, 17, 59, 3, " ")  -- x: 10 -> 11, ширина: 60 -> 59
     gpu.setForeground(colors.text_bright)
-    if reportInput and reportInput ~= "" then
-        gpu.set(11, 10, unicode.sub(reportInput, -58))
+    if feedbackEditMode then
+        if feedbackInput and feedbackInput ~= "" then
+            gpu.set(12, 18, unicode.sub(feedbackInput, -58) .. "_")  -- x: 11 -> 12
+        else
+            gpu.setForeground(colors.inactive)
+            gpu.set(12, 18, "Введите ваш отзыв..._")  -- x: 11 -> 12
+        end
     else
-        gpu.setForeground(colors.inactive)
-        gpu.set(11, 10, "Введите текст сообщения...")
+        if feedbackInput and feedbackInput ~= "" then
+            gpu.set(12, 18, unicode.sub(feedbackInput, -58))  -- x: 11 -> 12
+        else
+            gpu.setForeground(colors.inactive)
+            gpu.set(12, 18, "Введите ваш отзыв...")  -- x: 11 -> 12
+        end
     end
-    gpu.setBackground(colors.bg_main)  -- Восстанавливаем фон
+    gpu.setBackground(colors.bg_main)
 
     local sendBtn = {x=33, y=14, xs=17, ys=1, text="[ ОТПРАВИТЬ ]", bg=colors.bg_button, fg=colors.success}
     local backButton = {
@@ -3583,26 +3591,16 @@ function drawFeedbackInputScreen()
     gpu.setForeground(colors.text_main)
     drawCenteredText(15, "Оставьте свой отзыв о магазине:", colors.text_main)
 
-    -- ★★★ ИЗМЕНЕНО: ВМЕСТО colors.black_fon ИСПОЛЬЗУЕМ colors.bg_input ★★★
-    gpu.setBackground(colors.bg_input)  -- <--- ЗДЕСЬ ИЗМЕНЕНИЕ
-    gpu.fill(10, 17, 60, 3, " ")
+    gpu.setBackground(colors.bg_input)
+    gpu.fill(11, 9, 59, 3, " ")  -- x: 10 -> 11, ширина: 60 -> 59
     gpu.setForeground(colors.text_bright)
-    if feedbackEditMode then
-        if feedbackInput and feedbackInput ~= "" then
-            gpu.set(11, 18, unicode.sub(feedbackInput, -58) .. "_")
-        else
-            gpu.setForeground(colors.inactive)
-            gpu.set(11, 18, "Введите ваш отзыв..._")
-        end
+    if reportInput and reportInput ~= "" then
+        gpu.set(12, 10, unicode.sub(reportInput, -58))  -- x: 11 -> 12
     else
-        if feedbackInput and feedbackInput ~= "" then
-            gpu.set(11, 18, unicode.sub(feedbackInput, -58))
-        else
-            gpu.setForeground(colors.inactive)
-            gpu.set(11, 18, "Введите ваш отзыв...")
-        end
+        gpu.setForeground(colors.inactive)
+        gpu.set(12, 10, "Введите текст сообщения...")  -- x: 11 -> 12
     end
-    gpu.setBackground(colors.bg_main)  -- Восстанавливаем фон
+    gpu.setBackground(colors.bg_main)
 
     local cancelBtn = {x = 20, y = 24, xs = 12, ys = 1, text = "[ ОТМЕНА ]", bg = colors.bg_button, fg = colors.error}
     local sendBtn = {x = 46, y = 24, xs = 15, ys = 1, text = "[ ОТПРАВИТЬ ]", bg = colors.bg_button, fg = colors.success}

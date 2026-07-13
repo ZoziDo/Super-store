@@ -11,7 +11,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА
+-- АВТОМАТИЧЕСКАЯ123 НАСТРОЙКА АВТОЗАПУСКА
 -- ============================================================
 
 local function setupAutoStart()
@@ -642,6 +642,10 @@ function safeExit()
     
     -- ★★★ 9. СБРАСЫВАЕМ ФЛАГ ВЫХОДА ★★★
     isShuttingDown = false
+
+    -- ★★★ В КОНЦЕ ДОБАВЛЯЕМ ★★★
+    drawWelcomeScreen()
+    forceRender()
     
     writeDebugLog("✅ Безопасный выход завершён")
     writeErrorLog("🔴 Терминал #1 (PIM MARKET) остановлен")
@@ -3104,6 +3108,9 @@ function drawWelcomeScreen()
             gpu.set(cx - 10, 23, "Встаньте на ПИМ для входа")
         end
     end
+    
+    -- ★★★ ПРИНУДИТЕЛЬНЫЙ РЕНДЕР ★★★
+    forceRender()
 end
 
 function drawMainMenu()
@@ -6340,11 +6347,13 @@ function main()
             if shopPaused then
                 writeDebugLog("Режим обслуживания активен, вход запрещён для: " .. playerName)
                 drawWelcomeScreen()
+                forceRender()  -- ★★★ ДОБАВИТЬ ★★★
                 while shopPaused do
                     local ev2 = {event.pull(1)}
                     if ev2[1] == "player_off" or ev2[1] == "pim_player_leave" then
                         writeDebugLog("👤 Игрок ушёл с PIM: " .. playerName)
                         drawWelcomeScreen()
+                        forceRender()  -- ★★★ ДОБАВИТЬ ★★★
                         break
                     end
                 end
@@ -6356,12 +6365,12 @@ function main()
             end
             currentPlayer = playerName:match("^%s*(.-)%s*$") or playerName
             
-            -- ★★★ ПРОВЕРКА: currentPlayer не должен быть nil ★★★
             if not currentPlayer or currentPlayer == "" then
                 writeDebugLog("⚠️ currentPlayer стал nil, используем исходное имя")
                 currentPlayer = playerName
             end
             
+            -- ★★★ ПРОВЕРКА БАНА ★★★
             local banInfo = nil
             local success, response = pcall(function()
                 return internet.request(WEB_URL .. "/api/check_ban?name=" .. currentPlayer)
@@ -6376,7 +6385,7 @@ function main()
                     banInfo = data
                 end
             end
-        
+
             if banInfo then
                 local reason = "Не указана"
                 if banInfo.reason_b64 then
@@ -6430,7 +6439,6 @@ function main()
                 drawTempMessage()
                 forceRender()
                 
-                -- Асинхронное ожидание ухода игрока
                 event.timer(1, function()
                     while true do
                         local ev2 = {event.pull(1)}
@@ -6454,10 +6462,12 @@ function main()
             if alreadyAuthorized then
                 if currentScreen == "auth" or currentScreen == "account_loading" then
                     currentScreen = "menu"
-                    markDirty()
+                    drawMainMenu()
+                    forceRender()  -- ★★★ ДОБАВИТЬ ★★★
                 end
                 getBindingStatus()
-                markDirty()
+                drawMainMenu()  -- ★★★ ДОБАВИТЬ ★★★
+                forceRender()   -- ★★★ ДОБАВИТЬ ★★★
             else
                 writeDebugLog("Новый вход: " .. playerName)
                 coinBalance = 0.0
@@ -6503,10 +6513,14 @@ function main()
                 
                 if player.banned then
                     drawCenteredText(20, "Вы забанены!", colors.error)
-                    os.sleep(2)
-                    currentPlayer = nil
-                    currentScreen = "welcome"
-                    markDirty()
+                    forceRender()
+                    event.timer(2, function()
+                        currentPlayer = nil
+                        currentScreen = "welcome"
+                        drawWelcomeScreen()  -- ★★★ ДОБАВИТЬ ★★★
+                        forceRender()        -- ★★★ ДОБАВИТЬ ★★★
+                        return false
+                    end)
                 else
                     currentToken = tostring(math.floor(math.random() * 900000000 + 100000000))
                     coinBalance = player.balance or 0
@@ -6523,7 +6537,8 @@ function main()
                     end
                     
                     currentScreen = "menu"
-                    markDirty()
+                    drawMainMenu()      -- ★★★ ДОБАВИТЬ ★★★
+                    forceRender()       -- ★★★ ДОБАВИТЬ ★★★
                     addLog("👤 Вход: " .. currentPlayer)
                     sendToWeb("/api/new_log", toJson({
                         time = getRealTimeHM(),
@@ -6570,6 +6585,10 @@ function main()
                     safeExit()
                 end
             end
+            
+            -- ★★★ ПРИНУДИТЕЛЬНО ОБНОВЛЯЕМ ЭКРАН ★★★
+            drawWelcomeScreen()
+            forceRender()
             
             goto continue
         end

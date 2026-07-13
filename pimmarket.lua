@@ -11,7 +11,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ★★ АВТОМАТИЧЕСКАЯ12356 НАСТРОЙКА АВТОЗАПУСКА ★★
+-- ★★ АВТОМАТИЧЕСКАЯ123567 НАСТРОЙКА АВТОЗАПУСКА ★★
 -- ============================================================
 
 local function setupAutoStart()
@@ -1288,15 +1288,18 @@ function saveDBDeferred()
 end
 
 function flushDB()
-    if not dbDirty then return
+    if not dbDirty then 
+        return 
+    end
+    
     if TRANSACTION_LOCK then
         writeDebugLog("⏳ Отложено сохранение (транзакция активна)")
         return
     end
+    
     saveDB()
     dbDirty = false
 end
-
 createTimer(SAVE_DB_INTERVAL, flushDB, true)
 
 function saveGlobalStats()
@@ -1307,16 +1310,18 @@ function saveGlobalStats()
 end
 
 function isAdmin(playerName)
-    if not playerName then return false
+    if not playerName then return false end   
+    
     for _, name in ipairs(admins) do
-        if name == playerName then return true
+        if name == playerName then return true end
     end
     return false
 end
 
 function addAdmin(playerName)
-    if not playerName or playerName == "" then return false
-    if isAdmin(playerName) then return false
+    if not playerName or playerName == "" then return false end
+    if isAdmin(playerName) then return false end
+    
     table.insert(admins, playerName)
     local file = io.open(ADMINS_PATH, "w")
     if file then
@@ -1328,8 +1333,9 @@ function addAdmin(playerName)
 end
 
 function removeAdmin(playerName)
-    if not playerName or playerName == "" then return false
-    if #admins <= 1 then return false
+    if not playerName or playerName == "" then return false end
+    if #admins <= 1 then return false end
+    
     for i, name in ipairs(admins) do
         if name == playerName then
             table.remove(admins, i)

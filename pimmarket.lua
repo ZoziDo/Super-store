@@ -11,7 +11,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ★★ АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА ★★
+-- ★★ АВТОМАТИЧЕСКАЯ1 НАСТРОЙКА АВТОЗАПУСКА ★★
 -- ============================================================
 
 local function setupAutoStart()
@@ -4908,6 +4908,8 @@ end  -- <-- ВОТ ЭТОТ end БЫЛ ПРОПУЩЕН!
 -- ============================================================
 
 function checkWebCommands()
+    writeDebugFile(">>> checkWebCommands() ВЫЗВАНА в " .. getRealTimeHM())
+    
     if currentPlayer then
         syncCurrentPlayer()
     end
@@ -4916,7 +4918,7 @@ function checkWebCommands()
 
     local success, err = pcall(function()
         local url = WEB_URL .. "/api/commands"
-        writeDebugLog("📡 Запрос к: " .. url)
+        writeDebugFile("📡 Запрос к: " .. url)
 
         local response = internet.request(url, nil, {
             ["Connection"] = "close",
@@ -4924,24 +4926,24 @@ function checkWebCommands()
         })
         
         if not response then
-            writeDebugLog("⚠️ Нет ответа от сервера")
+            writeDebugFile("⚠️ Нет ответа от сервера")
             return
         end
 
         local status = response.getStatus and response:getStatus() or response.code or response.status
         if status then
             if status == 200 or status == 204 then
-                writeDebugLog("✅ Статус ответа: " .. tostring(status))
+                writeDebugFile("✅ Статус ответа: " .. tostring(status))
             else
-                writeErrorLog("⚠️ Сервер вернул HTTP " .. tostring(status) .. " на запрос " .. url)
+                writeDebugFile("⚠️ Сервер вернул HTTP " .. tostring(status))
                 return
             end
         else
-            writeDebugLog("⚠️ Не удалось получить статус ответа, продолжаем...")
+            writeDebugFile("⚠️ Не удалось получить статус ответа")
         end
 
         if status == 204 then
-            writeDebugLog("⚠️ Сервер вернул 204 No Content, пропускаем")
+            writeDebugFile("⚠️ Сервер вернул 204 No Content, пропускаем")
             return
         end
 
@@ -4950,35 +4952,35 @@ function checkWebCommands()
             body = body .. chunk
         end
 
-        writeDebugLog("📥 Получено " .. #body .. " байт")
+        writeDebugFile("📥 Получено " .. #body .. " байт")
 
         if #body < 10 then
-            writeDebugLog("⚠️ Ответ слишком короткий, пропускаем")
+            writeDebugFile("⚠️ Ответ слишком короткий")
             return
         end
 
         local data = parseJSON(body)
         if data then
-            writeDebugLog("✅ Распарсено: " .. serialization.serialize(data))
+            writeDebugFile("✅ Распарсено")
         else
-            writeDebugLog("❌ data = nil после парсинга!")
+            writeDebugFile("❌ Ошибка парсинга JSON")
             writeErrorLog("❌ Ошибка парсинга JSON: " .. string.sub(body, 1, 300))
             return
         end
 
         if not data.commands or #data.commands == 0 then
-            writeDebugLog("⚠️ Нет команд в ответе")
+            writeDebugFile("⚠️ Нет команд в ответе")
             return
         end
 
-        writeDebugLog("📨 Найдено команд: " .. #data.commands)
+        writeDebugFile("📨 Найдено команд: " .. #data.commands)
 
         for _, cmd in ipairs(data.commands) do
             local d = cmd.data or cmd
             local requestId = cmd.requestId or os.time()
         
             local function sendResult(success, msg)
-                writeDebugLog("📤 [" .. (cmd.command or "unknown") .. "] " .. (success and "✅" or "❌") .. " " .. (msg or ""))
+                writeDebugFile("📤 [" .. (cmd.command or "unknown") .. "] " .. (success and "✅" or "❌") .. " " .. (msg or ""))
                 sendToWeb("/api/command_result", toJson({
                     requestId = requestId,
                     success = success,
@@ -4987,11 +4989,17 @@ function checkWebCommands()
                 }))
             end
         
-            writeDebugLog("🔧 Выполняем команду: " .. (cmd.command or "unknown"))
-            writeDebugLog("📨 Данные команды: " .. serialization.serialize(d))
+            writeDebugFile("🔧 Выполняем команду: " .. (cmd.command or "unknown"))
+            writeDebugFile("📨 Данные команды: " .. serialization.serialize(d))
         
+            -- ★★★ UPDATE_PLAYER / SET_BALANCE ★★★
             if cmd.command == "update_player" or cmd.command == "set_balance" then
+                writeDebugFile("📥 Получена команда update_player")
                 local playerName = d.name or d.player
+                writeDebugFile("   playerName=" .. tostring(playerName))
+                writeDebugFile("   balance=" .. tostring(d.balance))
+                writeDebugFile("   emaBalance=" .. tostring(d.emaBalance))
+                
                 if not playerName then
                     sendResult(false, "Нет имени игрока")
                     goto continue
@@ -5001,13 +5009,22 @@ function checkWebCommands()
                 if player then
                     if d.balance then
                         player.balance = tonumber(d.balance) or 0
+                        writeDebugFile("   ✅ Баланс установлен: " .. player.balance)
                     end
                     if d.emaBalance then
                         player.emaBalance = tonumber(d.emaBalance) or 0
+                        writeDebugFile("   ✅ EMA баланс установлен: " .. player.emaBalance)
                     end
                     saveDBDeferred()
                     addLog("💰 Баланс обновлён: " .. playerName)
                     markDirty()
+                    
+                    -- ★★★ ЕСЛИ ЭТО ТЕКУЩИЙ ИГРОК - ОБНОВЛЯЕМ ЛОКАЛЬНЫЕ ПЕРЕМЕННЫЕ ★★★
+                    if currentPlayer == playerName then
+                        coinBalance = player.balance
+                        emaBalance = player.emaBalance
+                        writeDebugFile("   ✅ ТЕКУЩИЙ ИГРОК ОБНОВЛЁН: Coin=" .. coinBalance .. ", EMA=" .. emaBalance)
+                    end
                     
                     local balance_change = {
                         id = "bal_" .. os.time() .. "_" .. math.random(100000),
@@ -5022,13 +5039,14 @@ function checkWebCommands()
                     
                     sendResult(true, "Баланс обновлён")
                 else
+                    writeDebugFile("   ❌ Игрок не найден")
                     sendResult(false, "Игрок не найден")
                 end
                 goto continue
             end
             
             if cmd.command == "save_buy_items_incremental" then
-                writeDebugLog("📥 save_buy_items_incremental получен")
+                writeDebugFile("📥 save_buy_items_incremental получен")
                 local changes = d.changes
                 local ok = applyIncrementalChanges("/home/buy_items.lua", changes, "buy_items")
                 if ok and changes then
@@ -5047,7 +5065,7 @@ function checkWebCommands()
             end
             
             if cmd.command == "save_shop_items_incremental" then
-                writeDebugLog("📥 save_shop_items_incremental получен")
+                writeDebugFile("📥 save_shop_items_incremental получен")
                 local changes = d.changes
                 local ok = applyIncrementalChanges("/home/shop_items.lua", changes, "shop_items")
                 if ok and changes then
@@ -5068,10 +5086,10 @@ function checkWebCommands()
             if cmd.command == "toggle_pause" then
                 if d.paused ~= nil then
                     shopPaused = d.paused
-                    writeDebugLog("📥 Установлен режим обслуживания: " .. tostring(shopPaused) .. " (из данных)")
+                    writeDebugFile("📥 Установлен режим обслуживания: " .. tostring(shopPaused))
                 else
                     shopPaused = not shopPaused
-                    writeDebugLog("📥 Переключён режим обслуживания: " .. tostring(shopPaused))
+                    writeDebugFile("📥 Переключён режим обслуживания: " .. tostring(shopPaused))
                 end
                 
                 addLog(shopPaused and "⏸️ Магазин переведён в режим обслуживания" or "🟢 Магазин открыт")
@@ -5107,10 +5125,10 @@ function checkWebCommands()
             
             if cmd.command == "terminal_control" then
                 local action = d.action
-                writeErrorLog("🚨 ПОЛУЧЕНА КОМАНДА: " .. action)
+                writeDebugFile("🚨 ПОЛУЧЕНА КОМАНДА: " .. action)
                 
                 if action == "shutdown" then
-                    writeErrorLog("⏻ ВЫКЛЮЧЕНИЕ ТЕРМИНАЛА")
+                    writeDebugFile("⏻ ВЫКЛЮЧЕНИЕ ТЕРМИНАЛА")
                     sendResult(true, "Терминал выключается...")
                     os.sleep(0.5)
                     
@@ -5124,15 +5142,15 @@ function checkWebCommands()
                     for i, func in ipairs(shutdown_attempts) do
                         local ok, err = pcall(func)
                         if ok then
-                            writeErrorLog("✅ Выключение успешно (способ " .. i .. ")")
+                            writeDebugFile("✅ Выключение успешно (способ " .. i .. ")")
                             break
                         else
-                            writeErrorLog("⚠️ Способ " .. i .. " не сработал: " .. tostring(err))
+                            writeDebugFile("⚠️ Способ " .. i .. " не сработал: " .. tostring(err))
                         end
                     end
                     
                 elseif action == "reboot" then
-                    writeErrorLog("🔄 ПЕРЕЗАГРУЗКА ТЕРМИНАЛА")
+                    writeDebugFile("🔄 ПЕРЕЗАГРУЗКА ТЕРМИНАЛА")
                     sendResult(true, "Терминал перезагружается...")
                     os.sleep(0.5)
                     
@@ -5146,10 +5164,10 @@ function checkWebCommands()
                     for i, func in ipairs(reboot_attempts) do
                         local ok, err = pcall(func)
                         if ok then
-                            writeErrorLog("✅ Перезагрузка успешна (способ " .. i .. ")")
+                            writeDebugFile("✅ Перезагрузка успешна (способ " .. i .. ")")
                             break
                         else
-                            writeErrorLog("⚠️ Способ " .. i .. " не сработал: " .. tostring(err))
+                            writeDebugFile("⚠️ Способ " .. i .. " не сработал: " .. tostring(err))
                         end
                     end
                 end
@@ -5158,7 +5176,7 @@ function checkWebCommands()
             
             if cmd.command == "unbind_player" then
                 local playerName = d.player
-                writeDebugLog("📥 Получена команда отвязки для: " .. playerName)
+                writeDebugFile("📥 Получена команда отвязки для: " .. playerName)
                 
                 if currentPlayer == playerName then
                     boundPlayer = nil
@@ -5177,7 +5195,7 @@ function checkWebCommands()
             
             if cmd.command == "delete_feedback" then
                 local index = d.index
-                writeDebugLog("🗑️ Удаление отзыва: индекс " .. tostring(index))
+                writeDebugFile("🗑️ Удаление отзыва: индекс " .. tostring(index))
                 
                 local feedbacks = {}
                 if fs.exists(FEEDBACKS_PATH) then
@@ -5199,14 +5217,14 @@ function checkWebCommands()
                     if file then
                         file:write(serialization.serialize(feedbacks))
                         file:close()
-                        writeDebugLog("✅ Отзыв удалён из OC")
+                        writeDebugFile("✅ Отзыв удалён из OC")
                         sendResult(true, "Отзыв удалён")
                     else
-                        writeErrorLog("❌ Не удалось открыть файл для записи")
+                        writeDebugFile("❌ Не удалось открыть файл для записи")
                         sendResult(false, "Ошибка записи")
                     end
                 else
-                    writeDebugLog("⚠️ Индекс не найден: " .. tostring(index) .. " (OC индекс: " .. tostring(ocIndex) .. "), всего отзывов: " .. #feedbacks)
+                    writeDebugFile("⚠️ Индекс не найден: " .. tostring(index) .. " (OC индекс: " .. tostring(ocIndex) .. "), всего отзывов: " .. #feedbacks)
                     sendResult(false, "Индекс не найден")
                 end
                 goto continue
@@ -5214,7 +5232,7 @@ function checkWebCommands()
             
             if cmd.command == "feedback_viewed" then
                 local index = d.index
-                writeDebugLog("📌 Отметка отзыва как просмотренного: индекс " .. tostring(index))
+                writeDebugFile("📌 Отметка отзыва как просмотренного: индекс " .. tostring(index))
                 
                 local feedbacks = {}
                 if fs.exists(FEEDBACKS_PATH) then
@@ -5236,14 +5254,14 @@ function checkWebCommands()
                     if file then
                         file:write(serialization.serialize(feedbacks))
                         file:close()
-                        writeDebugLog("✅ Отзыв отмечен как просмотренный в OC")
+                        writeDebugFile("✅ Отзыв отмечен как просмотренный в OC")
                         sendResult(true, "Отзыв отмечен")
                     else
-                        writeErrorLog("❌ Не удалось открыть файл для записи")
+                        writeDebugFile("❌ Не удалось открыть файл для записи")
                         sendResult(false, "Ошибка записи")
                     end
                 else
-                    writeDebugLog("⚠️ Индекс не найден: " .. tostring(index) .. " (OC индекс: " .. tostring(ocIndex) .. "), всего отзывов: " .. #feedbacks)
+                    writeDebugFile("⚠️ Индекс не найден: " .. tostring(index) .. " (OC индекс: " .. tostring(ocIndex) .. "), всего отзывов: " .. #feedbacks)
                     sendResult(false, "Индекс не найден")
                 end
                 goto continue
@@ -5256,6 +5274,7 @@ function checkWebCommands()
      end)
 
     if not success then
+        writeDebugFile("❌ Критическая ошибка в checkWebCommands: " .. tostring(err))
         writeErrorLog("❌ Критическая ошибка в checkWebCommands: " .. tostring(err))
     end
 end

@@ -11,7 +11,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- АВТОМАТИЧЕСКАЯ246 НАСТРОЙКА АВТОЗАПУСКА5123
+-- АВТОМАТИЧЕСКАЯ246 НАСТРОЙКА АВТОЗАПУСКА123331
 -- ============================================================
 
 local function setupAutoStart()
@@ -821,7 +821,7 @@ lastRenderedScreen = ""
 function markDirty()
     guiDirty = true
     if not renderTimer then
-        renderTimer = event.timer(0.1, function()
+        renderTimer = event.timer(0.016, function()
             renderTimer = nil
             if guiDirty then
                 renderCurrentScreen()
@@ -833,6 +833,7 @@ function markDirty()
 end
 
 function forceRender()
+    if renderInProgress then return end
     guiDirty = true
     if renderTimer then
         event.cancel(renderTimer)
@@ -843,6 +844,11 @@ function forceRender()
 end
 
 function renderCurrentScreen()
+    if renderInProgress then return end
+    renderInProgress = true
+
+    bufferClear()  -- всегда начинаем с чистого backBuffer
+
     if currentScreen == "welcome" then
         drawWelcomeScreen()
     elseif currentScreen == "menu" then
@@ -853,7 +859,6 @@ function renderCurrentScreen()
         drawBuyStatic()
         drawBuyItemsList()
         drawBuyButtons()
-        -- ★★★ УБЕРИ forceRender() ЗДЕСЬ! ★★★
     elseif currentScreen == "sell_scan" then
         drawSellScanScreen()
     elseif currentScreen == "purchase" then
@@ -875,7 +880,10 @@ function renderCurrentScreen()
     elseif currentScreen == "qr_popup" then
         showQRCodePopup()
     end
+
     drawTempMessage()
+    renderBuffer()          -- <-- единственный вывод на экран
+    renderInProgress = false
 end
 
 -- ============================================================
@@ -2935,33 +2943,8 @@ function smoothScroll(steps)
         return
     end
     
-    if math.abs(steps) == 1 and total > visibleRows then
-        if steps > 0 then
-            gpu.copy(2, 8, 76, visibleRows - 1, 0, -1)
-            gpu.setBackground(colors.bg_main)
-            gpu.fill(2, 21, 76, 1, " ")
-            local newIdx = newScroll + visibleRows - 1
-            if newIdx <= total then
-                drawSingleRow(21, filtered[newIdx], (newIdx == hoveredIndex), (newIdx == selectedIndex), newIdx)
-            end
-        else
-            gpu.copy(2, 7, 76, visibleRows - 1, 0, 1)
-            gpu.setBackground(colors.bg_main)
-            gpu.fill(2, 7, 76, 1, " ")
-            local newIdx = newScroll
-            if newIdx >= 1 then
-                drawSingleRow(7, filtered[newIdx], (newIdx == hoveredIndex), (newIdx == selectedIndex), newIdx)
-            end
-        end
-    else
-        drawBuyItemsList()
-        partialRedraw()
-        return
-    end
-    
     listScroll = newScroll
-    drawScrollBar()
-    partialRedraw()
+    markDirty()  -- просто помечаем, что нужно перерисовать
 end
 
 function drawBuyButtons()
@@ -3021,7 +3004,6 @@ shopMenuButtons = {
 function drawWelcomeScreen()
     writeDebugLog("drawWelcomeScreen()")
     
-    -- ★★★ РИСУЕМ В БУФЕР ★★★
     bufferClear()
     
     local border_color = 0x00E5C9
@@ -3030,16 +3012,16 @@ function drawWelcomeScreen()
     local hint_color = 0xAAAAAA
     
     -- Рамка через буфер
-    bufferSet(1, 1, "+", border_color)
-    bufferFill(2, 1, 78, 1, "=", border_color)
-    bufferSet(80, 1, "+", border_color)
+    bufferSet(1, 1, "┌", border_color)
+    bufferFill(2, 1, 78, 1, "─", border_color)
+    bufferSet(80, 1, "┐", border_color)
     for y = 2, 24 do
-        bufferSet(1, y, "|", border_color)
-        bufferSet(80, y, "|", border_color)
+        bufferSet(1, y, "│", border_color)
+        bufferSet(80, y, "│", border_color)
     end
-    bufferSet(1, 25, "+", border_color)
-    bufferFill(2, 25, 78, 1, "=", border_color)
-    bufferSet(80, 25, "+", border_color)
+    bufferSet(1, 24, "└", border_color)
+    bufferFill(2, 24, 78, 1, "─", border_color)
+    bufferSet(80, 24, "┘", border_color)
     
     -- Алмаз через буфер
     local diamond = {
@@ -3088,24 +3070,18 @@ function drawWelcomeScreen()
         bufferSet(cx - 2, 22, " Магазин временно закрыт", colors.error)
         bufferSet(cx - 2, 23, " Пожалуйста, зайдите позже", colors.text_main)
     else
-        if currentPlayer and currentPlayer ~= "" then
-            bufferSet(cx - 2, 21, "VIP SHOP", text_color)
-            bufferSet(cx - 6, 22, "◆ McSkill HiTech ◆", sub_color)
-            bufferSet(cx - 10, 23, "Встаньте на ПИМ для входа", hint_color)
-        else
-            bufferSet(cx - 2, 21, "VIP SHOP", text_color)
-            bufferSet(cx - 6, 22, "◆ McSkill HiTech ◆", sub_color)
-            bufferSet(cx - 10, 23, "Встаньте на ПИМ для входа", hint_color)
-        end
+        bufferSet(cx - 2, 21, "VIP SHOP", text_color)
+        bufferSet(cx - 6, 22, "◆ McSkill HiTech ◆", sub_color)
+        bufferSet(cx - 10, 23, "Встаньте на ПИМ для входа", hint_color)
     end
+    
+    -- ★★★ НЕ ДОБАВЛЯЙ forceRender() ЗДЕСЬ! ★★★
 end
+
 
 function drawMainMenu()
     writeDebugLog("drawMainMenu()")
     
-    -- ★★★ НЕ ОЧИЩАЕМ ВЕСЬ ЭКРАН, А ТОЛЬКО ОБНОВЛЯЕМ НУЖНЫЕ ОБЛАСТИ ★★★
-    
-    -- Рисуем рамку (только если её нет или она изменилась)
     bufferSet(1, 1, "┌", colors.accent_secondary)
     bufferFill(2, 1, 78, 1, "─", colors.accent_secondary)
     bufferSet(80, 1, "┐", colors.accent_secondary)
@@ -3118,7 +3094,6 @@ function drawMainMenu()
     bufferSet(80, 24, "┘", colors.accent_secondary)
     
     if currentPlayer then
-        -- Приветствие
         local hello1 = "Добро пожаловать, "
         local hello2 = currentPlayer .. "!"
         local full1 = hello1 .. hello2
@@ -3126,7 +3101,6 @@ function drawMainMenu()
         bufferSet(x1, 4, hello1, colors.success)
         bufferSet(x1 + unicode.len(hello1), 4, hello2, colors.text_bright)
 
-        -- Баланс
         local coin = coinBalance or 0.0
         local ema = emaBalance or 0.0
         
@@ -3137,7 +3111,6 @@ function drawMainMenu()
         bufferSet(balanceX + unicode.len("Баланс: ") + unicode.len(string.format("%.2f", coin) .. " Coina ₵"), 5, " | ", colors.white)
         bufferSet(balanceX + unicode.len("Баланс: ") + unicode.len(string.format("%.2f", coin) .. " Coina ₵") + unicode.len(" | "), 5, "ЭМЫ: " .. string.format("%.2f", ema) .. " ۞", colors.tomato)
         
-        -- Статус привязки
         local boundInfo = ""
         local boundColor = colors.error
         
@@ -3154,7 +3127,6 @@ function drawMainMenu()
         local boundX = math.floor((80 - unicode.len(boundInfo)) / 2) + 1
         bufferSet(boundX, 2, boundInfo, boundColor)
 
-        -- Сообщение о соглашении
         if not playerAgreed then
             if showShopDenied then
                 bufferSet(math.floor((80 - unicode.len("Доступ запрещён. Примите соглашение [Соглашение]")) / 2) + 1, 8, "Доступ запрещён. Примите соглашение [Соглашение]", colors.error)
@@ -3162,11 +3134,9 @@ function drawMainMenu()
                 bufferSet(math.floor((80 - unicode.len("Вы не приняли пользовательское соглашение! Нажмите [Соглашение]")) / 2) + 1, 8, "Вы не приняли пользовательское соглашение! Нажмите [Соглашение]", colors.accent_secondary)
             end
         else
-            -- Очищаем строку с сообщением
             bufferFill(2, 8, 76, 1, " ", colors.text_main, colors.bg_main)
         end
 
-        -- Кнопки меню
         for _, btn in pairs(menuButtons) do
             bufferFill(btn.x, btn.y, btn.xs, btn.ys, " ", btn.fg or colors.text_main, btn.bg or colors.bg_button)
             local text = btn.text or ""
@@ -3175,23 +3145,19 @@ function drawMainMenu()
             bufferSet(textX, textY, text, btn.fg or colors.text_main, btn.bg or colors.bg_button)
         end
         
-        -- Нижние кнопки
         bufferSet(4, 24, "[ ПОДДЕРЖКА ]", colors.error)
         bufferSet(35, 24, "[ СОГЛАШЕНИЕ ]", colors.error)
         bufferSet(68, 24, "[ ОТЗЫВЫ ]", colors.error)
         
-        -- ★★★ ОЧИЩАЕМ ОСТАЛЬНЫЕ ОБЛАСТИ, ЧТОБЫ НЕ БЫЛО "МУСОРА" ★★★
-        -- Очищаем область между приветствием и кнопками (строки 6-7, 9-16, 18-23)
-        bufferFill(2, 6, 76, 1, " ", colors.text_main, colors.bg_main)  -- строка 6
-        bufferFill(2, 7, 76, 1, " ", colors.text_main, colors.bg_main)  -- строка 7
-        bufferFill(2, 9, 76, 8, " ", colors.text_main, colors.bg_main)  -- строки 9-16
-        bufferFill(2, 18, 76, 6, " ", colors.text_main, colors.bg_main) -- строки 18-23
+        bufferFill(2, 6, 76, 1, " ", colors.text_main, colors.bg_main)
+        bufferFill(2, 7, 76, 1, " ", colors.text_main, colors.bg_main)
+        bufferFill(2, 9, 76, 8, " ", colors.text_main, colors.bg_main)
+        bufferFill(2, 18, 76, 6, " ", colors.text_main, colors.bg_main)
         
     else
         drawWelcomeScreen()
     end
     
-    -- Рисуем временное сообщение
     if tempMessage and tempMessage ~= "" then
         bufferFill(1, 25, 80, 1, " ", colors.success, colors.bg_main)
         local x = math.floor((80 - unicode.len(tempMessage)) / 2) + 1
@@ -5601,10 +5567,13 @@ MOUSE_DEBOUNCE = 0.05
 function main()
     writeDebugLog("🚀 main() запущен")
     
-    -- ★★★ РИСУЕМ ПРИВЕТСТВИЕ В БУФЕР ★★★
+    gpu.setResolution(80, 25)
+    gpu.setBackground(colors.bg_main)
+    gpu.fill(1,1,80,25," ")
+    
+    currentScreen = "welcome"
     drawWelcomeScreen()
-    -- ★★★ ВЫВОДИМ БУФЕР НА ЭКРАН ★★★
-    forceRender()
+    renderBuffer()   -- первый вывод на экран (без рекурсии!)
     
     writeErrorLog("🟢 Терминал #1 (PIM MARKET) запущен")
 
@@ -5723,7 +5692,7 @@ function main()
                         updateSelectorDisplay(selectedItem)
                         drawBuyItemsList()
                         drawBuyButtons()
-                        partialRedraw()
+                        forceRender()
                     else
                         if not item then
                             writeDebugFile("❌ item = nil")
@@ -6193,10 +6162,8 @@ function main()
             if x >= 2 and x <= 78 and y >= 7 and y <= 21 then
                 if direction == -1 then
                     smoothScroll(1)
-                    partialRedraw()
                 elseif direction == 1 then
                     smoothScroll(-1)
-                    partialRedraw()
                 end
             end
             goto continue
@@ -6259,17 +6226,17 @@ function main()
                     selectedItem = nil
                     hoveredIndex = 0
                     drawBuyItemsList()
-                    partialRedraw()
+                    forceRender()
                 elseif ch == 8 then
                     searchInput = unicode.sub(searchInput or "", 1, -2)
                     shopSearch = searchInput or ""
                     drawBuyItemsList()
-                    partialRedraw()
+                    forceRender()
                 elseif ch >= 32 then
                     searchInput = (searchInput or "") .. unicode.char(ch)
                     shopSearch = searchInput or ""
                     drawBuyItemsList()
-                    partialRedraw()
+                    forceRender()
                 end
                 goto continue
             elseif currentScreen == "feedback_input" and feedbackEditMode then
@@ -6319,7 +6286,7 @@ function main()
             goto continue
         end
 
-        -- ★★★ ВХОД ИГРОКА - САМОЕ ВАЖНОЕ ★★★
+        -- ★★★ ВХОД ИГРОКА ★★★
         if e == "player_on" or e == "pim" or e == "pim_player_enter" then
             local playerName = ev[2] or "Игрок"
             writeDebugLog("player_on: " .. playerName)
@@ -6337,11 +6304,13 @@ function main()
             if shopPaused then
                 writeDebugLog("Режим обслуживания активен, вход запрещён для: " .. playerName)
                 drawWelcomeScreen()
+                forceRender()
                 while shopPaused do
                     local ev2 = {event.pull(1)}
                     if ev2[1] == "player_off" or ev2[1] == "pim_player_leave" then
                         writeDebugLog("👤 Игрок ушёл с PIM: " .. playerName)
                         drawWelcomeScreen()
+                        forceRender()
                         break
                     end
                 end
@@ -6425,19 +6394,25 @@ function main()
                 drawCenteredText(22, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", colors.accent_secondary)
                 
                 drawTempMessage()
+                forceRender()
                 
-                while true do
-                    local ev2 = {event.pull(1)}
-                    if ev2[1] == "player_off" or ev2[1] == "pim_player_leave" then
-                        writeDebugLog("👤 Игрок ушёл с PIM: " .. playerName)
-                        currentPlayer = nil
-                        pimOwner = nil
-                        alreadyAuthorized = false
-                        currentScreen = "welcome"
-                        drawWelcomeScreen()
-                        break
+                event.timer(1, function()
+                    while true do
+                        local ev2 = {event.pull(1)}
+                        if ev2[1] == "player_off" or ev2[1] == "pim_player_leave" then
+                            writeDebugLog("👤 Игрок ушёл с PIM: " .. playerName)
+                            currentPlayer = nil
+                            pimOwner = nil
+                            alreadyAuthorized = false
+                            currentScreen = "welcome"
+                            drawWelcomeScreen()
+                            forceRender()
+                            break
+                        end
                     end
-                end
+                    return false
+                end, math.huge)
+                
                 goto continue
             end
             
@@ -6495,10 +6470,12 @@ function main()
                 
                 if player.banned then
                     drawCenteredText(20, "Вы забанены!", colors.error)
+                    forceRender()
                     event.timer(2, function()
                         currentPlayer = nil
                         currentScreen = "welcome"
                         drawWelcomeScreen()
+                        forceRender()
                         return false
                     end)
                 else
@@ -6566,8 +6543,8 @@ function main()
                 end
             end
             
-            -- ★★★ ПОСЛЕ ВЫХОДА ВОЗВРАЩАЕМСЯ НА ПРИВЕТСТВИЕ ★★★
             drawWelcomeScreen()
+            forceRender()  -- ★★★ ОБНОВЛЯЕМ ЭКРАН ★★★
             
             goto continue
         end

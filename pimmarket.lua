@@ -11,7 +11,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА
+-- АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА123
 -- ============================================================
 
 local function setupAutoStart()
@@ -3427,6 +3427,20 @@ function drawFeedbacksList()
     clear()
     drawScreenBorder()
 
+    local function drawStars(x, y, rating)
+        local starColor = 0xFFD700  -- Золотой цвет
+        local emptyColor = colors.inactive
+        for i = 1, 5 do
+            if i <= rating then
+                gpu.setForeground(starColor)
+                gpu.set(x + (i - 1) * 2, y, "★")
+            else
+                gpu.setForeground(emptyColor)
+                gpu.set(x + (i - 1) * 2, y, "☆")
+            end
+        end
+    end
+
     local line = string.rep("═", 15)
     local title = " ОТЗЫВЫ "
     local line2 = string.rep("═", 15)
@@ -3438,6 +3452,21 @@ function drawFeedbacksList()
     gpu.set(x + unicode.len(line), 2, title)
     gpu.setForeground(colors.accent_main)
     gpu.set(x + unicode.len(line) + unicode.len(title), 2, line2)
+
+    -- ★★★ ФУНКЦИЯ ДЛЯ ОТРИСОВКИ ЗВЁЗД ★★★
+    local function drawStars(x, y, rating)
+        local starColor = 0xFFD700  -- Золотой цвет
+        local emptyColor = colors.inactive
+        for i = 1, 5 do
+            if i <= rating then
+                gpu.setForeground(starColor)
+                gpu.set(x + (i - 1) * 2, y, "★")
+            else
+                gpu.setForeground(emptyColor)
+                gpu.set(x + (i - 1) * 2, y, "☆")
+            end
+        end
+    end
 
     if #feedbacks == 0 then
         drawCenteredText(10, "Пока нет ни одного отзыва.", colors.text_main)
@@ -3453,22 +3482,39 @@ function drawFeedbacksList()
         for i = startIdx, endIdx do
             local fb = feedbacks[i]
             if fb then
+                local rating = fb.rating or 5
+                
                 gpu.setForeground(colors.accent_secondary)
-                gpu.fill(5, y, 70, 3, " ")
+                gpu.fill(5, y, 70, 4, " ")
                 gpu.setBackground(colors.bg_secondary)
-                gpu.fill(6, y+1, 68, 1, " ")
+                gpu.fill(6, y+1, 68, 2, " ")
 
+                -- Имя
                 gpu.setForeground(colors.accent_main)
                 gpu.set(7, y+1, fb.name or "Аноним")
+                
+                -- Время
                 gpu.setForeground(colors.inactive)
                 local timeStr = fb.time or ""
-                gpu.set(7 + unicode.len(fb.name or "Аноним") + 2, y+1, timeStr)
+                local timeX = 7 + unicode.len(fb.name or "Аноним") + 2
+                if timeX + unicode.len(timeStr) < 75 then
+                    gpu.set(timeX, y+1, timeStr)
+                end
 
+                -- ★★★ ЗВЁЗДЫ ★★★
+                drawStars(7, y+2, rating)
+
+                -- Текст отзыва
                 gpu.setForeground(colors.text_bright)
-                local shortText = unicode.sub(fb.text or "", 1, 62)
-                gpu.set(7, y+2, shortText)
+                local shortText = unicode.sub(fb.text or "", 1, 60)
+                local textX = 7 + 12  -- Отступ после звёзд
+                if textX + unicode.len(shortText) < 75 then
+                    gpu.set(textX, y+2, shortText)
+                else
+                    gpu.set(textX, y+2, unicode.sub(shortText, 1, 75 - textX - 3) .. "...")
+                end
 
-                y = y + 4
+                y = y + 5
             end
         end
 

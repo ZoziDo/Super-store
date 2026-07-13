@@ -11,7 +11,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- АВТОМАТИЧЕСКАЯ246 НАСТРОЙКА АВТОЗАПУСКА5555
+-- АВТОМАТИЧЕСКАЯ246 НАСТРОЙКА АВТОЗАПУСКА1112
 -- ============================================================
 
 local function setupAutoStart()
@@ -793,6 +793,7 @@ function renderCurrentScreen()
     if renderInProgress then return end
     renderInProgress = true
 
+    -- ★★★ ВСЕГДА ОЧИЩАЕМ БУФЕР ★★★
     bufferClear()
 
     if currentScreen == "welcome" then
@@ -3773,14 +3774,14 @@ function goBackToMenu()
     pcall(selector.setSlot, 0, nil)
     pcall(selector.setSlot, 1, nil)
     drawMainMenu()
-    forceRender()
+    renderBuffer()
 end
 
 function goToShop()
     writeDebugLog("goToShop()")
     currentScreen = "shop"
     drawShopMenu()
-    forceRender()
+    renderBuffer()
 end
 
 function goToBuy()
@@ -3788,7 +3789,7 @@ function goToBuy()
     if not playerAgreed then
         drawCenteredText(12, "Вы не приняли пользовательское соглашение!", colors.error)
         drawCenteredText(13, "Нажмите [Помощь] и ознакомьтесь с условиями.", colors.text_main)
-        forceRender()
+        renderBuffer()
         event.timer(3, function() 
             markDirty() 
             return false 
@@ -3810,7 +3811,7 @@ function goToBuy()
     drawBuyStatic()
     drawBuyItemsList()
     drawBuyButtons()
-    forceRender()
+    renderBuffer()
 end
 
 function goToSell()
@@ -3818,7 +3819,7 @@ function goToSell()
     if not playerAgreed then
         drawCenteredText(12, "Вы не приняли пользовательское соглашение!", colors.error)
         drawCenteredText(13, "Нажмите [Помощь] и ознакомьтесь с условиями.", colors.text_main)
-        forceRender()
+        renderBuffer()
         event.timer(3, function() 
             markDirty() 
             return false 
@@ -3841,7 +3842,7 @@ function goToSell()
     drawBuyStatic()
     drawBuyItemsList()
     drawBuyButtons()
-    forceRender()
+    renderBuffer()
 end
 
 function goToSellConfirm(item)
@@ -3902,7 +3903,7 @@ function goToHelp()
         }
         drawFlexButton(backButton)
         drawTempMessage()
-        forceRender()
+        renderBuffer()
     end
 end
 

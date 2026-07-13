@@ -11,7 +11,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА1
+-- АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА2
 -- ============================================================
 
 local function setupAutoStart()
@@ -3404,6 +3404,29 @@ function drawFeedbacksList()
         end
     end
     
+    -- ★★★ ОБНОВЛЯЕМ playerHasFeedback ИЗ ЛОКАЛЬНЫХ ДАННЫХ ★★★
+    if currentPlayer then
+        local player = playersIndex[currentPlayer]
+        if player then
+            playerHasFeedback = player.hasFeedback or false
+            -- Проверяем, есть ли отзыв от этого игрока в списке
+            local found = false
+            for _, fb in ipairs(feedbacks) do
+                if fb.name == currentPlayer then
+                    found = true
+                    break
+                end
+            end
+            if found ~= playerHasFeedback then
+                playerHasFeedback = found
+                if player then
+                    player.hasFeedback = found
+                    saveDBDeferred()
+                end
+            end
+        end
+    end
+    
     clear()
     drawScreenBorder()
 
@@ -5830,11 +5853,19 @@ function main()
                 end
                 local addBtn = {x=36, y=24, xs=14, ys=1}
                 if isButtonClicked(addBtn, x, y) then
+                    -- ★★★ ПРОВЕРЯЕМ ЗАНОВО ПЕРЕД КЛИКОМ ★★★
+                    if currentPlayer then
+                        local player = playersIndex[currentPlayer]
+                        if player then
+                            playerHasFeedback = player.hasFeedback or false
+                        end
+                    end
                     if playerHasFeedback then
                         showTempMessage("Вы уже оставляли отзыв!", 2)
                     else
                         feedbackInput = ""
                         feedbackEditMode = true
+                        currentScreen = "feedback_input"
                         markDirty()
                     end
                     goto continue

@@ -11,7 +11,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- АВТОМАТИЧЕСКАЯ12361 НАСТРОЙКА АВТОЗАПУСКА
+-- АВТОМАТИЧЕСКАЯ2466667 НАСТРОЙКА АВТОЗАПУСКА
 -- ============================================================
 
 local function setupAutoStart()
@@ -633,6 +633,7 @@ function safeExit()
     
     -- ★★★ 7. МГНОВЕННО РИСУЕМ ЭКРАН ПРИВЕТСТВИЯ ★★★
     drawWelcomeScreen()
+    forceRender()
     writeDebugLog("🖥️ Экран приветствия отображён")
     
     -- ★★★ 8. АСИНХРОННО СОХРАНЯЕМ ДАННЫЕ (В ФОНЕ) ★★★
@@ -642,10 +643,6 @@ function safeExit()
     
     -- ★★★ 9. СБРАСЫВАЕМ ФЛАГ ВЫХОДА ★★★
     isShuttingDown = false
-
-    -- ★★★ В КОНЦЕ ДОБАВЛЯЕМ ★★★
-    drawWelcomeScreen()
-    forceRender()
     
     writeDebugLog("✅ Безопасный выход завершён")
     writeErrorLog("🔴 Терминал #1 (PIM MARKET) остановлен")
@@ -3212,8 +3209,8 @@ function drawMainMenu()
         bufferFill(1, 25, 80, 1, " ", colors.text_main, colors.bg_main)
     end
     
-    -- ★★★ ПРИНУДИТЕЛЬНО ОТРИСОВЫВАЕМ БУФЕР ★★★
-    forceRender()
+    -- ★★★ НЕ ДОБАВЛЯЙ forceRender() ЗДЕСЬ! ★★★
+    -- forceRender() -- ❌ УБРАТЬ!
 end
 
 function drawShopMenu()
@@ -3879,19 +3876,18 @@ function goBackToMenu()
     writeDebugLog("goBackToMenu()")
     showShopDenied = false
     currentScreen = "menu"
-    -- ★★★ НЕ ИСПОЛЬЗУЙ markDirty() - ИСПОЛЬЗУЙ forceRender() ★★★
     updateSelectorDisplay(nil)
     pcall(selector.setSlot, 0, nil)
     pcall(selector.setSlot, 1, nil)
     drawMainMenu()
-    forceRender()
+    forceRender()  -- ★★★ ОБНОВЛЯЕМ ЭКРАН ★★★
 end
 
 function goToShop()
     writeDebugLog("goToShop()")
     currentScreen = "shop"
     drawShopMenu()
-    forceRender()
+    forceRender()  -- ★★★ ОБНОВЛЯЕМ ЭКРАН ★★★
 end
 
 function goToBuy()
@@ -5614,8 +5610,9 @@ MOUSE_DEBOUNCE = 0.05
 
 function main()
     writeDebugLog("🚀 main() запущен")
+    
     drawWelcomeScreen()
-    forceRender()  -- ★★★ ДОБАВЬ ЭТУ СТРОКУ ★★★
+    forceRender()  -- ★★★ ТОЛЬКО ЗДЕСЬ ★★★
     
     writeErrorLog("🟢 Терминал #1 (PIM MARKET) запущен")
 
@@ -6347,13 +6344,13 @@ function main()
             if shopPaused then
                 writeDebugLog("Режим обслуживания активен, вход запрещён для: " .. playerName)
                 drawWelcomeScreen()
-                forceRender()  -- ★★★ ДОБАВИТЬ ★★★
+                forceRender()
                 while shopPaused do
                     local ev2 = {event.pull(1)}
                     if ev2[1] == "player_off" or ev2[1] == "pim_player_leave" then
                         writeDebugLog("👤 Игрок ушёл с PIM: " .. playerName)
                         drawWelcomeScreen()
-                        forceRender()  -- ★★★ ДОБАВИТЬ ★★★
+                        forceRender()
                         break
                     end
                 end
@@ -6463,11 +6460,11 @@ function main()
                 if currentScreen == "auth" or currentScreen == "account_loading" then
                     currentScreen = "menu"
                     drawMainMenu()
-                    forceRender()  -- ★★★ ДОБАВИТЬ ★★★
+                    forceRender()
                 end
                 getBindingStatus()
-                drawMainMenu()  -- ★★★ ДОБАВИТЬ ★★★
-                forceRender()   -- ★★★ ДОБАВИТЬ ★★★
+                drawMainMenu()
+                forceRender()
             else
                 writeDebugLog("Новый вход: " .. playerName)
                 coinBalance = 0.0
@@ -6517,8 +6514,8 @@ function main()
                     event.timer(2, function()
                         currentPlayer = nil
                         currentScreen = "welcome"
-                        drawWelcomeScreen()  -- ★★★ ДОБАВИТЬ ★★★
-                        forceRender()        -- ★★★ ДОБАВИТЬ ★★★
+                        drawWelcomeScreen()
+                        forceRender()
                         return false
                     end)
                 else
@@ -6537,8 +6534,8 @@ function main()
                     end
                     
                     currentScreen = "menu"
-                    drawMainMenu()      -- ★★★ ДОБАВИТЬ ★★★
-                    forceRender()       -- ★★★ ДОБАВИТЬ ★★★
+                    drawMainMenu()
+                    forceRender()
                     addLog("👤 Вход: " .. currentPlayer)
                     sendToWeb("/api/new_log", toJson({
                         time = getRealTimeHM(),
@@ -6586,7 +6583,7 @@ function main()
                 end
             end
             
-            -- ★★★ ПРИНУДИТЕЛЬНО ОБНОВЛЯЕМ ЭКРАН ★★★
+            -- ★★★ ПОСЛЕ ВЫХОДА ВОЗВРАЩАЕМСЯ НА ПРИВЕТСТВИЕ ★★★
             drawWelcomeScreen()
             forceRender()
             

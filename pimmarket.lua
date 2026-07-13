@@ -11,7 +11,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- АВТОМАТИЧЕСКАЯ246 НАСТРОЙКА АВТОЗАПУСКА44444
+-- АВТОМАТИЧЕСКАЯ246 НАСТРОЙКА АВТОЗАПУСКА111111111
 -- ============================================================
 
 local function setupAutoStart()
@@ -1676,7 +1676,8 @@ boundPlayer = nil
 bindingCache = {
     isBound = false,
     lastCheck = 0,
-    checkInterval = 10
+    checkInterval = 10,
+    pendingUpdate = false
 }
 
 shopItems = {}
@@ -2008,40 +2009,75 @@ function getBindingStatus()
         return false
     end
    
+    -- ★★★ 1. ЕСЛИ КЕШ СВЕЖИЙ - ВОЗВРАЩАЕМ МГНОВЕННО ★★★
     local now = os.time()
     if now - (bindingCache.lastCheck or 0) < bindingCache.checkInterval then
         return bindingCache.isBound
     end
    
-    bindingCache.lastCheck = now
-   
-    local success, response = pcall(function()
-        return internet.request(WEB_URL .. "/api/player_binding?site_user=" .. currentPlayer)
-    end)
-   
-    if success and response then
-        local body = ""
-        for chunk in response do
-            body = body .. chunk
-        end
-        local data = parseJSON(body)
-       
-        if data and data.success and data.player then
-            boundPlayer = data.player
-            bindingCache.isBound = true
-            writeDebugLog("✅ Привязка подтверждена: " .. boundPlayer)
-            return true
-        else
-            boundPlayer = nil
-            bindingCache.isBound = false
-            writeDebugLog("❌ Привязка не найдена")
+    -- ★★★ 2. ЕСЛИ КЕШ УСТАРЕЛ - ЗАПУСКАЕМ ФОНОВОЕ ОБНОВЛЕНИЕ ★★★
+    if not bindingCache.pendingUpdate then
+        bindingCache.pendingUpdate = true
+        
+        -- Фоновый запрос (НЕ БЛОКИРУЕТ UI)
+        event.timer(0.1, function()
+            local success, response = pcall(function()
+                return internet.request(WEB_URL .. "/api/player_binding?site_user=" .. currentPlayer)
+            end)
+           
+            if success and response then
+                local body = ""
+                for chunk in response do
+                    body = body .. chunk
+                end
+                local data = parseJSON(body)
+               
+                local newStatus = false
+                if data and data.success and data.player then
+                    boundPlayer = data.player
+                    newStatus = true
+                else
+                    boundPlayer = nil
+                    newStatus = false
+                end
+               
+                -- Обновляем кеш
+                bindingCache.isBound = newStatus
+                bindingCache.lastCheck = os.time()
+                bindingCache.pendingUpdate = false
+               
+                -- Если статус изменился - обновляем UI
+                if currentScreen == "menu" then
+                    markDirty()
+                end
+            else
+                -- При ошибке - обновляем время, чтобы не спамить
+                bindingCache.lastCheck = os.time()
+                bindingCache.pendingUpdate = false
+            end
             return false
-        end
-    else
-        writeDebugLog("⚠️ Не удалось проверить привязку")
-        return bindingCache.isBound
+        end)
     end
+   
+    -- ★★★ 3. ВОЗВРАЩАЕМ ТЕКУЩИЙ КЕШ (МГНОВЕННО) ★★★
+    return bindingCache.isBound
 end
+
+function forceUpdateBindingStatus()
+    if not currentPlayer then
+        return
+    end
+    bindingCache.lastCheck = 0
+    bindingCache.isBound = false
+    bindingCache.pendingUpdate = false
+    getBindingStatus()
+end
+createTimer(30, function()
+    if not TRANSACTION_LOCK then
+        checkBindingStatus()
+    end
+    return true
+end, true)
 
 createTimer(30, function()
     if not TRANSACTION_LOCK then
@@ -2839,7 +2875,6 @@ function drawWelcomeScreen()
 end
 
 function drawMainMenu()
-    writeDebugLog("drawMainMenu()")
     clear()
     drawScreenBorder()
     
@@ -2867,10 +2902,11 @@ function drawMainMenu()
         gpu.setForeground(colors.tomato)
         gpu.set(balanceX + unicode.len("Баланс: ") + unicode.len(string.format("%.2f", coin) .. " Coina ₵") + unicode.len(" | "), 5, "ЭМЫ: " .. string.format("%.2f", ema) .. " ۞")
         
+        -- ★★★ ИСПОЛЬЗУЕМ КЕШ - МГНОВЕННО ★★★
+        local isBound = getBindingStatus()  -- Возвращает из кеша мгновенно
+        
         local boundInfo = ""
         local boundColor = colors.error
-        
-        local isBound = getBindingStatus()
         
         if isBound then
             boundInfo = "  АККАУНТ ПРИВЯЗАН " 
@@ -5947,17 +5983,46 @@ function main()
                 elseif ch == 8 then
                     searchInput = unicode.sub(searchInput or "", 1, -2)
                     shopSearch = searchInput or ""
-                    -- ★★★ ИСПРАВЛЕНИЕ: ПЕРЕРИСОВЫВАЕМ ТОЛЬКО СПИСОК ★★★
+                    -- ★★★ ПЕРЕРИСОВЫВАЕМ ТОЛЬКО СПИСОК ★★★
                     filteredItems = getFilteredItems()
                     drawBuyItemsList()
                     redrawSearchField()
+                    
+                    -- ★★★ НОВОЕ: ПРОВЕРЯЕМ, ЕСЛИ ПОИСК ПУСТ - СБРАСЫВАЕМ ВЫБОР ★★★
+                    if shopSearch == "" then
+                        -- Если поиск пустой, сбрасываем выбранный товар
+                        if selectedItem ~= nil then
+                            selectedItem = nil
+                            selectedIndex = 0
+                            -- ★★★ ОБНОВЛЯЕМ КНОПКУ (СТАНОВИТСЯ НЕАКТИВНОЙ) ★★★
+                            drawBuyButton()
+                        end
+                    end
                 elseif ch >= 32 then
                     searchInput = (searchInput or "") .. unicode.char(ch)
                     shopSearch = searchInput or ""
-                    -- ★★★ ИСПРАВЛЕНИЕ: ПЕРЕРИСОВЫВАЕМ ТОЛЬКО СПИСОК ★★★
+                    -- ★★★ ПЕРЕРИСОВЫВАЕМ ТОЛЬКО СПИСОК ★★★
                     filteredItems = getFilteredItems()
                     drawBuyItemsList()
                     redrawSearchField()
+                    
+                    -- ★★★ НОВОЕ: ЕСЛИ ВВЕЛИ НОВЫЙ СИМВОЛ - СБРАСЫВАЕМ ВЫБОР ★★★
+                    if selectedItem ~= nil then
+                        -- Проверяем, есть ли выбранный товар в отфильтрованном списке
+                        local stillVisible = false
+                        for _, item in ipairs(filteredItems) do
+                            if item == selectedItem then
+                                stillVisible = true
+                                break
+                            end
+                        end
+                        if not stillVisible then
+                            -- Если товар не виден в поиске - сбрасываем выбор
+                            selectedItem = nil
+                            selectedIndex = 0
+                            drawBuyButton()
+                        end
+                    end
                 end
                 goto continue
             elseif currentScreen == "feedback_input" and feedbackEditMode then
@@ -6009,40 +6074,33 @@ function main()
 
         if e == "player_on" or e == "pim" or e == "pim_player_enter" then
             local playerName = ev[2] or "Игрок"
-            writeDebugLog("player_on: " .. playerName)
             
             if not playerName or playerName == "" or playerName == "Игрок" then
-                writeDebugLog("⚠️ Пропущен вход: пустое имя игрока")
                 goto continue
             end
             
             if currentPlayer and currentPlayer ~= "" then
-                writeDebugLog("⚠️ Игрок уже авторизован: " .. currentPlayer .. ", игнорируем вход: " .. playerName)
                 goto continue
             end
             
             if shopPaused then
-                writeDebugLog("Режим обслуживания активен, вход запрещён для: " .. playerName)
                 drawWelcomeScreen()
                 while shopPaused do
                     local ev2 = {event.pull(1)}
                     if ev2[1] == "player_off" or ev2[1] == "pim_player_leave" then
-                        writeDebugLog("👤 Игрок ушёл с PIM: " .. playerName)
                         drawWelcomeScreen()
                         break
                     end
                 end
                 goto continue
             end
-                        
+                                
             if not pimOwner then
                 pimOwner = playerName
             end
             currentPlayer = playerName:match("^%s*(.-)%s*$") or playerName
             
-            -- ★★★ ПРОВЕРКА: currentPlayer не должен быть nil ★★★
             if not currentPlayer or currentPlayer == "" then
-                writeDebugLog("⚠️ currentPlayer стал nil, используем исходное имя")
                 currentPlayer = playerName
             end
             
@@ -6060,7 +6118,7 @@ function main()
                     banInfo = data
                 end
             end
-        
+                
             if banInfo then
                 local reason = "Не указана"
                 if banInfo.reason_b64 then
@@ -6116,7 +6174,6 @@ function main()
                 while true do
                     local ev2 = {event.pull(1)}
                     if ev2[1] == "player_off" or ev2[1] == "pim_player_leave" then
-                        writeDebugLog("👤 Игрок ушёл с PIM: " .. playerName)
                         drawWelcomeScreen()
                         break
                     end
@@ -6134,10 +6191,10 @@ function main()
                     currentScreen = "menu"
                     markDirty()
                 end
-                getBindingStatus()
+                -- ★★★ ПРИНУДИТЕЛЬНО ОБНОВЛЯЕМ СТАТУС ПРИ ВХОДЕ ★★★
+                forceUpdateBindingStatus()
                 markDirty()
             else
-                writeDebugLog("Новый вход: " .. playerName)
                 coinBalance = 0.0
                 emaBalance = 0.0
                 playerAgreed = false
@@ -6160,7 +6217,6 @@ function main()
                     playersIndex[currentPlayer] = player
                     saveDBDeferred()
                     addLog("✅ Новый игрок: " .. currentPlayer)
-                    writeDebugLog("Создан новый игрок: " .. currentPlayer)
                     sendToWeb("/api/new_log", toJson({
                         time = getRealTimeHM(),
                         level = "SUCCESS",
@@ -6194,14 +6250,14 @@ function main()
                     playerRegDate = player.regDate or getRealTimeString()
                     alreadyAuthorized = true
                     
-                    writeDebugLog("Вход выполнен: " .. currentPlayer .. ", баланс: " .. coinBalance .. ", agreed: " .. tostring(playerAgreed))
-                    
                     if selector then
                         addLog("🖥 Селектор доступен")
                     end
                     
                     currentScreen = "menu"
                     markDirty()
+                    -- ★★★ ПРИНУДИТЕЛЬНО ОБНОВЛЯЕМ СТАТУС ПРИ ВХОДЕ ★★★
+                    forceUpdateBindingStatus()
                     addLog("👤 Вход: " .. currentPlayer)
                     sendToWeb("/api/new_log", toJson({
                         time = getRealTimeHM(),

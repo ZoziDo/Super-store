@@ -11,7 +11,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА1
+-- АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА123
 -- ============================================================
 
 local function setupAutoStart()
@@ -1065,17 +1065,8 @@ function clear_pending_changes(ids)
 end
 
 function send_pending_changes()
-    writeDebugFile(">>> send_pending_changes()")
-    writeDebugFile("   pending_buffer: " .. #pending_buffer .. " записей")
-    
     if #pending_buffer == 0 then
-        writeDebugFile("   буфер пуст, выходим")
         return true
-    end
-
-    -- Показываем, что будем отправлять
-    for i, ch in ipairs(pending_buffer) do
-        writeDebugFile("   [" .. i .. "] " .. ch.type .. " " .. ch.data.player .. " " .. ch.data.item)
     end
 
     local changes_to_send = {}
@@ -1086,10 +1077,6 @@ function send_pending_changes()
     local payload = { changes = changes_to_send }
     local json_payload = toJson(payload)
 
-    writeDebugFile("📤 Отправка дельты: " .. #changes_to_send .. " изменений")
-    writeDebugFile("   URL: " .. WEB_URL .. "/api/delta")
-    writeDebugFile("   Payload: " .. json_payload)
-
     local success, response = pcall(function()
         return internet.request(WEB_URL .. "/api/delta", json_payload, {
             ["Content-Type"] = "application/json",
@@ -1099,40 +1086,22 @@ function send_pending_changes()
     end)
 
     if success and response then
-        writeDebugFile("✅ Ответ получен")
         local body = ""
-        local timeout = os.clock() + 5
         for chunk in response do
-            if os.clock() > timeout then
-                writeDebugFile("⚠️ Таймаут чтения ответа")
-                break
-            end
             body = body .. chunk
         end
-        
-        writeDebugFile("   body: " .. body)
         
         local data = parseJSON(body)
         if data and data.status == "ok" then
             pending_buffer = {}
             save_pending_buffer()
-            writeDebugFile("✅ Дельта подтверждена, буфер очищен")
             retry_delay = 10
             return true
         else
-            writeDebugFile("⚠️ Ошибка сервера, буфер сохранён")
-            if data then
-                writeDebugFile("   data.status = " .. tostring(data.status))
-            end
             retry_delay = math.min(retry_delay * 2, 120)
             return false
         end
     else
-        writeDebugFile("⚠️ Ошибка соединения, буфер сохранён")
-        writeDebugFile("   success=" .. tostring(success))
-        if not success then
-            writeDebugFile("   err=" .. tostring(err))
-        end
         retry_delay = math.min(retry_delay * 2, 120)
         return false
     end
@@ -1400,6 +1369,7 @@ function addTransaction(type, playerName, item, qty, value_coin, value_ema)
     }
     writeDebugFile("📤 Добавлено изменение в буфер: " .. change.id)
     add_pending_change(change)
+    send_pending_changes()
 end
 
 function broadcastUpdate()

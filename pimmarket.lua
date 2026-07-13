@@ -11,7 +11,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ★★ АВТОМАТИЧЕСКАЯ123 НАСТРОЙКА АВТОЗАПУСКА ★★
+-- ★★ АВТОМАТИЧЕСКАЯ1235 НАСТРОЙКА АВТОЗАПУСКА ★★
 -- ============================================================
 
 local function setupAutoStart()
@@ -478,7 +478,7 @@ end
 logQueue = {}
 
 function addLogEntry(text, level)
-    if not text then text = "?"
+    if not text then text = "?" end
     level = level or "INFO"
     local entry = {
         text = text,
@@ -503,15 +503,15 @@ end
 
 LOG_FLUSH_INTERVAL = 15
 function flushLogQueue()
-    if #logQueue == 0 then return
+    if #logQueue == 0 then 
+        return 
+    end
     
-    -- ★★★ КОПИРУЕМ ЛОГИ ★★★
     local batch = {}
     for _, e in ipairs(logQueue) do
         table.insert(batch, { time = e.time, text = e.text, level = e.level })
     end
     
-    -- ★★★ ОТПРАВЛЯЕМ (С ЗАЩИТОЙ ОТ ОШИБОК) ★★★
     local success, err = pcall(function()
         sendToWeb("/api/logs_batch", toJson({ logs = batch }))
     end)
@@ -522,7 +522,6 @@ function flushLogQueue()
         return
     end
     
-    -- ★★★ ОЧИЩАЕМ ОЧЕРЕДЬ ТОЛЬКО ПОСЛЕ УСПЕШНОЙ ОТПРАВКИ ★★★
     logQueue = {}
     writeDebugLog("📤 Отправлено " .. #batch .. " логов")
 end

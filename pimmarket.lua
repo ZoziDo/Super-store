@@ -11,7 +11,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- АВТОМАТИЧЕСКАЯ246 НАСТРОЙКА АВТОЗАПУСКА77777777
+-- АВТОМАТИЧЕСКАЯ246 НАСТРОЙКА АВТОЗАПУСКА12333151
 -- ============================================================
 
 local function setupAutoStart()
@@ -96,6 +96,13 @@ function getRealTimeHM()
     return os.date("%H:%M:%S", getRealTimestamp())
 end
 
+-- ============================================================
+-- ★★★ ПУСТЫЕ ФУНКЦИИ ЛОГИРОВАНИЯ ★★★
+-- ============================================================
+
+function writeDebugLog(msg) end
+function writeErrorLog(msg) end
+function writeDebugFile(msg) end
 
 -- ============================================================
 -- ★★★ ОЧИСТКА СТРОК ОТ НЕВИДИМЫХ СИМВОЛОВ ★★★
@@ -2427,23 +2434,17 @@ function drawBuyStatic()
 end
 
 function drawSingleRow(y, item, isHovered, isSelected, itemIndex)
-    writeDebugLog("drawSingleRow: y=" .. tostring(y) .. ", itemIndex=" .. tostring(itemIndex))
-    
     if not item then
-        writeErrorLog("❌ item = nil в drawSingleRow!")
         return
     end
     
     if not item.displayName then
-        writeErrorLog("⚠️ item.displayName = nil, устанавливаем 'Неизвестно'")
         item.displayName = "Неизвестно"
     end
     if not item.internalName then
-        writeErrorLog("⚠️ item.internalName = nil, устанавливаем 'unknown'")
         item.internalName = "unknown"
     end
     if item.qty == nil then
-        writeErrorLog("⚠️ item.qty = nil, устанавливаем 0")
         item.qty = 0
     end
     if item.price == nil then
@@ -5364,26 +5365,33 @@ function main()
                     local clickedIndex = (listScroll or 1) + relativeRow - 1
                     local item = filteredItems[clickedIndex]
                     
-                    writeDebugFile("🖱️ КЛИК ПО ТОВАРУ: индекс=" .. clickedIndex)
-                    if item then
-                        writeDebugFile("   Товар: " .. tostring(item.displayName) .. ", qty=" .. tostring(item.qty))
-                    else
-                        writeDebugFile("   item = nil")
-                    end
-                    
                     if item and (currentShopMode ~= "buy" or item.qty > 0) then
+                        -- ★★★ ИСПРАВЛЕНИЕ: ОБНОВЛЯЕМ ТОЛЬКО ВЫБРАННЫЙ РЯД ★★★
+                        -- Сначала сбрасываем подсветку старого выбранного
+                        local oldSelectedIndex = selectedIndex
                         selectedIndex = clickedIndex
                         selectedItem = item
                         hoveredIndex = 0
-                        writeDebugFile("✅ ТОВАР ВЫБРАН: " .. tostring(item.displayName))
-                        updateSelectorDisplay(selectedItem)
-                        markDirty()
-                    else
-                        if not item then
-                            writeDebugFile("❌ item = nil")
-                        elseif currentShopMode == "buy" and item.qty <= 0 then
-                            writeDebugFile("❌ Товара нет в наличии (qty = " .. item.qty .. ")")
+                        
+                        -- Перерисовываем только старый и новый ряды
+                        if oldSelectedIndex > 0 and oldSelectedIndex ~= clickedIndex then
+                            -- Перерисовываем старый ряд (снимаем подсветку)
+                            local oldRow = oldSelectedIndex - listScroll + 1
+                            if oldRow >= 1 and oldRow <= visibleRows then
+                                local oldItem = filteredItems[oldSelectedIndex]
+                                if oldItem then
+                                    drawSingleRow(6 + oldRow, oldItem, false, false, oldSelectedIndex)
+                                end
+                            end
                         end
+                        
+                        -- Перерисовываем новый ряд (с подсветкой)
+                        local newRow = clickedIndex - listScroll + 1
+                        if newRow >= 1 and newRow <= visibleRows then
+                            drawSingleRow(6 + newRow, item, false, true, clickedIndex)
+                        end
+                        
+                        updateSelectorDisplay(selectedItem)
                     end
                     goto continue
                 end
@@ -5393,7 +5401,7 @@ function main()
                     if total > visibleRows then
                         local clickPos = y - 6
                         listScroll = math.floor((clickPos - 1) * (total - visibleRows) / visibleRows) + 1
-                        markDirty()
+                        drawBuyItemsList()  -- При скролле нужно перерисовать всё
                     end
                     goto continue
                 end
@@ -5458,24 +5466,12 @@ function main()
                 end
 
                 if isButtonClicked(nextButton, x, y) then
-                    writeDebugFile("🖱️ НАЖАТА КНОПКА: " .. (nextButton.text or "unknown"))
-                    writeDebugFile("   selectedItem = " .. tostring(selectedItem))
-                    
-                    if selectedItem then
-                        writeDebugFile("   displayName = " .. tostring(selectedItem.displayName))
-                        writeDebugFile("   qty = " .. tostring(selectedItem.qty))
-                    end
-                    
                     if selectedItem and (currentShopMode ~= "buy" or selectedItem.qty > 0) then
-                        writeDebugFile("✅ УСЛОВИЕ ВЫПОЛНЕНО!")
                         if currentShopMode == "buy" then
                             local needCoin = selectedItem.priceCoin or 0
                             local needEma = selectedItem.priceEma or 0
-                            writeDebugFile("   needCoin = " .. needCoin .. ", needEma = " .. needEma)
-                            writeDebugFile("   coinBalance = " .. coinBalance .. ", emaBalance = " .. emaBalance)
                             
                             if (needCoin > 0 and coinBalance < needCoin) or (needEma > 0 and emaBalance < needEma) then
-                                writeDebugFile("❌ НЕДОСТАТОЧНО СРЕДСТВ!")
                                 showInsufficientPopup = true
                                 insufficientBalanceCoin = coinBalance
                                 insufficientBalanceEma = emaBalance
@@ -5483,18 +5479,9 @@ function main()
                                 drawInsufficientPopup()
                                 goto continue
                             end
-                            writeDebugFile("✅ ПЕРЕХОД НА ЭКРАН ПОКУПКИ")
                             goToPurchase(selectedItem)
                         else
-                            writeDebugFile("✅ ПЕРЕХОД НА ЭКРАН ПРОДАЖИ")
                             goToSellConfirm(selectedItem)
-                        end
-                    else
-                        writeDebugFile("❌ УСЛОВИЕ НЕ ВЫПОЛНЕНО!")
-                        if not selectedItem then
-                            writeDebugFile("   → selectedItem = nil")
-                        elseif currentShopMode == "buy" and selectedItem.qty <= 0 then
-                            writeDebugFile("   → товара нет в наличии (qty = " .. selectedItem.qty .. ")")
                         end
                     end
                     goto continue

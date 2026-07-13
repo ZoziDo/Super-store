@@ -11,7 +11,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- АВТОМАТИЧЕСКАЯ246 НАСТРОЙКА АВТОЗАПУСКА111111111
+-- АВТОМАТИЧЕСКАЯ246 НАСТРОЙКА АВТОЗАПУСКА11114444
 -- ============================================================
 
 local function setupAutoStart()
@@ -1352,7 +1352,8 @@ function addTransaction(type, playerName, item, qty, value_coin, value_ema)
                 agreed = false,
                 hasFeedback = false,
                 transactionsList = {},
-                regDate = getRealTimeString()
+                regDate = getRealTimeString(),
+                site_user = nil  -- ★★★ ДОБАВИТЬ ★★★
             }
             players[playerName] = player
             playersIndex[playerName] = player
@@ -1467,7 +1468,8 @@ function sendStats()
             emaBalance = data.emaBalance or 0,
             transactions = data.transactions or 0,
             banned = data.banned or false,
-            transactionsList = data.transactionsList
+            transactionsList = data.transactionsList,
+            site_user = data.site_user
         })
     end
     
@@ -2008,18 +2010,27 @@ function getBindingStatus()
         bindingCache.isBound = false
         return false
     end
-   
-    -- ★★★ 1. ЕСЛИ КЕШ СВЕЖИЙ - ВОЗВРАЩАЕМ МГНОВЕННО ★★★
+    
+    -- ★★★ СНАЧАЛА ПРОВЕРЯЕМ В ДАННЫХ ИГРОКА ★★★
+    local player = playersIndex[currentPlayer]
+    if player and player.site_user and player.site_user ~= "" then
+        boundPlayer = player.site_user
+        bindingCache.isBound = true
+        bindingCache.lastCheck = os.time()
+        return true
+    end
+    
+    -- Если в данных игрока нет привязки, проверяем кеш
     local now = os.time()
     if now - (bindingCache.lastCheck or 0) < bindingCache.checkInterval then
         return bindingCache.isBound
     end
-   
-    -- ★★★ 2. ЕСЛИ КЕШ УСТАРЕЛ - ЗАПУСКАЕМ ФОНОВОЕ ОБНОВЛЕНИЕ ★★★
+    
+    bindingCache.lastCheck = now
+    
+    -- ★★★ ФОНОВАЯ ПРОВЕРКА НА СЕРВЕРЕ (ДЛЯ СИНХРОНИЗАЦИИ) ★★★
     if not bindingCache.pendingUpdate then
         bindingCache.pendingUpdate = true
-        
-        -- Фоновый запрос (НЕ БЛОКИРУЕТ UI)
         event.timer(0.1, function()
             local success, response = pcall(function()
                 return internet.request(WEB_URL .. "/api/player_binding?site_user=" .. currentPlayer)
@@ -2032,26 +2043,36 @@ function getBindingStatus()
                 end
                 local data = parseJSON(body)
                
-                local newStatus = false
                 if data and data.success and data.player then
+                    -- На сервере есть привязка, сохраняем в данных игрока
+                    if currentPlayer and playersIndex[currentPlayer] then
+                        local p = playersIndex[currentPlayer]
+                        p.site_user = data.player
+                        saveDBDeferred()
+                        addLog("🔗 Привязка восстановлена с сервера: " .. currentPlayer .. " -> " .. data.player)
+                    end
                     boundPlayer = data.player
-                    newStatus = true
+                    bindingCache.isBound = true
                 else
+                    -- На сервере нет привязки, очищаем
+                    if currentPlayer and playersIndex[currentPlayer] then
+                        local p = playersIndex[currentPlayer]
+                        if p.site_user then
+                            p.site_user = nil
+                            saveDBDeferred()
+                            addLog("🔓 Привязка отозвана на сервере: " .. currentPlayer)
+                        end
+                    end
                     boundPlayer = nil
-                    newStatus = false
+                    bindingCache.isBound = false
                 end
-               
-                -- Обновляем кеш
-                bindingCache.isBound = newStatus
                 bindingCache.lastCheck = os.time()
                 bindingCache.pendingUpdate = false
                
-                -- Если статус изменился - обновляем UI
                 if currentScreen == "menu" then
                     markDirty()
                 end
             else
-                -- При ошибке - обновляем время, чтобы не спамить
                 bindingCache.lastCheck = os.time()
                 bindingCache.pendingUpdate = false
             end
@@ -2059,8 +2080,28 @@ function getBindingStatus()
         end)
     end
    
-    -- ★★★ 3. ВОЗВРАЩАЕМ ТЕКУЩИЙ КЕШ (МГНОВЕННО) ★★★
     return bindingCache.isBound
+end
+
+function forceSyncBinding()
+    if not currentPlayer then
+        return
+    end
+    
+    -- Сначала проверяем в данных игрока
+    local player = playersIndex[currentPlayer]
+    if player and player.site_user and player.site_user ~= "" then
+        boundPlayer = player.site_user
+        bindingCache.isBound = true
+        bindingCache.lastCheck = os.time()
+        return
+    end
+    
+    -- Если нет - запускаем фоновую проверку
+    bindingCache.lastCheck = 0
+    bindingCache.isBound = false
+    bindingCache.pendingUpdate = false
+    getBindingStatus()
 end
 
 function forceUpdateBindingStatus()
@@ -2072,12 +2113,6 @@ function forceUpdateBindingStatus()
     bindingCache.pendingUpdate = false
     getBindingStatus()
 end
-createTimer(30, function()
-    if not TRANSACTION_LOCK then
-        checkBindingStatus()
-    end
-    return true
-end, true)
 
 createTimer(30, function()
     if not TRANSACTION_LOCK then
@@ -4106,64 +4141,6 @@ function showUnbindConfirmPopup()
     end
 end
 
-function verifyAuthCode(code)
-    writeDebugLog("verifyAuthCode: " .. code)
-    
-    drawCenteredText(15, "Проверка кода...", colors.accent_secondary)
-    os.sleep(0.5)
-    
-    local success, response = pcall(function()
-        return internet.request(WEB_URL .. "/api/verify_auth_code", toJson({
-            code = code,
-            game_player = currentPlayer
-        }), {
-            ["Content-Type"] = "application/json",
-            ["Connection"] = "close",
-            ["Timeout"] = "5"
-        })
-    end)
-    
-    if success and response then
-        local body = ""
-        for chunk in response do
-            body = body .. chunk
-        end
-        local data = parseJSON(body)
-        
-        if data and data.success then
-            drawCenteredText(15, "✅ Аккаунт успешно привязан!", colors.success)
-            drawCenteredText(16, "Теперь вы можете пользоваться магазином", colors.text_main)
-            
-            if data.player then
-                boundPlayer = data.player
-                saveBoundPlayer(data.player)
-                bindingCache.isBound = true
-                bindingCache.lastCheck = os.clock()
-                addLog("🔗 Аккаунт привязан: " .. boundPlayer)
-            end
-            
-            syncCurrentPlayer()
-            os.sleep(2)
-            goBackToMenu()
-            
-        else
-            local errorMsg = (data and data.error) or "Ошибка привязки"
-            drawCenteredText(15, "❌ " .. errorMsg, colors.error)
-            
-            if data and data.bound then
-                drawCenteredText(16, "Этот игрок уже привязан к другому аккаунту", colors.text_main)
-            end
-            
-            os.sleep(2)
-            markDirty()
-        end
-    else
-        drawCenteredText(15, "❌ Ошибка соединения с сервером", colors.error)
-        os.sleep(2)
-        markDirty()
-    end
-end
-
 function unbindAccount()
     if not currentPlayer then
         showTempMessage("Ошибка: игрок не авторизован", 2)
@@ -4190,16 +4167,40 @@ function unbindAccount()
         local data = parseJSON(body)
         
         if data and data.success then
-            boundPlayer = nil
-            clearBoundPlayer()
-            
-            gpu.setForeground(colors.success)
-            gpu.set(28, 17, "✅ Аккаунт ОТВЯЗАН!")
-            gpu.setForeground(colors.text_main)
-            gpu.set(23, 18, "   Доступ к магазину ограничен")
-            addLog("🔓 Аккаунт отвязан: " .. currentPlayer)
-            os.sleep(2)
-            goBackToMenu()
+            -- ★★★ УДАЛЯЕМ ПРИВЯЗКУ ИЗ ДАННЫХ ИГРОКА ★★★
+            if currentPlayer and playersIndex[currentPlayer] then
+                local player = playersIndex[currentPlayer]
+                player.site_user = nil
+                saveDBDeferred()
+                
+                local change = {
+                    id = "unbind_" .. os.time() .. "_" .. math.random(100000),
+                    type = "unbind_player",
+                    data = {
+                        player = currentPlayer
+                    }
+                }
+                add_pending_change(change)
+                
+                boundPlayer = nil
+                clearBoundPlayer()
+                bindingCache.isBound = false
+                bindingCache.lastCheck = 0
+                
+                addLog("🔓 Аккаунт отвязан: " .. currentPlayer)
+                
+                gpu.setForeground(colors.success)
+                gpu.set(28, 17, "✅ Аккаунт ОТВЯЗАН!")
+                gpu.setForeground(colors.text_main)
+                gpu.set(23, 18, "   Доступ к магазину ограничен")
+                os.sleep(2)
+                goBackToMenu()
+            else
+                gpu.setForeground(colors.error)
+                gpu.set(20, 17, "❌ Игрок не найден")
+                os.sleep(2)
+                markDirty()
+            end
         else
             local errorMsg = (data and data.error) or "Ошибка отвязки"
             gpu.setForeground(colors.error)
@@ -5173,6 +5174,29 @@ function checkWebCommands()
                     markDirty()
                     
                     sendResult(true, "Аккаунт отвязан")
+                else
+                    sendResult(false, "Игрок не найден")
+                end
+                goto continue
+            end
+
+            if cmd.command == "sync_binding" then
+                local playerName = d.player
+                local siteUser = d.site_user
+                writeDebugFile("📥 Получена команда синхронизации привязки для: " .. playerName)
+                
+                if playerName and playersIndex[playerName] then
+                    local player = playersIndex[playerName]
+                    if siteUser and siteUser ~= "" then
+                        player.site_user = siteUser
+                        addLog("🔗 Привязка синхронизирована: " .. playerName .. " -> " .. siteUser)
+                    else
+                        player.site_user = nil
+                        addLog("🔓 Привязка удалена: " .. playerName)
+                    end
+                    saveDBDeferred()
+                    markDirty()
+                    sendResult(true, "Привязка синхронизирована")
                 else
                     sendResult(false, "Игрок не найден")
                 end
@@ -6191,8 +6215,7 @@ function main()
                     currentScreen = "menu"
                     markDirty()
                 end
-                -- ★★★ ПРИНУДИТЕЛЬНО ОБНОВЛЯЕМ СТАТУС ПРИ ВХОДЕ ★★★
-                forceUpdateBindingStatus()
+                forceSyncBinding()  -- ★★★ ИСПОЛЬЗУЙ НОВУЮ ФУНКЦИЮ ★★★
                 markDirty()
             else
                 coinBalance = 0.0
@@ -6203,15 +6226,16 @@ function main()
                 
                 local player = playersIndex[currentPlayer]
                 if not player then
-                    player = { 
-                        balance = 0, 
-                        emaBalance = 0, 
-                        transactions = 0, 
-                        banned = false, 
-                        agreed = false, 
+                    player = {
+                        balance = 0,
+                        emaBalance = 0,
+                        transactions = 0,
+                        banned = false,
+                        agreed = false,
                         hasFeedback = false,
                         transactionsList = {},
-                        regDate = getRealTimeString()
+                        regDate = getRealTimeString(),
+                        site_user = nil  -- ★★★ ДОБАВИТЬ ★★★
                     }
                     players[currentPlayer] = player
                     playersIndex[currentPlayer] = player
@@ -6256,8 +6280,7 @@ function main()
                     
                     currentScreen = "menu"
                     markDirty()
-                    -- ★★★ ПРИНУДИТЕЛЬНО ОБНОВЛЯЕМ СТАТУС ПРИ ВХОДЕ ★★★
-                    forceUpdateBindingStatus()
+                    forceSyncBinding()
                     addLog("👤 Вход: " .. currentPlayer)
                     sendToWeb("/api/new_log", toJson({
                         time = getRealTimeHM(),

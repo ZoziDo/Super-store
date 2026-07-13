@@ -11,7 +11,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ★★ АВТОМАТИЧЕСКАЯ124616 НАСТРОЙКА АВТОЗАПУСКА ★★
+-- ★★ АВТОМАТИЧЕСКАЯ1246167 НАСТРОЙКА АВТОЗАПУСКА ★★
 -- ============================================================
 
 local function setupAutoStart()
@@ -652,6 +652,8 @@ function renderCurrentScreen()
         drawBuyStatic()
         drawBuyItemsList()
         drawBuyButtons()
+    elseif currentScreen == "purchase" then
+        drawPurchaseScreen()
     elseif currentScreen == "account" then
         drawAccount({balance=coinBalance, emaBalance=emaBalance, transactions=playerTransactions, regDate=playerRegDate, agreed=playerAgreed})
     elseif currentScreen == "report" then
@@ -3718,7 +3720,9 @@ function goToPurchase(item)
     end
     purchaseItem = item
     purchaseQuantity = 1
+    currentScreen = "purchase"  -- <-- ДОБАВИТЬ ЭТУ СТРОКУ!
     writeDebugFile("✅ purchaseItem установлен: " .. tostring(purchaseItem.displayName))
+    writeDebugFile("✅ currentScreen = " .. currentScreen)
     markDirty()
 end
 

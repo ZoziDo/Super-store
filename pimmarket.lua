@@ -11,7 +11,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- АВТОМАТИЧЕСКАЯ21 НАСТРОЙКА АВТОЗАПУСКА
+-- АВТОМАТИЧЕСКАЯ24 НАСТРОЙКА АВТОЗАПУСКА
 -- ============================================================
 
 local function setupAutoStart()
@@ -4495,6 +4495,224 @@ function performSell()
     writeDebugFile("✅ performSell() ЗАВЕРШЕНА")
     writeDebugFile("   realExtracted=" .. tostring(realExtracted))
     writeDebugFile("   value=" .. tostring(value))
+    writeDebugFile("   currentPlayer=" .. tostring(currentPlayer))
+    writeDebugFile("========================================")
+end
+
+
+-- ============================================================
+-- ИНКРЕМЕНТАЛЬНОЕ ПРИМЕНЕНИЕ ИЗМЕНЕНИЙ (ДЛЯ ТОВАРОВ)
+-- ============================================================
+
+function performBuy()
+    if not playerAgreed then
+        drawCenteredText(20, "Сначала примите пользовательское соглашение", colors.error)
+        os.sleep(2)
+        markDirty()
+        return
+    end
+
+    if TRANSACTION_LOCK then
+        writeDebugLog("⚠️ Покупка уже выполняется")
+        showTempMessage("Подождите, транзакция выполняется...", 2)
+        return
+    end
+    lockTransactions()
+
+    if not purchaseItem then
+        writeErrorLog("❌ performBuy: purchaseItem = nil!")
+        unlockTransactions()
+        return
+    end
+
+    local me = component.me_interface
+    local item = purchaseItem
+
+    local actualQty = getActualItemQuantity(item.internalName, item.damage)
+    if actualQty <= 0 then
+        drawCenteredText(20, "Товар закончился! Обновление списка...", colors.error)
+        os.sleep(0.8)
+        loadBuyItems(true)
+        unlockTransactions()
+        currentScreen = "shop_buy"
+        markDirty()
+        return
+    end
+
+    local qty = purchaseQuantity
+    if qty > actualQty then
+        qty = actualQty
+        purchaseQuantity = qty
+        markDirty()
+    end
+
+    if qty <= 0 then
+        drawCenteredText(20, "Выберите количество!", colors.error)
+        os.sleep(0.8)
+        unlockTransactions()
+        currentScreen = "shop_buy"
+        markDirty()
+        return
+    end
+
+    local totalCoin = (item.priceCoin or 0) * qty
+    local totalEma = (item.priceEma or 0) * qty
+    if coinBalance < totalCoin or emaBalance < totalEma then
+        showInsufficientPopup = true
+        insufficientBalanceCoin = coinBalance
+        insufficientBalanceEma = emaBalance
+        unlockTransactions()
+        markDirty()
+        drawInsufficientPopup()
+        return
+    end
+
+    drawCenteredText(20, "Выполняется покупка...", colors.accent_main)
+    os.sleep(0.4)
+
+    local id = item.internalName
+    if not id:find(":") then
+        id = "minecraft:" .. id
+    end
+    local fingerprint = { id = id, dmg = item.damage or 0 }
+
+    local maxStackSize = 64
+    local ok, detail = pcall(me.getItemDetail, me, item.internalName, item.damage)
+    if ok and detail and detail.maxSize then
+        maxStackSize = detail.maxSize
+    end
+
+    local remaining = qty
+    local extracted = 0
+    local lastError = nil
+
+    while remaining > 0 do
+        local toTake = math.min(remaining, maxStackSize)
+        local success, result = pcall(function()
+            return me.exportItem(fingerprint, PULL_DIRECTION, toTake)
+        end)
+
+        local got = 0
+        if success then
+            if type(result) == "number" then
+                got = result
+            elseif type(result) == "boolean" and result == true then
+                got = toTake
+            elseif type(result) == "table" then
+                if result.count then
+                    got = result.count
+                elseif result.amount then
+                    got = result.amount
+                elseif result.size then
+                    got = result.size
+                else
+                    got = toTake
+                end
+            else
+                lastError = "неизвестный ответ: " .. tostring(result)
+            end
+        else
+            lastError = tostring(result)
+        end
+
+        if got > 0 then
+            extracted = extracted + got
+            remaining = remaining - got
+        else
+            if lastError == nil then
+                lastError = "не удалось выдать (вернулось 0 или false)"
+            end
+            break
+        end
+    end
+
+    if extracted == 0 then
+        showInventoryFullPopup = true
+        unlockTransactions()
+        markDirty()
+        drawInventoryFullPopup()
+        return
+    end
+
+    if extracted < qty then
+        local actuallySpentCoin = extracted * (item.priceCoin or 0)
+        local actuallySpentEma = extracted * (item.priceEma or 0)
+        coinBalance = coinBalance - actuallySpentCoin
+        emaBalance = emaBalance - actuallySpentEma
+        playerTransactions = playerTransactions + 1
+
+        if currentPlayer and playersIndex[currentPlayer] then
+            local player = playersIndex[currentPlayer]
+            player.balance = coinBalance
+            player.emaBalance = emaBalance
+            player.transactions = playerTransactions
+            saveDB()
+            writeDebugLog("💾 Баланс сохранён (част.) для " .. currentPlayer .. ": Coin=" .. coinBalance .. ", EMA=" .. emaBalance)
+        end
+
+        addTransaction("buy", currentPlayer, item.displayName, extracted, actuallySpentCoin, actuallySpentEma)
+
+        partialExtracted = extracted
+        partialRequested = qty
+        partialRefundCoin = actuallySpentCoin
+        partialRefundEma = actuallySpentEma
+        partialItem = item
+        showPartialPopup = true
+        unlockTransactions()
+        markDirty()
+        drawPartialPopup()
+        return
+    end
+
+    coinBalance = coinBalance - totalCoin
+    emaBalance = emaBalance - totalEma
+    playerTransactions = playerTransactions + 1
+
+    if currentPlayer and playersIndex[currentPlayer] then
+        local player = playersIndex[currentPlayer]
+        player.balance = coinBalance
+        player.emaBalance = emaBalance
+        player.transactions = playerTransactions
+        saveDB()
+        writeDebugLog("💾 Баланс сохранён (полн.) для " .. currentPlayer .. ": Coin=" .. coinBalance .. ", EMA=" .. emaBalance)
+    else
+        writeErrorLog("⚠️ Игрок не найден при покупке: " .. tostring(currentPlayer))
+    end
+
+    addTransaction("buy", currentPlayer, item.displayName, extracted, totalCoin, totalEma)
+
+    gpu.setBackground(colors.bg_main)
+    gpu.fill(2, 20, 78, 1, " ")
+    local priceStr = ""
+    if totalCoin > 0 then
+        priceStr = priceStr .. string.format("%.2f", totalCoin) .. "₵"
+    end
+    if totalEma > 0 then
+        if priceStr ~= "" then
+            priceStr = priceStr .. " + "
+        end
+        priceStr = priceStr .. string.format("%.2f", totalEma) .. "۞"
+    end
+    drawCenteredText(20, "Куплено " .. extracted .. " шт. за " .. priceStr, colors.success)
+
+    loadBuyItems(true)
+    for _, newItem in ipairs(shopItems) do
+        if newItem.internalName == item.internalName and newItem.damage == item.damage then
+            purchaseItem = newItem
+            break
+        end
+    end
+    os.sleep(0.8)
+    unlockTransactions()
+    currentScreen = "shop_buy"
+    markDirty()
+    
+    -- ★★★ ЛОГИ В КОНЦЕ ★★★
+    writeDebugFile("========================================")
+    writeDebugFile("✅ performBuy() ЗАВЕРШЕНА")
+    writeDebugFile("   extracted=" .. tostring(extracted))
+    writeDebugFile("   totalCoin=" .. tostring(totalCoin))
+    writeDebugFile("   totalEma=" .. tostring(totalEma))
     writeDebugFile("   currentPlayer=" .. tostring(currentPlayer))
     writeDebugFile("========================================")
 end

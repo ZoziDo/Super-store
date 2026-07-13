@@ -11,7 +11,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ★★ АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА ★★
+-- ★★ АВТОМАТИЧЕСКАЯ12 НАСТРОЙКА АВТОЗАПУСКА ★★
 -- ============================================================
 
 local function setupAutoStart()
@@ -2013,40 +2013,45 @@ function checkBindingStatus()
 end
 
 function getBindingStatus()
-    local now = os.clock()
-    
-    if bindingCache.lastCheck > 0 and (now - bindingCache.lastCheck) < bindingCache.checkInterval then
+    if not currentPlayer then
+        boundPlayer = nil
+        bindingCache.isBound = false
+        return false
+    end
+   
+    local now = os.time()
+    if now - (bindingCache.lastCheck or 0) < bindingCache.checkInterval then
         return bindingCache.isBound
     end
-    
-    local isBound = false
-    local checkSuccess, checkResponse = pcall(function()
-        return internet.request(WEB_URL .. "/api/player_binding?game_player=" .. currentPlayer, nil, {
-            ["Connection"] = "close",
-            ["Timeout"] = "2"
-        })
+   
+    bindingCache.lastCheck = now
+   
+    local success, response = pcall(function()
+        return internet.request(WEB_URL .. "/api/player_binding?site_user=" .. currentPlayer)
     end)
-    
-    if checkSuccess and checkResponse then
+   
+    if success and response then
         local body = ""
-        for chunk in checkResponse do
+        for chunk in response do
             body = body .. chunk
         end
         local data = parseJSON(body)
-        if data and data.success then
-            isBound = true
-            boundPlayer = currentPlayer
-            saveBoundPlayer(currentPlayer)
+       
+        if data and data.success and data.player then
+            boundPlayer = data.player
+            bindingCache.isBound = true
+            writeDebugLog("✅ Привязка подтверждена: " .. boundPlayer)
+            return true
         else
             boundPlayer = nil
-            clearBoundPlayer()
+            bindingCache.isBound = false
+            writeDebugLog("❌ Привязка не найдена")
+            return false
         end
+    else
+        writeDebugLog("⚠️ Не удалось проверить привязку")
+        return bindingCache.isBound
     end
-    
-    bindingCache.isBound = isBound
-    bindingCache.lastCheck = now
-    
-    return isBound
 end
 
 createTimer(30, function()

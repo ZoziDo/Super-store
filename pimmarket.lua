@@ -11,7 +11,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- АВТОМАТИЧЕСКАЯ24 НАСТРОЙКА АВТОЗАПУСКА
+-- АВТОМАТИЧЕСКАЯ246 НАСТРОЙКА АВТОЗАПУСКА
 -- ============================================================
 
 local function setupAutoStart()
@@ -372,80 +372,6 @@ function safeExit()
     writeDebugLog("✅ Безопасный выход завершён")
     writeErrorLog("🔴 Терминал #1 (PIM MARKET) остановлен")
 end
-
--- ============================================================
--- ★★★ ЕДИНЫЙ ТАЙМЕР PIM (ОБЪЕДИНЕННЫЙ) ★★★
--- ============================================================
-
-PIM_CHECK_INTERVAL = 5
-pimCheckTimer = nil
-pimCheckLock = false
-
-function unifiedPimCheck()
-    if pimCheckLock then return end
-    pimCheckLock = true
-    
-    local success, err = pcall(function()
-        if not currentPlayer then
-            pimCheckLock = false
-            return
-        end
-        
-        local pimAddr = getPimAddr()
-        if not pimAddr then
-            safeExit()
-            pimCheckLock = false
-            return
-        end
-        
-        local pim = component.proxy(pimAddr)
-        local playerOnPim = nil
-        
-        local methods = {"getPlayer", "getPlayerName", "getUsername"}
-        for _, method in ipairs(methods) do
-            if pim[method] then
-                local ok, result = pcall(pim[method], pim)
-                if ok and result and result ~= "" then
-                    playerOnPim = result
-                    break
-                end
-            end
-        end
-        
-        if not playerOnPim then
-            local ok, result = pcall(function()
-                return pim.player
-            end)
-            if ok and result and result ~= "" then
-                playerOnPim = result
-            end
-        end
-        
-        if (not playerOnPim or playerOnPim == "") and currentPlayer then
-            safeExit()
-        elseif playerOnPim and playerOnPim ~= currentPlayer then
-            safeExit()
-        end
-    end)
-    
-    pimCheckLock = false
-end
-
-function startUnifiedPimCheck()
-    if pimCheckTimer then
-        event.cancel(pimCheckTimer)
-        pimCheckTimer = nil
-    end
-    
-    pimCheckTimer = createTimer(PIM_CHECK_INTERVAL, function()
-        if not TRANSACTION_LOCK then
-            unifiedPimCheck()
-        end
-        return true
-    end, true)
-end
-
-startUnifiedPimCheck()
 
 -- ============================================================
 -- ВЕБ-ИНТЕГРАЦИЯ
@@ -2715,10 +2641,9 @@ function drawBuyItemsList()
     local maxScroll = math.max(1, #filteredItems - visibleRows + 1)
     listScroll = math.max(1, math.min(listScroll or 1, maxScroll))
 
-    gpu.setBackground(colors.bg_main)
-    gpu.fill(2, 7, 78, visibleRows, " ")
-
     if #filteredItems == 0 then
+        gpu.setBackground(colors.bg_main)
+        gpu.fill(2, 7, 78, visibleRows, " ")
         local msg = "ПО ТВОЕМУ ЗАПРОСУ, НИЧЕГО НЕ НАЙДЕНО!"
         local msgX = math.floor((80 - unicode.len(msg)) / 2) + 1
         local msgY = 14
@@ -2728,13 +2653,16 @@ function drawBuyItemsList()
         for i = 1, visibleRows do
             local itemIndex = listScroll + i - 1
             local item = filteredItems[itemIndex]
-            if not item then
-                break
-            end
             local y = 6 + i
             local isSelected = (itemIndex == selectedIndex)
             local isHovered = (itemIndex == hoveredIndex)
-            drawSingleRow(y, item, isHovered, isSelected, itemIndex)
+            
+            if item then
+                drawSingleRow(y, item, isHovered, isSelected, itemIndex)
+            else
+                gpu.setBackground(colors.bg_main)
+                gpu.fill(2, y, 76, 1, " ")
+            end
         end
     end
 
@@ -6060,6 +5988,11 @@ function main()
             local playerName = ev[2] or "Игрок"
             writeDebugLog("player_on: " .. playerName)
             
+            if not playerName or playerName == "" or playerName == "Игрок" then
+                writeDebugLog("⚠️ Пропущен вход: пустое имя игрока")
+                goto continue
+            end
+            
             if currentPlayer and currentPlayer ~= "" then
                 writeDebugLog("⚠️ Игрок уже авторизован: " .. currentPlayer .. ", игнорируем вход: " .. playerName)
                 goto continue
@@ -6083,6 +6016,12 @@ function main()
                 pimOwner = playerName
             end
             currentPlayer = playerName:match("^%s*(.-)%s*$") or playerName
+            
+            -- ★★★ ПРОВЕРКА: currentPlayer не должен быть nil ★★★
+            if not currentPlayer or currentPlayer == "" then
+                writeDebugLog("⚠️ currentPlayer стал nil, используем исходное имя")
+                currentPlayer = playerName
+            end
             
             local banInfo = nil
             local success, response = pcall(function()

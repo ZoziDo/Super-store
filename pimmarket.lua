@@ -652,6 +652,8 @@ function renderCurrentScreen()
         drawBuyStatic()
         drawBuyItemsList()
         drawBuyButtons()
+    elseif currentScreen == "sell_scan" then
+        drawSellScanScreen()
     elseif currentScreen == "purchase" then
         drawPurchaseScreen()
     elseif currentScreen == "account" then
@@ -666,10 +668,6 @@ function renderCurrentScreen()
         if type(drawAgreementScreen) == "function" then
             drawAgreementScreen()
         end
-    elseif currentScreen == "sell_scan" then
-        drawSellScanScreen()
-    elseif currentScreen == "purchase" then
-        drawPurchaseScreen()
     elseif currentScreen == "auth_popup" then
         showAuthPopup()
     elseif currentScreen == "qr_popup" then
@@ -1157,7 +1155,11 @@ function clear_pending_changes(ids)
 end
 
 function send_pending_changes()
+    writeDebugFile(">>> send_pending_changes()")
+    writeDebugFile("   pending_buffer размер: " .. #pending_buffer)
+    
     if #pending_buffer == 0 then
+        writeDebugFile("   буфер пуст")
         retry_delay = 10
         return true
     end
@@ -1170,7 +1172,9 @@ function send_pending_changes()
     local payload = { changes = changes_to_send }
     local json_payload = toJson(payload)
 
-    writeDebugLog("📤 Отправка дельты: " .. #changes_to_send .. " изменений")
+    writeDebugFile("📤 Отправка дельты: " .. #changes_to_send .. " изменений")
+    writeDebugFile("   URL: " .. WEB_URL .. "/api/delta")
+    writeDebugFile("   Payload: " .. json_payload)
 
     local success, response = pcall(function()
         return internet.request(WEB_URL .. "/api/delta", json_payload, {
@@ -1181,39 +1185,52 @@ function send_pending_changes()
     end)
 
     if success and response then
+        writeDebugFile("✅ Ответ получен")
         local body = ""
         local timeout = os.clock() + 5
         for chunk in response do
             if os.clock() > timeout then
-                writeDebugLog("⚠️ Таймаут чтения ответа")
+                writeDebugFile("⚠️ Таймаут чтения ответа")
                 break
             end
             body = body .. chunk
         end
         
+        writeDebugFile("   body: " .. body)
+        
         local data = parseJSON(body)
         if data and data.status == "ok" then
             pending_buffer = {}
             save_pending_buffer()
-            writeDebugLog("✅ Дельта подтверждена, буфер очищен")
+            writeDebugFile("✅ Дельта подтверждена, буфер очищен")
             retry_delay = 10
             return true
         else
-            writeDebugLog("⚠️ Ошибка сервера, буфер сохранён")
+            writeDebugFile("⚠️ Ошибка сервера, буфер сохранён")
+            if data then
+                writeDebugFile("   data.status = " .. tostring(data.status))
+            end
             retry_delay = math.min(retry_delay * 2, 120)
             return false
         end
     else
-        writeDebugLog("⚠️ Ошибка соединения, буфер сохранён")
+        writeDebugFile("⚠️ Ошибка соединения, буфер сохранён")
+        writeDebugFile("   success=" .. tostring(success))
+        if not success then
+            writeDebugFile("   err=" .. tostring(err))
+        end
         retry_delay = math.min(retry_delay * 2, 120)
         return false
     end
 end
 
 createTimer(10, function()
+    writeDebugFile("⏰ Таймер отправки дельты сработал")
     if #pending_buffer > 0 then
-        writeDebugLog("📤 Отправка дельты (буфер: " .. #pending_buffer .. ")")
+        writeDebugFile("📤 Отправка дельты (буфер: " .. #pending_buffer .. ")")
         send_pending_changes()
+    else
+        writeDebugFile("   буфер пуст")
     end
     return true
 end, true)
@@ -1378,7 +1395,13 @@ function removeAdmin(playerName)
 end
 
 function addTransaction(type, playerName, item, qty, value_coin, value_ema)
-    writeDebugLog("addTransaction: " .. type .. " " .. (playerName or "?"))
+    writeDebugFile(">>> addTransaction()")
+    writeDebugFile("   type=" .. tostring(type))
+    writeDebugFile("   playerName=" .. tostring(playerName))
+    writeDebugFile("   item=" .. tostring(item))
+    writeDebugFile("   qty=" .. tostring(qty))
+    writeDebugFile("   value_coin=" .. tostring(value_coin))
+    writeDebugFile("   value_ema=" .. tostring(value_ema))
     
     if type == "sell" then
         globalStats.totalSells = (globalStats.totalSells or 0) + 1
@@ -1462,6 +1485,7 @@ function addTransaction(type, playerName, item, qty, value_coin, value_ema)
             ema = value_ema or 0
         }
     }
+    writeDebugFile("📤 Добавлено изменение в буфер: " .. change.id)
     add_pending_change(change)
 end
 
@@ -3699,15 +3723,19 @@ function goToSell()
     markDirty()
 end
 
-function goToSellConfirm(item)
-    writeDebugLog("goToSellConfirm()")
+unction goToSellConfirm(item)
+    writeDebugFile(">>> goToSellConfirm()")
     if not item then
+        writeDebugFile("❌ goToSellConfirm: item = nil!")
         writeErrorLog("❌ goToSellConfirm: item = nil!")
         return
     end
     sellConfirmItem = item
     foundAmount = 0
     showSellPopup = false
+    currentScreen = "sell_scan"
+    writeDebugFile("✅ sellConfirmItem установлен: " .. tostring(sellConfirmItem.displayName))
+    writeDebugFile("✅ currentScreen = " .. currentScreen)
     markDirty()
 end
 

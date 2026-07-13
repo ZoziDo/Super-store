@@ -11,7 +11,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- АВТОМАТИЧЕСКАЯ246 НАСТРОЙКА АВТОЗАПУСКА123
+-- АВТОМАТИЧЕСКАЯ246 НАСТРОЙКА АВТОЗАПУСКА123451
 -- ============================================================
 
 local function setupAutoStart()
@@ -3020,33 +3020,23 @@ shopMenuButtons = {
 
 function drawWelcomeScreen()
     writeDebugLog("drawWelcomeScreen()")
-    drawWelcomeScreenBuffer()
-    -- ★★★ НЕ ВЫЗЫВАЙ forceRender() ЗДЕСЬ! ★★★
-end
-
-function drawWelcomeScreenBuffer()
-    writeDebugLog("drawWelcomeScreenBuffer()")
     
-    bufferClear()
+    gpu.setBackground(colors.bg_main)
+    gpu.fill(1, 1, 80, 25, " ")
     
     local border_color = 0x00E5C9
     local text_color = 0x00FFCC
     local sub_color = 0xFFFF00
     local hint_color = 0xAAAAAA
     
-    -- Рамка через буфер
-    bufferSet(1, 1, "+", border_color)
-    bufferFill(2, 1, 78, 1, "=", border_color)
-    bufferSet(80, 1, "+", border_color)
+    gpu.setForeground(border_color)
+    gpu.set(1, 1, "+" .. string.rep("=", 78) .. "+")
+    gpu.set(1, 25, "+" .. string.rep("=", 78) .. "+")
     for y = 2, 24 do
-        bufferSet(1, y, "|", border_color)
-        bufferSet(80, y, "|", border_color)
+        gpu.set(1, y, "|")
+        gpu.set(80, y, "|")
     end
-    bufferSet(1, 25, "+", border_color)
-    bufferFill(2, 25, 78, 1, "=", border_color)
-    bufferSet(80, 25, "+", border_color)
     
-    -- Алмаз через буфер
     local diamond = {
         "             ▓▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▓            ",
         "           ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▒▒▒▒▓          ",
@@ -3083,24 +3073,36 @@ function drawWelcomeScreenBuffer()
     
     for i, line in ipairs(diamond) do
         local color = gradient[math.min(math.floor((i-1) / 2) + 1, #gradient)]
-        bufferSet(diamX, diamY + i - 1, line, color)
+        gpu.setForeground(color)
+        gpu.set(diamX, diamY + i - 1, line)
     end
     
     local cx = 41
     
     if shopPaused then
-        bufferSet(cx - 2, 21, " РЕЖИМ ОБСЛУЖИВАНИЯ", colors.error)
-        bufferSet(cx - 2, 22, " Магазин временно закрыт", colors.error)
-        bufferSet(cx - 2, 23, " Пожалуйста, зайдите позже", colors.text_main)
+        gpu.setForeground(colors.error)
+        drawCenteredText(21, " РЕЖИМ ОБСЛУЖИВАНИЯ", colors.error)
+        drawCenteredText(22, " Магазин временно закрыт", colors.error)
+        drawCenteredText(23, " Пожалуйста, зайдите позже", colors.text_main)
     else
         if currentPlayer and currentPlayer ~= "" then
-            bufferSet(cx - 2, 21, "VIP SHOP", text_color)
-            bufferSet(cx - 6, 22, "◆ McSkill HiTech ◆", sub_color)
-            bufferSet(cx - 10, 23, "Встаньте на ПИМ для входа", hint_color)
+            gpu.setForeground(text_color)
+            gpu.set(cx - 2, 21, "VIP SHOP")
+            
+            gpu.setForeground(sub_color)
+            gpu.set(cx - 6, 22, "◆ McSkill HiTech ◆")
+            
+            gpu.setForeground(hint_color)
+            gpu.set(cx - 10, 23, "Встаньте на ПИМ для входа")
         else
-            bufferSet(cx - 2, 21, "VIP SHOP", text_color)
-            bufferSet(cx - 6, 22, "◆ McSkill HiTech ◆", sub_color)
-            bufferSet(cx - 10, 23, "Встаньте на ПИМ для входа", hint_color)
+            gpu.setForeground(text_color)
+            gpu.set(cx - 2, 21, "VIP SHOP")
+            
+            gpu.setForeground(sub_color)
+            gpu.set(cx - 6, 22, "◆ McSkill HiTech ◆")
+            
+            gpu.setForeground(hint_color)
+            gpu.set(cx - 10, 23, "Встаньте на ПИМ для входа")
         end
     end
 end
@@ -5606,10 +5608,8 @@ MOUSE_DEBOUNCE = 0.05
 function main()
     writeDebugLog("🚀 main() запущен")
     
-    -- ★★★ РИСУЕМ ПРИВЕТСТВИЕ В БУФЕР ★★★
-    drawWelcomeScreenBuffer()
-    -- ★★★ ВЫВОДИМ БУФЕР НА ЭКРАН (ОДИН РАЗ) ★★★
-    renderBuffer()
+    -- ★★★ РИСУЕМ ПРИВЕТСТВИЕ НАПРЯМУЮ (НЕ ЧЕРЕЗ БУФЕР) ★★★
+    drawWelcomeScreen()
     
     writeErrorLog("🟢 Терминал #1 (PIM MARKET) запущен")
 
@@ -5726,9 +5726,9 @@ function main()
                         hoveredIndex = 0
                         writeDebugFile("✅ ТОВАР ВЫБРАН: " .. tostring(item.displayName))
                         updateSelectorDisplay(selectedItem)
-                        drawBuyItemsList()  -- Обновляем список
-                        drawBuyButtons()    -- Обновляем кнопки
-                        partialRedraw()     -- ✅ ВМЕСТО markDirty()
+                        drawBuyItemsList()
+                        drawBuyButtons()
+                        partialRedraw()
                     else
                         if not item then
                             writeDebugFile("❌ item = nil")
@@ -6324,6 +6324,7 @@ function main()
             goto continue
         end
 
+        -- ★★★ ВХОД ИГРОКА - САМОЕ ВАЖНОЕ ★★★
         if e == "player_on" or e == "pim" or e == "pim_player_enter" then
             local playerName = ev[2] or "Игрок"
             writeDebugLog("player_on: " .. playerName)
@@ -6341,13 +6342,11 @@ function main()
             if shopPaused then
                 writeDebugLog("Режим обслуживания активен, вход запрещён для: " .. playerName)
                 drawWelcomeScreen()
-                forceRender()
                 while shopPaused do
                     local ev2 = {event.pull(1)}
                     if ev2[1] == "player_off" or ev2[1] == "pim_player_leave" then
                         writeDebugLog("👤 Игрок ушёл с PIM: " .. playerName)
                         drawWelcomeScreen()
-                        forceRender()
                         break
                     end
                 end
@@ -6431,25 +6430,19 @@ function main()
                 drawCenteredText(22, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", colors.accent_secondary)
                 
                 drawTempMessage()
-                forceRender()
                 
-                event.timer(1, function()
-                    while true do
-                        local ev2 = {event.pull(1)}
-                        if ev2[1] == "player_off" or ev2[1] == "pim_player_leave" then
-                            writeDebugLog("👤 Игрок ушёл с PIM: " .. playerName)
-                            currentPlayer = nil
-                            pimOwner = nil
-                            alreadyAuthorized = false
-                            currentScreen = "welcome"
-                            drawWelcomeScreen()
-                            forceRender()
-                            break
-                        end
+                while true do
+                    local ev2 = {event.pull(1)}
+                    if ev2[1] == "player_off" or ev2[1] == "pim_player_leave" then
+                        writeDebugLog("👤 Игрок ушёл с PIM: " .. playerName)
+                        currentPlayer = nil
+                        pimOwner = nil
+                        alreadyAuthorized = false
+                        currentScreen = "welcome"
+                        drawWelcomeScreen()
+                        break
                     end
-                    return false
-                end, math.huge)
-                
+                end
                 goto continue
             end
             
@@ -6507,12 +6500,10 @@ function main()
                 
                 if player.banned then
                     drawCenteredText(20, "Вы забанены!", colors.error)
-                    forceRender()
                     event.timer(2, function()
                         currentPlayer = nil
                         currentScreen = "welcome"
                         drawWelcomeScreen()
-                        forceRender()
                         return false
                     end)
                 else
@@ -6532,7 +6523,7 @@ function main()
                     
                     currentScreen = "menu"
                     drawMainMenu()
-                    forceRender()
+                    forceRender()  -- ★★★ САМОЕ ВАЖНОЕ - ОБНОВЛЯЕМ ЭКРАН ★★★
                     addLog("👤 Вход: " .. currentPlayer)
                     sendToWeb("/api/new_log", toJson({
                         time = getRealTimeHM(),
@@ -6582,7 +6573,6 @@ function main()
             
             -- ★★★ ПОСЛЕ ВЫХОДА ВОЗВРАЩАЕМСЯ НА ПРИВЕТСТВИЕ ★★★
             drawWelcomeScreen()
-            forceRender()
             
             goto continue
         end

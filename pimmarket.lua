@@ -11,7 +11,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- АВТОМАТИЧЕСКАЯ246 НАСТРОЙКА АВТОЗАПУСКА
+-- АВТОМАТИЧЕСКАЯ5 НАСТРОЙКА АВТОЗАПУСКА
 -- ============================================================
 
 local function setupAutoStart()
@@ -75,31 +75,6 @@ if not event.shouldInterrupt then
         return false
     end
 end
-
--- ============================================================
--- ★★★ ОТЛАДОЧНОЕ ЛОГИРОВАНИЕ В ФАЙЛ ★★★
--- ============================================================
-
-DEBUG_LOG_FILE = "/home/debug.log"
-
-function writeDebugFile(msg)
-    local file = io.open(DEBUG_LOG_FILE, "a")
-    if file then
-        local timestamp = os.date("%Y-%m-%d %H:%M:%S")
-        file:write("[" .. timestamp .. "] " .. msg .. "\n")
-        file:close()
-    end
-end
-
-function clearDebugFile()
-    if fs.exists(DEBUG_LOG_FILE) then
-        fs.remove(DEBUG_LOG_FILE)
-    end
-    writeDebugFile("=== DEBUG LOG STARTED ===")
-end
-
--- Очищаем файл при запуске
-clearDebugFile()
 
 -- ============================================================
 -- ВРЕМЯ
@@ -515,6 +490,68 @@ event.ignore("terminate", function() end)
 markets = {}
 
 -- ============================================================
+-- ★★★ БУФЕР ДЛЯ УСТРАНЕНИЯ МЕРЦАНИЯ ★★★
+-- ============================================================
+
+local buffer = {}
+
+function initBuffer()
+    local w, h = gpu.getResolution()
+    buffer = {}
+    for y = 1, h do
+        buffer[y] = {}
+        for x = 1, w do
+            buffer[y][x] = { char = " ", fg = 0xFFFFFF, bg = 0x000000 }
+        end
+    end
+end
+
+function flushBuffer()
+    for y, row in ipairs(buffer) do
+        for x, cell in ipairs(row) do
+            if cell.char ~= " " or cell.fg ~= 0xFFFFFF or cell.bg ~= 0x000000 then
+                gpu.setForeground(cell.fg)
+                gpu.setBackground(cell.bg)
+                gpu.set(x, y, cell.char)
+            end
+        end
+    end
+    gpu.setBackground(colors.bg_main)
+end
+
+function setBufferChar(x, y, char, fg, bg)
+    if not buffer[y] or not buffer[y][x] then return end
+    
+    local cell = buffer[y][x]
+    if cell.char == char and cell.fg == fg and cell.bg == bg then
+        return
+    end
+    
+    cell.char = char or " "
+    cell.fg = fg or 0xFFFFFF
+    cell.bg = bg or 0x000000
+end
+
+function clearBuffer()
+    local w, h = gpu.getResolution()
+    for y = 1, h do
+        for x = 1, w do
+            setBufferChar(x, y, " ", 0xFFFFFF, colors.bg_main)
+        end
+    end
+end
+
+function fillBuffer(x, y, w, h, char, fg, bg)
+    for dy = 0, h - 1 do
+        for dx = 0, w - 1 do
+            setBufferChar(x + dx, y + dy, char, fg, bg)
+        end
+    end
+end
+
+initBuffer()
+
+-- ============================================================
 -- ЦВЕТА
 -- ============================================================
 
@@ -546,7 +583,7 @@ lastRenderedScreen = ""
 function markDirty()
     guiDirty = true
     if not renderTimer then
-        renderTimer = event.timer(0.1, function()
+        renderTimer = event.timer(0.05, function()
             renderTimer = nil
             if guiDirty then
                 renderCurrentScreen()
@@ -599,7 +636,6 @@ function renderCurrentScreen()
     elseif currentScreen == "qr_popup" then
         showQRCodePopup()
     end
-    drawTempMessage()
 end
 
 -- ============================================================
@@ -769,122 +805,107 @@ function formatUptime(seconds)
 end
 
 -- ============================================================
--- UI БАЗОВЫЕ ФУНКЦИИ
+-- UI БАЗОВЫЕ ФУНКЦИИ (С БУФЕРОМ)
 -- ============================================================
 
-function clear()
-    writeDebugLog("clear() вызвана")
-    gpu.setBackground(colors.bg_main)
-    gpu.fill(1, 1, 80, 25, " ")
-end
-
 function drawCenteredText(y, text, color)
-    writeDebugLog("drawCenteredText: y=" .. tostring(y) .. ", text=" .. tostring(text))
-    if not text then
-        writeErrorLog("❌ drawCenteredText: text = nil!")
-        text = ""
-    end
-    gpu.setForeground(color or colors.text_main)
+    if not text then text = "" end
+    color = color or colors.text_main
     local x = math.floor((80 - unicode.len(text)) / 2) + 1
-    gpu.set(x, y, text)
+    for i = 1, unicode.len(text) do
+        local char = unicode.sub(text, i, i)
+        setBufferChar(x + i - 1, y, char, color)
+    end
 end
 
 function drawButton(btn)
-    if not btn then
-        writeErrorLog("❌ drawButton: btn = nil!")
-        return
-    end
-    writeDebugLog("drawButton: " .. (btn.text or "?"))
-    gpu.setBackground(btn.bg)
-    gpu.fill(btn.x, btn.y, btn.xs, btn.ys, " ")
-    gpu.setForeground(btn.fg)
+    if not btn then return end
+    
+    fillBuffer(btn.x, btn.y, btn.xs, btn.ys, " ", btn.fg, btn.bg)
+    
     local text = btn.text or ""
     local textX = btn.x + math.floor((btn.xs - unicode.len(text)) / 2)
     local textY = btn.y + math.floor((btn.ys - 1) / 2)
-    gpu.set(textX, textY, text)
-    gpu.setBackground(colors.bg_main)
+    for i = 1, unicode.len(text) do
+        local char = unicode.sub(text, i, i)
+        setBufferChar(textX + i - 1, textY, char, btn.fg, btn.bg)
+    end
 end
 
 function drawFlexButton(btn)
-    if not btn then
-        writeErrorLog("❌ drawFlexButton: btn = nil!")
-        return
-    end
-    writeDebugLog("drawFlexButton: " .. (btn.text or "?"))
-    gpu.setBackground(btn.bg)
-    gpu.fill(btn.x, btn.y, btn.xs, btn.ys, " ")
-    gpu.setForeground(btn.fg)
-    local text = btn.text or ""
-    local textX = btn.x + math.floor((btn.xs - unicode.len(text)) / 2)
-    local textY = btn.y + math.floor((btn.ys - 1) / 2)
-    gpu.set(textX, textY, text)
-    gpu.setBackground(colors.bg_main)
+    drawButton(btn)
 end
 
 function drawPopupBorder(x, y, w, h, color)
-    writeDebugLog("drawPopupBorder: x=" .. tostring(x) .. ", y=" .. tostring(y) .. ", w=" .. tostring(w) .. ", h=" .. tostring(h))
-    gpu.setForeground(color or colors.accent_secondary)
-    gpu.fill(x, y, w, 1, "─")
-    gpu.fill(x, y + h - 1, w, 1, "─")
-    for i = 1, h - 2 do
-        gpu.set(x, y + i, "│")
-        gpu.set(x + w - 1, y + i, "│")
+    color = color or colors.accent_secondary
+    
+    for dx = 0, w - 1 do
+        setBufferChar(x + dx, y, "─", color)
+        setBufferChar(x + dx, y + h - 1, "─", color)
     end
-    gpu.set(x, y, "┌")
-    gpu.set(x + w - 1, y, "┐")
-    gpu.set(x, y + h - 1, "└")
-    gpu.set(x + w - 1, y + h - 1, "┘")
+    
+    for dy = 1, h - 2 do
+        setBufferChar(x, y + dy, "│", color)
+        setBufferChar(x + w - 1, y + dy, "│", color)
+    end
+    
+    setBufferChar(x, y, "┌", color)
+    setBufferChar(x + w - 1, y, "┐", color)
+    setBufferChar(x, y + h - 1, "└", color)
+    setBufferChar(x + w - 1, y + h - 1, "┘", color)
 end
 
 function drawScreenBorder()
-    writeDebugLog("drawScreenBorder()")
     local left = 1
     local right = 80
     local top = 1
     local bottom = 24
-    gpu.setForeground(colors.accent_secondary)
-    gpu.fill(left, top, right - left + 1, 1, "─")
-    gpu.fill(left, bottom, right - left + 1, 1, "─")
-    for y = top + 1, bottom - 1 do
-        gpu.set(left, y, "│")
-        gpu.set(right, y, "│")
+    local color = colors.accent_secondary
+    
+    for x = left, right do
+        setBufferChar(x, top, "─", color)
+        setBufferChar(x, bottom, "─", color)
     end
-    gpu.set(left, top, "┌")
-    gpu.set(right, top, "┐")
-    gpu.set(left, bottom, "└")
-    gpu.set(right, bottom, "┘")
+    
+    for y = top + 1, bottom - 1 do
+        setBufferChar(left, y, "│", color)
+        setBufferChar(right, y, "│", color)
+    end
+    
+    setBufferChar(left, top, "┌", color)
+    setBufferChar(right, top, "┐", color)
+    setBufferChar(left, bottom, "└", color)
+    setBufferChar(right, bottom, "┘", color)
 end
 
 function drawTempMessage()
     if tempMessage ~= "" and tempMessage then
-        gpu.setBackground(colors.bg_main)
-        gpu.fill(1, 25, 80, 1, " ")
-        gpu.setForeground(colors.success)
+        fillBuffer(1, 25, 80, 1, " ", colors.success, colors.bg_main)
         local x = math.floor((80 - unicode.len(tempMessage)) / 2) + 1
-        gpu.set(x, 25, tempMessage)
+        for i = 1, unicode.len(tempMessage) do
+            local char = unicode.sub(tempMessage, i, i)
+            setBufferChar(x + i - 1, 25, char, colors.success, colors.bg_main)
+        end
     else
-        gpu.setBackground(colors.bg_main)
-        gpu.fill(1, 25, 80, 1, " ")
+        fillBuffer(1, 25, 80, 1, " ", colors.success, colors.bg_main)
     end
 end
 
 function drawTextMessage(msg, color)
-    writeDebugLog("drawTextMessage: " .. tostring(msg))
     if msg and msg ~= "" then
-        gpu.setBackground(colors.bg_main)
-        gpu.fill(1, 25, 80, 1, " ")
-        gpu.setForeground(color or colors.success)
+        fillBuffer(1, 25, 80, 1, " ", color or colors.success, colors.bg_main)
         local x = math.floor((80 - unicode.len(msg)) / 2) + 1
-        gpu.set(x, 25, msg)
+        for i = 1, unicode.len(msg) do
+            local char = unicode.sub(msg, i, i)
+            setBufferChar(x + i - 1, 25, char, color or colors.success, colors.bg_main)
+        end
     else
-        gpu.setBackground(colors.bg_main)
-        gpu.fill(1, 25, 80, 1, " ")
+        fillBuffer(1, 25, 80, 1, " ", colors.success, colors.bg_main)
     end
 end
 
 function drawAccountLoading()
-    writeDebugLog("drawAccountLoading()")
-    clear()
+    clearBuffer()
     drawScreenBorder()
     drawCenteredText(12, "Загрузка данных аккаунта...", colors.text_main)
     local backButton = {
@@ -897,6 +918,7 @@ function drawAccountLoading()
     }
     drawFlexButton(backButton)
     drawTempMessage()
+    flushBuffer()
 end
 
 function isButtonClicked(btn, x, y)
@@ -1752,10 +1774,6 @@ playerHasFeedback = false
 -- JSON ПАРСЕР
 -- ============================================================
 
--- ============================================================
--- JSON ПАРСЕР
--- ============================================================
-
 function parseJSON(json_str)
     if not json_str or json_str == "" then 
         writeDebugLog("parseJSON: пустая строка")
@@ -1941,7 +1959,7 @@ function parseJSON(json_str)
     local result = parseValue()
     writeDebugLog("parseJSON результат: " .. (result and "таблица" or "nil"))
     return result
-end  -- <-- ЭТОТ end ЗАКРЫВАЕТ parseJSON
+end
 
 -- ============================================================
 -- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
@@ -2364,7 +2382,7 @@ function extractToME(targetName, amount, targetDamage)
 end
 
 -- ============================================================
--- UI МАГАЗИНА
+-- UI МАГАЗИНА (С БУФЕРОМ)
 -- ============================================================
 
 function drawBalanceLine(x, y)
@@ -2382,16 +2400,28 @@ function drawBalanceLine(x, y)
         emaBalance = 0.0
     end
     
-    gpu.setForeground(colors.white)
-    gpu.set(x, y, "Баланс: ")
+    local pos = x
+    local text = "Баланс: "
+    for i = 1, #text do
+        setBufferChar(pos + i - 1, y, text:sub(i, i), colors.white)
+    end
+    pos = pos + #text
+    
     local coinStr = string.format("%.2f", coin) .. " Coina ₵"
-    gpu.setForeground(colors.accent_main)
-    gpu.set(x + unicode.len("Баланс: "), y, coinStr)
-    gpu.setForeground(colors.white)
-    gpu.set(x + unicode.len("Баланс: ") + unicode.len(coinStr), y, " | ")
+    for i = 1, #coinStr do
+        setBufferChar(pos + i - 1, y, coinStr:sub(i, i), colors.accent_main)
+    end
+    pos = pos + #coinStr
+    
+    setBufferChar(pos, y, " ", colors.white)
+    setBufferChar(pos + 1, y, "|", colors.white)
+    setBufferChar(pos + 2, y, " ", colors.white)
+    pos = pos + 3
+    
     local emaStr = "ЭМЫ: " .. string.format("%.2f", ema) .. " ۞"
-    gpu.setForeground(colors.tomato)
-    gpu.set(x + unicode.len("Баланс: ") + unicode.len(coinStr) + unicode.len(" | "), y, emaStr)
+    for i = 1, #emaStr do
+        setBufferChar(pos + i - 1, y, emaStr:sub(i, i), colors.tomato)
+    end
 end
 
 function redrawSearchField()
@@ -2403,52 +2433,62 @@ function redrawSearchField()
     else
         searchText = (shopSearch == "" and "Поиск..." or (shopSearch or ""))
     end
-    gpu.setBackground(colors.bg_button)
-    gpu.fill(searchX, 3, 23, 1, " ")
-    gpu.setForeground(colors.accent_main)
-    gpu.set(searchX + 1, 3, unicode.sub(searchText, 1, 21))
+    
+    fillBuffer(searchX, 3, 23, 1, " ", colors.accent_main, colors.bg_button)
+    local displayText = unicode.sub(searchText, 1, 21)
+    for i = 1, unicode.len(displayText) do
+        local char = unicode.sub(displayText, i, i)
+        setBufferChar(searchX + i, 3, char, colors.accent_main, colors.bg_button)
+    end
 
     local clearText = "[ СТЕРЕТЬ ]"
     local clearWidth = unicode.len(clearText) + 2
     local clearX = searchX + 23 + 1
-    gpu.setBackground(colors.error)
-    gpu.fill(clearX, 3, clearWidth, 1, " ")
-    gpu.setForeground(colors.accent_secondary)
+    fillBuffer(clearX, 3, clearWidth, 1, " ", colors.accent_secondary, colors.error)
     local textX = clearX + math.floor((clearWidth - unicode.len(clearText)) / 2)
-    gpu.set(textX, 3, clearText)
-    gpu.setBackground(colors.accent_secondary)
+    for i = 1, unicode.len(clearText) do
+        local char = unicode.sub(clearText, i, i)
+        setBufferChar(textX + i - 1, 3, char, colors.accent_secondary, colors.error)
+    end
 end
 
 function drawBuyStatic()
     writeDebugLog("drawBuyStatic()")
-    clear()
+    clearBuffer()
     drawScreenBorder()
     drawBalanceLine(3, 1)
 
     if currentShopMode == "buy" then
-        gpu.setForeground(colors.accent_secondary)
-        gpu.set(3, 3, "Магазин продаёт")
+        drawCenteredText(3, "Магазин продаёт", colors.accent_secondary)
     else
-        gpu.setForeground(colors.accent_secondary)
-        gpu.set(3, 3, "Магазин покупает")
+        drawCenteredText(3, "Магазин покупает", colors.accent_secondary)
     end
 
     redrawSearchField()
 
-    gpu.setBackground(colors.bg_button)
-    gpu.fill(2, 5, 76, 1, " ")
-    gpu.setForeground(colors.text_bright)
-    gpu.set(3, 5, "Название")
-    gpu.set(42, 5, "Кол-во")
+    fillBuffer(2, 5, 76, 1, " ", colors.text_bright, colors.bg_button)
+    
+    local headers = {}
     if currentShopMode == "buy" then
-        gpu.set(55, 5, "Coina")
-        gpu.set(67, 5, "ЭМЫ")
+        headers = {"Название", "Кол-во", "Coina", "ЭМЫ"}
+        local positions = {3, 42, 55, 67}
+        for i, text in ipairs(headers) do
+            for j = 1, #text do
+                setBufferChar(positions[i] + j - 1, 5, text:sub(j, j), colors.text_bright, colors.bg_button)
+            end
+        end
     else
-        gpu.set(65, 5, "Цена")
+        headers = {"Название", "Кол-во", "Цена"}
+        local positions = {3, 42, 65}
+        for i, text in ipairs(headers) do
+            for j = 1, #text do
+                setBufferChar(positions[i] + j - 1, 5, text:sub(j, j), colors.text_bright, colors.bg_button)
+            end
+        end
     end
-    gpu.setBackground(colors.bg_main)
 
     drawTempMessage()
+    flushBuffer()
 end
 
 function drawSingleRow(y, item, isHovered, isSelected, itemIndex)
@@ -2496,65 +2536,51 @@ function drawSingleRow(y, item, isHovered, isSelected, itemIndex)
     end
     
     if currentShopMode == "buy" then
-        if item.qty > 0 then
-            fg = colors.accent_main
-        else
-            fg = colors.inactive
-        end
+        fg = item.qty > 0 and colors.accent_main or colors.inactive
     else
         fg = colors.accent_main
     end
     
-    gpu.setBackground(bg)
-    gpu.fill(2, y, 76, 1, " ")
-    gpu.setForeground(fg)
+    fillBuffer(2, y, 76, 1, " ", fg, bg)
     
     local name = item.displayName or "Неизвестно"
     if unicode.len(name) > 37 then
         name = unicode.sub(name, (horizontalScroll or 1), (horizontalScroll or 1) + 36)
     end
-    gpu.set(3, y, name)
-    
-    if currentShopMode == "buy" then
-        if item.qty > 0 then
-            gpu.setForeground(colors.text_bright)
-        else
-            gpu.setForeground(colors.inactive)
-        end
-    else
-        gpu.setForeground(colors.text_bright)
+    for i = 1, unicode.len(name) do
+        local char = unicode.sub(name, i, i)
+        setBufferChar(2 + i, y, char, fg, bg)
     end
-    gpu.set(42, y, tostring(item.qty or 0))
+    
+    local qtyColor = (currentShopMode == "buy" and item.qty > 0) and colors.text_bright or colors.inactive
+    local qtyStr = tostring(item.qty or 0)
+    for i = 1, #qtyStr do
+        setBufferChar(41 + i, y, qtyStr:sub(i, i), qtyColor, bg)
+    end
 
     if currentShopMode == "sell" then
-        if item.internalName == "customnpcs:npcMoney" then
-            gpu.setForeground(colors.tomato)
-            local priceStr = string.format("%.2f", item.price or 0) .. " ۞"
-            gpu.set(65, y, priceStr)
-        else
-            gpu.setForeground(colors.text_bright)
-            local priceStr = string.format("%.2f", item.price or 0) .. " ₵"
-            gpu.set(65, y, priceStr)
+        local priceColor = (item.internalName == "customnpcs:npcMoney") and colors.tomato or colors.text_bright
+        local priceStr = string.format("%.2f", item.price or 0)
+        local suffix = (item.internalName == "customnpcs:npcMoney") and " ۞" or " ₵"
+        priceStr = priceStr .. suffix
+        for i = 1, #priceStr do
+            setBufferChar(64 + i, y, priceStr:sub(i, i), priceColor, bg)
         end
     else
         if item.priceCoin and item.priceCoin > 0 then
-            gpu.setForeground(colors.accent_main)
             local coinStr = string.format("%.2f", item.priceCoin)
-            gpu.set(55, y, coinStr)
-        else
-            gpu.setForeground(colors.inactive)
-            gpu.set(55, y, "0")
+            for i = 1, #coinStr do
+                setBufferChar(54 + i, y, coinStr:sub(i, i), colors.accent_main, bg)
+            end
         end
+        
         if item.priceEma and item.priceEma > 0 then
-            gpu.setForeground(colors.tomato)
             local emaStr = string.format("%.2f", item.priceEma)
-            gpu.set(67, y, emaStr)
-        else
-            gpu.setForeground(colors.inactive)
-            gpu.set(67, y, "0")
+            for i = 1, #emaStr do
+                setBufferChar(66 + i, y, emaStr:sub(i, i), colors.tomato, bg)
+            end
         end
     end
-    gpu.setBackground(colors.bg_main)
 end
 
 function drawScrollBar()
@@ -2562,21 +2588,21 @@ function drawScrollBar()
     local barX = 78
     local barY = 7
     local barHeight = 15
-    gpu.setBackground(colors.bg_main)
-    gpu.fill(barX, barY, 2, barHeight, " ")
-    if total <= visibleRows then 
+    
+    fillBuffer(barX, barY, 2, barHeight, " ", colors.bg_main, colors.bg_main)
+    
+    if total <= visibleRows then
         return
     end
     
-    gpu.setBackground(colors.bg_secondary)
-    gpu.fill(barX, barY, 2, barHeight, " ")
+    fillBuffer(barX, barY, 2, barHeight, " ", colors.bg_main, colors.bg_secondary)
+    
     local thumbHeight = math.max(2, math.floor(barHeight * visibleRows / total))
     local maxPos = barHeight - thumbHeight
     local thumbPos = math.floor((listScroll - 1) * maxPos / (total - visibleRows)) + 1
     thumbPos = math.min(thumbPos, maxPos + 1)
-    gpu.setBackground(colors.accent_main)
-    gpu.fill(barX, barY + thumbPos - 1, 2, thumbHeight, " ")
-    gpu.setBackground(colors.bg_main)
+    
+    fillBuffer(barX, barY + thumbPos - 1, 2, thumbHeight, " ", colors.accent_main, colors.accent_main)
 end
 
 function getFilteredItems()
@@ -2617,12 +2643,10 @@ function getFilteredItems()
         ::continue::
     end
 
-    -- ★★★ ВОССТАНАВЛИВАЕМ СОРТИРОВКУ ★★★
     table.sort(filtered, function(a, b)
         return sortableName(a.displayName) < sortableName(b.displayName)
     end)
 
-    -- ★★★ ВОССТАНАВЛИВАЕМ ВЫЧИСЛЕНИЕ maxItemWidth ★★★
     maxItemWidth = 0
     for _, item in ipairs(filtered) do
         local len = unicode.len(item.displayName or item.internalName or "")
@@ -2642,13 +2666,14 @@ function drawBuyItemsList()
     listScroll = math.max(1, math.min(listScroll or 1, maxScroll))
 
     if #filteredItems == 0 then
-        gpu.setBackground(colors.bg_main)
-        gpu.fill(2, 7, 78, visibleRows, " ")
+        fillBuffer(2, 7, 78, visibleRows, " ", colors.bg_main, colors.bg_main)
+        
         local msg = "ПО ТВОЕМУ ЗАПРОСУ, НИЧЕГО НЕ НАЙДЕНО!"
         local msgX = math.floor((80 - unicode.len(msg)) / 2) + 1
-        local msgY = 14
-        gpu.setForeground(colors.error)
-        gpu.set(msgX, msgY, msg)
+        for i = 1, unicode.len(msg) do
+            local char = unicode.sub(msg, i, i)
+            setBufferChar(msgX + i - 1, 14, char, colors.error)
+        end
     else
         for i = 1, visibleRows do
             local itemIndex = listScroll + i - 1
@@ -2660,8 +2685,7 @@ function drawBuyItemsList()
             if item then
                 drawSingleRow(y, item, isHovered, isSelected, itemIndex)
             else
-                gpu.setBackground(colors.bg_main)
-                gpu.fill(2, y, 76, 1, " ")
+                fillBuffer(2, y, 76, 1, " ", colors.bg_main, colors.bg_main)
             end
         end
     end
@@ -2670,6 +2694,7 @@ function drawBuyItemsList()
     if selectedItem then
         updateSelectorDisplay(selectedItem)
     end
+    flushBuffer()
 end
 
 function smoothScroll(steps)
@@ -2687,16 +2712,14 @@ function smoothScroll(steps)
     if math.abs(steps) == 1 and total > visibleRows then
         if steps > 0 then
             gpu.copy(2, 8, 76, visibleRows - 1, 0, -1)
-            gpu.setBackground(colors.bg_main)
-            gpu.fill(2, 21, 76, 1, " ")
+            fillBuffer(2, 21, 76, 1, " ", colors.bg_main, colors.bg_main)
             local newIdx = newScroll + visibleRows - 1
             if newIdx <= total then
                 drawSingleRow(21, filtered[newIdx], (newIdx == hoveredIndex), (newIdx == selectedIndex), newIdx)
             end
         else
             gpu.copy(2, 7, 76, visibleRows - 1, 0, 1)
-            gpu.setBackground(colors.bg_main)
-            gpu.fill(2, 7, 76, 1, " ")
+            fillBuffer(2, 7, 76, 1, " ", colors.bg_main, colors.bg_main)
             local newIdx = newScroll
             if newIdx >= 1 then
                 drawSingleRow(7, filtered[newIdx], (newIdx == hoveredIndex), (newIdx == selectedIndex), newIdx)
@@ -2709,6 +2732,7 @@ function smoothScroll(steps)
     
     listScroll = newScroll
     drawScrollBar()
+    flushBuffer()
 end
 
 function drawBuyButtons()
@@ -2752,14 +2776,15 @@ function drawBuyButtons()
         writeDebugFile("❌ Кнопка НЕ АКТИВНА")
     end
 
-    drawFlexButton(backButton)
-    drawFlexButton(nextButton)
+    drawButton(backButton)
+    drawButton(nextButton)
     drawTempMessage()
+    flushBuffer()
     writeDebugFile("========================================")
 end
 
 -- ============================================================
--- ЭКРАНЫ
+-- ЭКРАНЫ (С БУФЕРОМ)
 -- ============================================================
 
 menuButtons = {
@@ -2774,22 +2799,25 @@ shopMenuButtons = {
 
 function drawWelcomeScreen()
     writeDebugLog("drawWelcomeScreen()")
-    
-    gpu.setBackground(colors.bg_main)
-    gpu.fill(1, 1, 80, 25, " ")
+    clearBuffer()
     
     local border_color = 0x00E5C9
     local text_color = 0x00FFCC
     local sub_color = 0xFFFF00
     local hint_color = 0xAAAAAA
     
-    gpu.setForeground(border_color)
-    gpu.set(1, 1, "+" .. string.rep("=", 78) .. "+")
-    gpu.set(1, 25, "+" .. string.rep("=", 78) .. "+")
-    for y = 2, 24 do
-        gpu.set(1, y, "|")
-        gpu.set(80, y, "|")
+    for x = 1, 80 do
+        setBufferChar(x, 1, "=", border_color)
+        setBufferChar(x, 25, "=", border_color)
     end
+    for y = 2, 24 do
+        setBufferChar(1, y, "|", border_color)
+        setBufferChar(80, y, "|", border_color)
+    end
+    setBufferChar(1, 1, "+", border_color)
+    setBufferChar(80, 1, "+", border_color)
+    setBufferChar(1, 25, "+", border_color)
+    setBufferChar(80, 25, "+", border_color)
     
     local diamond = {
         "             ▓▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▓            ",
@@ -2812,14 +2840,8 @@ function drawWelcomeScreen()
     }
     
     local gradient = {
-        0x003D33,
-        0x005A4C,
-        0x007A66,
-        0x009980,
-        0x00B899,
-        0x00D4B3,
-        0x00E5C9,
-        0x33FFD6,
+        0x003D33, 0x005A4C, 0x007A66, 0x009980,
+        0x00B899, 0x00D4B3, 0x00E5C9, 0x33FFD6,
     }
     
     local diamX = 17
@@ -2827,43 +2849,38 @@ function drawWelcomeScreen()
     
     for i, line in ipairs(diamond) do
         local color = gradient[math.min(math.floor((i-1) / 2) + 1, #gradient)]
-        gpu.setForeground(color)
-        gpu.set(diamX, diamY + i - 1, line)
+        for j = 1, #line do
+            local char = line:sub(j, j)
+            if char ~= " " then
+                setBufferChar(diamX + j - 1, diamY + i - 1, char, color)
+            end
+        end
     end
     
     local cx = 41
     
     if shopPaused then
-        gpu.setForeground(colors.error)
         drawCenteredText(21, " РЕЖИМ ОБСЛУЖИВАНИЯ", colors.error)
         drawCenteredText(22, " Магазин временно закрыт", colors.error)
         drawCenteredText(23, " Пожалуйста, зайдите позже", colors.text_main)
     else
         if currentPlayer and currentPlayer ~= "" then
-            gpu.setForeground(text_color)
-            gpu.set(cx - 2, 21, "VIP SHOP")
-            
-            gpu.setForeground(sub_color)
-            gpu.set(cx - 6, 22, "◆ McSkill HiTech ◆")
-            
-            gpu.setForeground(hint_color)
-            gpu.set(cx - 10, 23, "Встаньте на ПИМ для входа")
+            drawCenteredText(21, "VIP SHOP", text_color)
+            drawCenteredText(22, "◆ McSkill HiTech ◆", sub_color)
+            drawCenteredText(23, "Встаньте на ПИМ для входа", hint_color)
         else
-            gpu.setForeground(text_color)
-            gpu.set(cx - 2, 21, "VIP SHOP")
-            
-            gpu.setForeground(sub_color)
-            gpu.set(cx - 6, 22, "◆ McSkill HiTech ◆")
-            
-            gpu.setForeground(hint_color)
-            gpu.set(cx - 10, 23, "Встаньте на ПИМ для входа")
+            drawCenteredText(21, "VIP SHOP", text_color)
+            drawCenteredText(22, "◆ McSkill HiTech ◆", sub_color)
+            drawCenteredText(23, "Встаньте на ПИМ для входа", hint_color)
         end
     end
+    
+    flushBuffer()
 end
 
 function drawMainMenu()
     writeDebugLog("drawMainMenu()")
-    clear()
+    clearBuffer()
     drawScreenBorder()
     
     if currentPlayer then
@@ -2871,24 +2888,32 @@ function drawMainMenu()
         local hello2 = currentPlayer .. "!"
         local full1 = hello1 .. hello2
         local x1 = math.floor((80 - unicode.len(full1))/2) + 2
-        gpu.setForeground(colors.success)
-        gpu.set(x1, 4, hello1)
-        gpu.setForeground(colors.text_bright)
-        gpu.set(x1 + unicode.len(hello1), 4, hello2)
+        for i = 1, unicode.len(hello1) do
+            local char = unicode.sub(hello1, i, i)
+            setBufferChar(x1 + i - 1, 4, char, colors.success)
+        end
+        for i = 1, unicode.len(hello2) do
+            local char = unicode.sub(hello2, i, i)
+            setBufferChar(x1 + unicode.len(hello1) + i - 1, 4, char, colors.text_bright)
+        end
 
         local coin = coinBalance or 0.0
         local ema = emaBalance or 0.0
         
-        gpu.setForeground(colors.white)
-        local balanceText = "Баланс: " .. string.format("%.2f", coin) .. " Coina ₵"
-        local balanceX = math.floor((80 - unicode.len(balanceText .. " | ЭМЫ: " .. string.format("%.2f", ema) .. " ۞")) / 2) + 1
-        gpu.set(balanceX, 5, "Баланс: ")
-        gpu.setForeground(colors.accent_main)
-        gpu.set(balanceX + unicode.len("Баланс: "), 5, string.format("%.2f", coin) .. " Coina ₵")
-        gpu.setForeground(colors.white)
-        gpu.set(balanceX + unicode.len("Баланс: ") + unicode.len(string.format("%.2f", coin) .. " Coina ₵"), 5, " | ")
-        gpu.setForeground(colors.tomato)
-        gpu.set(balanceX + unicode.len("Баланс: ") + unicode.len(string.format("%.2f", coin) .. " Coina ₵") + unicode.len(" | "), 5, "ЭМЫ: " .. string.format("%.2f", ema) .. " ۞")
+        local parts = {
+            {text = "Баланс: ", color = colors.white},
+            {text = string.format("%.2f", coin) .. " Coina ₵", color = colors.accent_main},
+            {text = " | ", color = colors.white},
+            {text = "ЭМЫ: " .. string.format("%.2f", ema) .. " ۞", color = colors.tomato}
+        }
+        local balanceX = math.floor((80 - (#parts[1].text + #parts[2].text + #parts[3].text + #parts[4].text)) / 2) + 1
+        local pos = balanceX
+        for _, part in ipairs(parts) do
+            for i = 1, #part.text do
+                setBufferChar(pos + i - 1, 5, part.text:sub(i, i), part.color)
+            end
+            pos = pos + #part.text
+        end
         
         local boundInfo = ""
         local boundColor = colors.error
@@ -2903,12 +2928,12 @@ function drawMainMenu()
             boundColor = colors.error
         end
         
-        gpu.setForeground(boundColor)
         local boundX = math.floor((80 - unicode.len(boundInfo)) / 2) + 1
-        gpu.set(boundX, 2, boundInfo)
+        for i = 1, #boundInfo do
+            setBufferChar(boundX + i - 1, 2, boundInfo:sub(i, i), boundColor)
+        end
 
         if not playerAgreed then
-            gpu.setForeground(colors.accent_secondary)
             if showShopDenied then
                 drawCenteredText(8, "Доступ запрещён. Примите соглашение [Соглашение]", colors.error)
             else
@@ -2920,19 +2945,30 @@ function drawMainMenu()
             drawButton(btn)
         end
         
-        gpu.setForeground(colors.error)
-        gpu.set(4, 24, "[ ПОДДЕРЖКА ]")
-        gpu.set(35, 24, "[ СОГЛАШЕНИЕ ]")
-        gpu.set(68, 24, "[ ОТЗЫВЫ ]")
+        local supportText = "[ ПОДДЕРЖКА ]"
+        for i = 1, #supportText do
+            setBufferChar(3 + i - 1, 24, supportText:sub(i, i), colors.error)
+        end
+        
+        local agreeText = "[ СОГЛАШЕНИЕ ]"
+        for i = 1, #agreeText do
+            setBufferChar(34 + i - 1, 24, agreeText:sub(i, i), colors.error)
+        end
+        
+        local feedbackText = "[ ОТЗЫВЫ ]"
+        for i = 1, #feedbackText do
+            setBufferChar(67 + i - 1, 24, feedbackText:sub(i, i), colors.error)
+        end
     else
         drawWelcomeScreen()
     end
     drawTempMessage()
+    flushBuffer()
 end
 
 function drawShopMenu()
     writeDebugLog("drawShopMenu()")
-    clear()
+    clearBuffer()
     drawScreenBorder()
     drawCenteredText(6, " МАГАЗИН", colors.accent_secondary)
     if not playerAgreed then
@@ -2946,8 +2982,9 @@ function drawShopMenu()
             bg = colors.bg_button,
             fg = colors.accent_secondary
         }
-        drawFlexButton(backButton)
+        drawButton(backButton)
         drawTempMessage()
+        flushBuffer()
         return
     end
     for _, btn in pairs(shopMenuButtons) do
@@ -2961,13 +2998,14 @@ function drawShopMenu()
         bg = colors.bg_button,
         fg = colors.accent_secondary
     }
-    drawFlexButton(backButton)
+    drawButton(backButton)
     drawTempMessage()
+    flushBuffer()
 end
 
 function drawAccount(data)
     writeDebugLog("drawAccount()")
-    clear()
+    clearBuffer()
     drawScreenBorder()
     drawCenteredText(10, (currentPlayer or "Игрок") .. ":", colors.text_bright)
     
@@ -2975,44 +3013,54 @@ function drawAccount(data)
     local ema = (data and data.emaBalance) or emaBalance or 0.0
     local agreed = (data and data.agreed) or playerAgreed or false
     
-    gpu.setForeground(colors.white)
-    local balanceText = "Баланс: " .. string.format("%.2f", coin) .. " Coina ₵"
-    local balanceX = math.floor((80 - unicode.len(balanceText .. " | ЭМЫ: " .. string.format("%.2f", ema) .. " ۞")) / 2) + 1
-    gpu.set(balanceX, 12, "Баланс: ")
-    gpu.setForeground(colors.accent_main)
-    gpu.set(balanceX + unicode.len("Баланс: "), 12, string.format("%.2f", coin) .. " Coina ₵")
-    gpu.setForeground(colors.white)
-    gpu.set(balanceX + unicode.len("Баланс: ") + unicode.len(string.format("%.2f", coin) .. " Coina ₵"), 12, " | ")
-    gpu.setForeground(colors.tomato)
-    gpu.set(balanceX + unicode.len("Баланс: ") + unicode.len(string.format("%.2f", coin) .. " Coina ₵") + unicode.len(" | "), 12, "ЭМЫ: " .. string.format("%.2f", ema) .. " ۞")
+    local parts = {
+        {text = "Баланс: ", color = colors.white},
+        {text = string.format("%.2f", coin) .. " Coina ₵", color = colors.accent_main},
+        {text = " | ", color = colors.white},
+        {text = "ЭМЫ: " .. string.format("%.2f", ema) .. " ۞", color = colors.tomato}
+    }
+    local balanceX = math.floor((80 - (#parts[1].text + #parts[2].text + #parts[3].text + #parts[4].text)) / 2) + 1
+    local pos = balanceX
+    for _, part in ipairs(parts) do
+        for i = 1, #part.text do
+            setBufferChar(pos + i - 1, 12, part.text:sub(i, i), part.color)
+        end
+        pos = pos + #part.text
+    end
 
     local transLabel = "Совершенно транзакций: "
     local transCount = tostring((data and data.transactions) or playerTransactions or 0)
     local fullTrans = transLabel .. transCount
     local transX = math.floor((80 - unicode.len(fullTrans)) / 2) + 1
-    gpu.setForeground(colors.success)
-    gpu.set(transX, 13, transLabel)
-    gpu.setForeground(colors.text_bright)
-    gpu.set(transX + unicode.len(transLabel), 13, transCount)
+    for i = 1, #transLabel do
+        setBufferChar(transX + i - 1, 13, transLabel:sub(i, i), colors.success)
+    end
+    for i = 1, #transCount do
+        setBufferChar(transX + #transLabel + i - 1, 13, transCount:sub(i, i), colors.text_bright)
+    end
 
     local regLabel = "Регистрация: "
     local regDate = (data and data.regDate) or playerRegDate or "Неизвестно"
     local fullReg = regLabel .. regDate
     local regX = math.floor((80 - unicode.len(fullReg)) / 2) + 1
-    gpu.setForeground(colors.success)
-    gpu.set(regX, 14, regLabel)
-    gpu.setForeground(colors.text_bright)
-    gpu.set(regX + unicode.len(regLabel), 14, regDate)
+    for i = 1, #regLabel do
+        setBufferChar(regX + i - 1, 14, regLabel:sub(i, i), colors.success)
+    end
+    for i = 1, #regDate do
+        setBufferChar(regX + #regLabel + i - 1, 14, regDate:sub(i, i), colors.text_bright)
+    end
 
     local agreeLabel = "Соглашение: "
     local agreeStatus = agreed and "ознакомлен" or "не ознакомлен"
     local agreeColor = agreed and colors.text_bright or colors.error
     local fullAgree = agreeLabel .. agreeStatus
     local agreeX = math.floor((80 - unicode.len(fullAgree)) / 2) + 1
-    gpu.setForeground(colors.success)
-    gpu.set(agreeX, 15, agreeLabel)
-    gpu.setForeground(agreeColor)
-    gpu.set(agreeX + unicode.len(agreeLabel), 15, agreeStatus)
+    for i = 1, #agreeLabel do
+        setBufferChar(agreeX + i - 1, 15, agreeLabel:sub(i, i), colors.success)
+    end
+    for i = 1, #agreeStatus do
+        setBufferChar(agreeX + #agreeLabel + i - 1, 15, agreeStatus:sub(i, i), agreeColor)
+    end
 
     local authBtn = {
         text = "[ АУТЕНТИФИКАЦИЯ ]",
@@ -3023,7 +3071,6 @@ function drawAccount(data)
         bg = colors.bg_button,
         fg = colors.accent_secondary
     }
-
     local backButton = {
         text = "[ НАЗАД ]",
         x = 50,
@@ -3033,22 +3080,24 @@ function drawAccount(data)
         bg = colors.bg_button,
         fg = colors.accent_secondary
     }
-
-    drawFlexButton(authBtn)
-    drawFlexButton(backButton)
+    drawButton(authBtn)
+    drawButton(backButton)
     drawTempMessage()
+    flushBuffer()
 end
 
 function drawReportScreen()
     writeDebugLog("drawReportScreen()")
     currentScreen = "report"
-    clear()
+    clearBuffer()
     drawScreenBorder()
     drawCenteredText(4, "РЕПОРТ", colors.accent_secondary)
     gpu.setForeground(colors.text_main)
     local help1 = "Опишите проблему: баг, предложение, жалоба."
     local helpX = math.floor((80 - unicode.len(help1)) / 2) + 1
-    gpu.set(helpX, 7, help1)
+    for i = 1, #help1 do
+        setBufferChar(helpX + i - 1, 7, help1:sub(i, i), colors.text_main)
+    end
 
     if not canSendReport() then
         drawCenteredText(9, "Вы уже отправляли репорт сегодня.", colors.error)
@@ -3061,21 +3110,24 @@ function drawReportScreen()
             bg = colors.bg_button,
             fg = colors.accent_secondary
         }
-        drawFlexButton(backButton)
+        drawButton(backButton)
         drawTempMessage()
+        flushBuffer()
         return
     end
 
-    gpu.setBackground(colors.black_fon)
-    gpu.fill(10, 9, 60, 3, " ")
-    gpu.setForeground(colors.text_bright)
+    fillBuffer(10, 9, 60, 3, " ", colors.text_bright, colors.black_fon)
     if reportInput and reportInput ~= "" then
-        gpu.set(11, 10, unicode.sub(reportInput, -58))
+        local displayText = unicode.sub(reportInput, -58)
+        for i = 1, #displayText do
+            setBufferChar(10 + i, 10, displayText:sub(i, i), colors.text_bright, colors.black_fon)
+        end
     else
-        gpu.setForeground(colors.inactive)
-        gpu.set(11, 10, "Введите текст сообщения...")
+        local placeholder = "Введите текст сообщения..."
+        for i = 1, #placeholder do
+            setBufferChar(10 + i, 10, placeholder:sub(i, i), colors.inactive, colors.black_fon)
+        end
     end
-    gpu.setBackground(colors.bg_main)
 
     local sendBtn = {x=33, y=14, xs=17, ys=1, text="[ ОТПРАВИТЬ ]", bg=colors.bg_button, fg=colors.success}
     local backButton = {
@@ -3086,15 +3138,15 @@ function drawReportScreen()
         bg = colors.bg_button,
         fg = colors.accent_secondary
     }
-    drawFlexButton(sendBtn)
-    drawFlexButton(backButton)
-    gpu.setForeground(colors.text_main)
+    drawButton(sendBtn)
+    drawButton(backButton)
     drawCenteredText(16, "Ограничение: 1 репорт в сутки (сброс в 00:00 МСК)", colors.text_main)
     drawTempMessage()
+    flushBuffer()
 end
 
 -- ============================================================
--- ПОП-АПЫ
+-- ПОП-АПЫ (С БУФЕРОМ)
 -- ============================================================
 
 function drawSellPopup()
@@ -3109,44 +3161,28 @@ function drawSellPopup()
     local popupX = math.floor((80 - popupWidth) / 2)
     local popupY = 10
 
-    gpu.setBackground(colors.black_fon)
-    gpu.fill(popupX, popupY+2, popupWidth, popupHeight-4, " ")
-    gpu.fill(popupX+1, popupY+1, popupWidth-2, popupHeight-2, " ")
-
+    fillBuffer(popupX, popupY+2, popupWidth, popupHeight-4, " ", colors.bg_main, colors.black_fon)
+    fillBuffer(popupX+1, popupY+1, popupWidth-2, popupHeight-2, " ", colors.bg_main, colors.black_fon)
     drawPopupBorder(popupX, popupY, popupWidth, popupHeight, colors.accent_secondary)
 
     local name = sellConfirmItem.displayName or "Неизвестно"
     local totalFound = foundAmount or 0
     local value = totalFound * (sellConfirmItem.price or 0)
 
-    gpu.setForeground(colors.text_bright)
-    gpu.set(popupX+14, popupY, "Подтверждение")
-
-    gpu.setForeground(colors.success)
-    gpu.set(popupX+3, popupY+3, "Магазин заберёт: ")
-    gpu.setForeground(colors.text_bright)
-    gpu.set(popupX+3 + unicode.len("Магазин заберёт: "), popupY+3, tostring(totalFound))
-
-    gpu.setForeground(colors.success)
-    gpu.set(popupX+3, popupY+4, name .. " x")
-    gpu.setForeground(colors.text_bright)
-    gpu.set(popupX+3 + unicode.len(name .. " x"), popupY+4, tostring(totalFound))
-
-    gpu.setForeground(colors.success)
-    gpu.set(popupX+3, popupY+5, "Вы получите: ")
-    if sellConfirmItem.internalName == "customnpcs:npcMoney" then
-        gpu.setForeground(colors.tomato)
-        gpu.set(popupX+3 + unicode.len("Вы получите: "), popupY+5, string.format("%.2f", value) .. " ۞")
-    else
-        gpu.setForeground(colors.accent_main)
-        gpu.set(popupX+3 + unicode.len("Вы получите: "), popupY+5, string.format("%.2f", value) .. " ₵")
-    end
+    drawCenteredText(popupY, "Подтверждение", colors.text_bright)
+    drawCenteredText(popupY+3, "Магазин заберёт: " .. totalFound, colors.success)
+    drawCenteredText(popupY+4, name .. " x" .. totalFound, colors.success)
+    
+    local currencySymbol = (sellConfirmItem.internalName == "customnpcs:npcMoney") and " ۞" or " ₵"
+    local priceColor = (sellConfirmItem.internalName == "customnpcs:npcMoney") and colors.tomato or colors.accent_main
+    drawCenteredText(popupY+5, "Вы получите: " .. string.format("%.2f", value) .. currencySymbol, priceColor)
 
     local yesBtn = {x=popupX+5, y=popupY+7, xs=13, ys=1, text="[ Принять ]", bg=colors.bg_button, fg=colors.success}
     local noBtn  = {x=popupX+popupWidth-16, y=popupY+7, xs=12, ys=1, text="[ Отмена ]", bg=colors.bg_button, fg=colors.error}
-    drawFlexButton(yesBtn)
-    drawFlexButton(noBtn)
+    drawButton(yesBtn)
+    drawButton(noBtn)
     drawTempMessage()
+    flushBuffer()
 end
 
 function drawSellScanScreen()
@@ -3157,37 +3193,24 @@ function drawSellScanScreen()
     end
     
     currentScreen = "sell_scan"
-    clear()
+    clearBuffer()
     drawScreenBorder()
     drawBalanceLine(3, 1)
 
-    gpu.setForeground(colors.success)
-    gpu.set(3, 3, "Имя предмета: ")
-    gpu.setForeground(colors.text_bright)
-    gpu.set(18, 3, sellConfirmItem.displayName or "Неизвестно")
+    drawCenteredText(3, "Имя предмета: " .. (sellConfirmItem.displayName or "Неизвестно"), colors.success)
+    
+    local priceStr = string.format("%.2f", sellConfirmItem.price or 0)
+    local suffix = (sellConfirmItem.internalName == "customnpcs:npcMoney") and " ۞" or " ₵"
+    local priceColor = (sellConfirmItem.internalName == "customnpcs:npcMoney") and colors.tomato or colors.accent_main
+    drawCenteredText(3, "Цена: " .. priceStr .. suffix, priceColor)
 
-    gpu.setForeground(colors.success)
-    gpu.set(55, 3, "Цена: ")
-    if sellConfirmItem.internalName == "customnpcs:npcMoney" then
-        gpu.setForeground(colors.tomato)
-        gpu.set(62, 3, string.format("%.2f", sellConfirmItem.price or 0) .. " ۞")
-    else
-        gpu.setForeground(colors.accent_main)
-        gpu.set(62, 3, string.format("%.2f", sellConfirmItem.price or 0) .. " ₵")
-    end
+    drawCenteredText(5, "Можно продать: " .. tostring(sellConfirmItem.qty or 0), colors.success)
 
-    gpu.setForeground(colors.success)
-    gpu.set(3, 5, "Можно продать: ")
-    gpu.setForeground(colors.text_bright)
-    gpu.set(18, 5, tostring(sellConfirmItem.qty or 0))
-
-    gpu.setForeground(colors.accent_secondary)
     local scanText = "Сканировать на наличие предмета:"
-    local scanX = math.floor((80 - unicode.len(scanText)) / 2)
-    gpu.set(scanX, 11, scanText)
+    drawCenteredText(11, scanText, colors.accent_secondary)
 
     local allBtn  = {x=30, y=13, xs=20, ys=1, text="Весь инвентарь", bg=colors.bg_button, fg=colors.success}
-    drawFlexButton(allBtn)
+    drawButton(allBtn)
     
     local backButton = {
         text = "[ НАЗАД ]",
@@ -3197,18 +3220,19 @@ function drawSellScanScreen()
         bg = colors.bg_button,
         fg = colors.accent_secondary
     }
-    drawFlexButton(backButton)
+    drawButton(backButton)
 
     if showSellPopup and sellConfirmItem then
         drawSellPopup()
     end
     drawTempMessage()
+    flushBuffer()
 end
 
 function drawPurchaseScreen()
     writeDebugFile(">>> drawPurchaseScreen()")
     currentScreen = "purchase"
-    clear()
+    clearBuffer()
     drawScreenBorder()
     drawBalanceLine(3, 1)
 
@@ -3217,57 +3241,40 @@ function drawPurchaseScreen()
         writeErrorLog("❌ drawPurchaseScreen: purchaseItem = nil!")
         drawCenteredText(10, "Ошибка: предмет не выбран", colors.error)
         local backBtn = {x = 37, y = 24, xs = unicode.len("[ НАЗАД ]") + 2, ys = 1, text = "[ НАЗАД ]", bg = colors.bg_button, fg = colors.accent_secondary}
-        drawFlexButton(backBtn)
+        drawButton(backBtn)
         drawTempMessage()
+        flushBuffer()
         return
     end
 
     writeDebugFile("✅ purchaseItem: " .. tostring(purchaseItem.displayName))
 
-    gpu.setForeground(colors.success)
-    gpu.set(3, 3, "Имя предмета: ")
-    gpu.setForeground(colors.text_bright)
-    gpu.set(18, 3, purchaseItem.displayName or "Неизвестно")
-
-    gpu.setForeground(colors.success)
-    gpu.set(55, 3, "Доступно: ")
-    gpu.setForeground(colors.text_bright)
-    gpu.set(66, 3, tostring(purchaseItem.qty or 0))
+    drawCenteredText(3, "Имя предмета: " .. (purchaseItem.displayName or "Неизвестно"), colors.success)
+    drawCenteredText(3, "Доступно: " .. tostring(purchaseItem.qty or 0), colors.success)
 
     local qty = purchaseQuantity or 1
     local totalCoin = (purchaseItem.priceCoin or 0) * qty
     local totalEma = (purchaseItem.priceEma or 0) * qty
 
-    gpu.setForeground(colors.success)
-    gpu.set(3, 5, "На сумму: ")
     local sumY = 5
     if totalCoin > 0 then
-        gpu.setForeground(colors.error)
-        gpu.set(14, sumY, string.format("%.2f", totalCoin) .. " ₵")
+        drawCenteredText(sumY, "На сумму: " .. string.format("%.2f", totalCoin) .. " ₵", colors.error)
         sumY = sumY + 1
     end
     if totalEma > 0 then
-        gpu.setForeground(colors.tomato)
-        gpu.set(14, sumY, string.format("%.2f", totalEma) .. " ۞")
+        drawCenteredText(sumY, "На сумму: " .. string.format("%.2f", totalEma) .. " ۞", colors.tomato)
     end
 
-    gpu.setForeground(colors.success)
-    gpu.set(55, 5, "Цена: ")
     local priceY = 5
     if purchaseItem.priceCoin and purchaseItem.priceCoin > 0 then
-        gpu.setForeground(colors.accent_main)
-        gpu.set(62, priceY, string.format("%.2f", purchaseItem.priceCoin) .. " ₵")
+        drawCenteredText(priceY, "Цена: " .. string.format("%.2f", purchaseItem.priceCoin) .. " ₵", colors.accent_main)
         priceY = priceY + 1
     end
     if purchaseItem.priceEma and purchaseItem.priceEma > 0 then
-        gpu.setForeground(colors.tomato)
-        gpu.set(62, priceY, string.format("%.2f", purchaseItem.priceEma) .. " ۞")
+        drawCenteredText(priceY, "Цена: " .. string.format("%.2f", purchaseItem.priceEma) .. " ۞", colors.tomato)
     end
 
-    gpu.setForeground(colors.success)
-    gpu.set(3, 7, "Кол-во: ")
-    gpu.setForeground(colors.text_bright)
-    gpu.set(12, 7, tostring(qty))
+    drawCenteredText(7, "Кол-во: " .. tostring(qty), colors.success)
 
     local keys = {
         {"1","2","3"},
@@ -3285,19 +3292,17 @@ function drawPurchaseScreen()
             local x = startX + (col-1)*(btnW + spacing)
             local y = startY + (row-1)*(btnH + 1)
             local text = keys[row][col]
-            gpu.setBackground(colors.bg_button)
-            gpu.fill(x, y, btnW, btnH, " ")
-            gpu.setForeground(colors.accent_main)
-            local tx = x + math.floor((btnW - unicode.len(text)) / 2)
-            local ty = y
-            gpu.set(tx, ty, text)
+            fillBuffer(x, y, btnW, btnH, " ", colors.accent_main, colors.bg_button)
+            local tx = x + math.floor((btnW - #text) / 2)
+            setBufferChar(tx, y, text, colors.accent_main, colors.bg_button)
         end
     end
     local backBtn = {x = 19, y = 24, xs = unicode.len("[ НАЗАД ]") + 2, ys = 1, text = "[ НАЗАД ]", bg = colors.bg_button, fg = colors.accent_secondary}
     local buyBtn  = {x = 51, y = 24, xs = unicode.len("[ КУПИТЬ ]") + 2, ys = 1, text = "[ КУПИТЬ ]", bg = colors.bg_button, fg = colors.success}
-    drawFlexButton(backBtn)
-    drawFlexButton(buyBtn)
+    drawButton(backBtn)
+    drawButton(buyBtn)
     drawTempMessage()
+    flushBuffer()
 end
 
 function drawFeedbacksList()
@@ -3315,7 +3320,7 @@ function drawFeedbacksList()
         end
     end
     
-    clear()
+    clearBuffer()
     drawScreenBorder()
 
     local line = string.rep("═", 15)
@@ -3323,12 +3328,15 @@ function drawFeedbacksList()
     local line2 = string.rep("═", 15)
     local fullStr = line .. title .. line2
     local x = math.floor((80 - unicode.len(fullStr)) / 2) + 1
-    gpu.setForeground(colors.accent_main)
-    gpu.set(x, 2, line)
-    gpu.setForeground(colors.text_bright)
-    gpu.set(x + unicode.len(line), 2, title)
-    gpu.setForeground(colors.accent_main)
-    gpu.set(x + unicode.len(line) + unicode.len(title), 2, line2)
+    for i = 1, #line do
+        setBufferChar(x + i - 1, 2, line:sub(i, i), colors.accent_main)
+    end
+    for i = 1, #title do
+        setBufferChar(x + #line + i - 1, 2, title:sub(i, i), colors.text_bright)
+    end
+    for i = 1, #line2 do
+        setBufferChar(x + #line + #title + i - 1, 2, line2:sub(i, i), colors.accent_main)
+    end
 
     if #feedbacks == 0 then
         drawCenteredText(10, "Пока нет ни одного отзыва.", colors.text_main)
@@ -3344,20 +3352,22 @@ function drawFeedbacksList()
         for i = startIdx, endIdx do
             local fb = feedbacks[i]
             if fb then
-                gpu.setForeground(colors.accent_secondary)
-                gpu.fill(5, y, 70, 3, " ")
-                gpu.setBackground(colors.bg_secondary)
-                gpu.fill(6, y+1, 68, 1, " ")
+                fillBuffer(5, y, 70, 3, " ", colors.bg_secondary, colors.accent_secondary)
+                fillBuffer(6, y+1, 68, 1, " ", colors.bg_secondary, colors.bg_secondary)
 
-                gpu.setForeground(colors.accent_main)
-                gpu.set(7, y+1, fb.name or "Аноним")
-                gpu.setForeground(colors.inactive)
+                local name = fb.name or "Аноним"
                 local timeStr = fb.time or ""
-                gpu.set(7 + unicode.len(fb.name or "Аноним") + 2, y+1, timeStr)
+                for j = 1, #name do
+                    setBufferChar(6 + j, y+1, name:sub(j, j), colors.accent_main, colors.bg_secondary)
+                end
+                for j = 1, #timeStr do
+                    setBufferChar(6 + #name + 2 + j - 1, y+1, timeStr:sub(j, j), colors.inactive, colors.bg_secondary)
+                end
 
-                gpu.setForeground(colors.text_bright)
                 local shortText = unicode.sub(fb.text or "", 1, 62)
-                gpu.set(7, y+2, shortText)
+                for j = 1, #shortText do
+                    setBufferChar(6 + j, y+2, shortText:sub(j, j), colors.text_bright, colors.bg_secondary)
+                end
 
                 y = y + 4
             end
@@ -3365,9 +3375,10 @@ function drawFeedbacksList()
 
         local feedbacksTotalPages = math.max(1, math.ceil(#feedbacks / 3))
         local pageInfo = "Страница " .. feedbacksPage .. " из " .. feedbacksTotalPages
-        local x = math.floor((80 - unicode.len(pageInfo)) / 2) + 1
-        gpu.setForeground(colors.text_main)
-        gpu.set(x, 22, pageInfo)
+        local px = math.floor((80 - unicode.len(pageInfo)) / 2) + 1
+        for i = 1, #pageInfo do
+            setBufferChar(px + i - 1, 22, pageInfo:sub(i, i), colors.text_main)
+        end
     end
 
     local backBtn = {x = 5, y = 24, xs = 11, ys = 1, text = "[ НАЗАД ]", bg = colors.bg_button, fg = colors.accent_secondary}
@@ -3376,15 +3387,16 @@ function drawFeedbacksList()
     local nextBtn = {x = 69, y = 24, xs = 7, ys = 1, text = "[ > ]", bg = colors.bg_button, fg = colors.accent_main}
 
     if not playerHasFeedback then
-        drawFlexButton(addBtn)
+        drawButton(addBtn)
     end
-    drawFlexButton(backBtn)
+    drawButton(backBtn)
     if #feedbacks > 3 then
-        drawFlexButton(prevBtn)
-        drawFlexButton(nextBtn)
+        drawButton(prevBtn)
+        drawButton(nextBtn)
     end
 
     drawTempMessage()
+    flushBuffer()
 end
 
 function drawFeedbackInputScreen()
@@ -3395,40 +3407,47 @@ function drawFeedbackInputScreen()
         return
     end
     currentScreen = "feedback_input"
-    clear()
+    clearBuffer()
     drawScreenBorder()
     drawCenteredText(4, "ОСТАВИТЬ ОТЗЫВ", colors.accent_secondary)
 
-    gpu.setForeground(colors.text_main)
     drawCenteredText(7, "Ваше имя: " .. (currentPlayer or "Игрок"), colors.accent_main)
     drawCenteredText(9, "Оставьте свой отзыв о магазине:", colors.text_main)
     drawCenteredText(10, "Ваше мнение поможет нам стать лучше!", colors.inactive)
 
-    gpu.setBackground(colors.black_fon)
-    gpu.fill(10, 12, 60, 3, " ")
-    gpu.setForeground(colors.text_bright)
+    fillBuffer(10, 12, 60, 3, " ", colors.text_bright, colors.black_fon)
     if feedbackEditMode then
         if feedbackInput and feedbackInput ~= "" then
-            gpu.set(11, 13, unicode.sub(feedbackInput, -58) .. "_")
+            local displayText = unicode.sub(feedbackInput, -58) .. "_"
+            for i = 1, #displayText do
+                setBufferChar(10 + i, 13, displayText:sub(i, i), colors.text_bright, colors.black_fon)
+            end
         else
-            gpu.setForeground(colors.inactive)
-            gpu.set(11, 13, "Введите ваш отзыв..._")
+            local placeholder = "Введите ваш отзыв..._"
+            for i = 1, #placeholder do
+                setBufferChar(10 + i, 13, placeholder:sub(i, i), colors.inactive, colors.black_fon)
+            end
         end
     else
         if feedbackInput and feedbackInput ~= "" then
-            gpu.set(11, 13, unicode.sub(feedbackInput, -58))
+            local displayText = unicode.sub(feedbackInput, -58)
+            for i = 1, #displayText do
+                setBufferChar(10 + i, 13, displayText:sub(i, i), colors.text_bright, colors.black_fon)
+            end
         else
-            gpu.setForeground(colors.inactive)
-            gpu.set(11, 13, "Введите ваш отзыв...")
+            local placeholder = "Введите ваш отзыв..."
+            for i = 1, #placeholder do
+                setBufferChar(10 + i, 13, placeholder:sub(i, i), colors.inactive, colors.black_fon)
+            end
         end
     end
 
     local cancelBtn = {x = 20, y = 24, xs = 12, ys = 1, text = "[ ОТМЕНА ]", bg = colors.bg_button, fg = colors.error}
     local sendBtn = {x = 46, y = 24, xs = 15, ys = 1, text = "[ ОТПРАВИТЬ ]", bg = colors.bg_button, fg = colors.success}
-
-    drawFlexButton(cancelBtn)
-    drawFlexButton(sendBtn)
+    drawButton(cancelBtn)
+    drawButton(sendBtn)
     drawTempMessage()
+    flushBuffer()
 end
 
 function drawInsufficientPopup()
@@ -3438,34 +3457,18 @@ function drawInsufficientPopup()
     local popupX = math.floor((80 - popupWidth) / 2)
     local popupY = 7
 
-    gpu.setBackground(colors.black_fon)
-    gpu.fill(popupX, popupY, popupWidth, popupHeight, " ")
-    gpu.fill(popupX+1, popupY+1, popupWidth-2, popupHeight-2, " ")
+    fillBuffer(popupX, popupY, popupWidth, popupHeight, " ", colors.bg_main, colors.black_fon)
+    fillBuffer(popupX+1, popupY+1, popupWidth-2, popupHeight-2, " ", colors.bg_main, colors.black_fon)
     drawPopupBorder(popupX, popupY, popupWidth, popupHeight, colors.error)
 
-    gpu.setForeground(colors.error)
-    local title = "НЕДОСТАТОЧНО СРЕДСТВ"
-    local titleX = popupX + math.floor((popupWidth - unicode.len(title)) / 2)
-    gpu.set(titleX, popupY, title)
+    drawCenteredText(popupY, "НЕДОСТАТОЧНО СРЕДСТВ", colors.error)
 
-    gpu.setForeground(colors.text_main)
-    local line1a = "Пополни баланс, не можешь купить"
-    local line1aX = popupX + math.floor((popupWidth - unicode.len(line1a)) / 2)
-    gpu.set(line1aX, popupY+2, line1a)
+    drawCenteredText(popupY+2, "Пополни баланс, не можешь купить", colors.text_main)
+    drawCenteredText(popupY+3, "хотя бы 1 штуку предмета.", colors.text_main)
 
-    local line1b = "хотя бы 1 штуку предмета."
-    local line1bX = popupX + math.floor((popupWidth - unicode.len(line1b)) / 2)
-    gpu.set(line1bX, popupY+3, line1b)
-
-    gpu.setForeground(colors.success)
-    gpu.set(popupX+3, popupY+5, "Твой баланс Coin: ")
-    gpu.setForeground(colors.accent_main)
-    gpu.set(popupX+3 + unicode.len("Твой баланс Coin: "), popupY+5, string.format("%.2f", insufficientBalanceCoin or 0) .. " ₵")
+    drawCenteredText(popupY+5, "Твой баланс Coin: " .. string.format("%.2f", insufficientBalanceCoin or 0) .. " ₵", colors.accent_main)
     if insufficientBalanceEma and insufficientBalanceEma > 0 then
-        gpu.setForeground(colors.success)
-        gpu.set(popupX+3, popupY+6, "Твой баланс ЭМЫ: ")
-        gpu.setForeground(colors.tomato)
-        gpu.set(popupX+3 + unicode.len("Твой баланс ЭМЫ: "), popupY+6, string.format("%.2f", insufficientBalanceEma) .. " ۞")
+        drawCenteredText(popupY+6, "Твой баланс ЭМЫ: " .. string.format("%.2f", insufficientBalanceEma) .. " ۞", colors.tomato)
     end
 
     local okBtnText = "[ ПОНЯТНО ]"
@@ -3479,8 +3482,9 @@ function drawInsufficientPopup()
         bg = colors.bg_button,
         fg = colors.success
     }
-    drawFlexButton(okBtn)
+    drawButton(okBtn)
     drawTempMessage()
+    flushBuffer()
 end
 
 function drawPartialPopup()
@@ -3490,43 +3494,18 @@ function drawPartialPopup()
     local popupX = math.floor((80 - popupWidth) / 2)
     local popupY = 9
 
-    gpu.setBackground(colors.black_fon)
-    gpu.fill(popupX, popupY, popupWidth, popupHeight, " ")
-    gpu.fill(popupX+1, popupY+1, popupWidth-2, popupHeight-2, " ")
+    fillBuffer(popupX, popupY, popupWidth, popupHeight, " ", colors.bg_main, colors.black_fon)
+    fillBuffer(popupX+1, popupY+1, popupWidth-2, popupHeight-2, " ", colors.bg_main, colors.black_fon)
     drawPopupBorder(popupX, popupY, popupWidth, popupHeight, colors.error)
 
-    gpu.setForeground(colors.error)
-    local title = "НЕ ПОЛНАЯ ВЫДАЧА"
-    local titleX = popupX + math.floor((popupWidth - unicode.len(title)) / 2)
-    gpu.set(titleX, popupY, title)
+    drawCenteredText(popupY, "НЕ ПОЛНАЯ ВЫДАЧА", colors.error)
 
-    gpu.setForeground(colors.text_main)
-    local line1 = "Не хватило места в инвентаре!"
-    local line1X = popupX + math.floor((popupWidth - unicode.len(line1)) / 2)
-    gpu.set(line1X, popupY+2, line1)
+    drawCenteredText(popupY+2, "Не хватило места в инвентаре!", colors.text_main)
+    drawCenteredText(popupY+3, "Выдано " .. (partialExtracted or 0) .. " из " .. (partialRequested or 0), colors.text_main)
 
-    local line2 = "Выдано " .. (partialExtracted or 0) .. " из " .. (partialRequested or 0)
-    local line2X = popupX + math.floor((popupWidth - unicode.len(line2)) / 2)
-    gpu.set(line2X, popupY+3, line2)
-
-    local spentLabelCoin = "Списано Coin: "
-    local spentValueCoin = string.format("%.2f", partialRefundCoin or 0) .. " ₵"
-    local fullSpentTextCoin = spentLabelCoin .. spentValueCoin
-    local spentStartXCoin = popupX + math.floor((popupWidth - unicode.len(fullSpentTextCoin)) / 2)
-    gpu.setForeground(colors.success)
-    gpu.set(spentStartXCoin, popupY+4, spentLabelCoin)
-    gpu.setForeground(colors.accent_main)
-    gpu.set(spentStartXCoin + unicode.len(spentLabelCoin), popupY+4, spentValueCoin)
-
+    drawCenteredText(popupY+4, "Списано Coin: " .. string.format("%.2f", partialRefundCoin or 0) .. " ₵", colors.accent_main)
     if partialRefundEma and partialRefundEma > 0 then
-        local spentLabelEma = "Списано ЭМЫ: "
-        local spentValueEma = string.format("%.2f", partialRefundEma) .. " ۞"
-        local fullSpentTextEma = spentLabelEma .. spentValueEma
-        local spentStartXEma = popupX + math.floor((popupWidth - unicode.len(fullSpentTextEma)) / 2)
-        gpu.setForeground(colors.success)
-        gpu.set(spentStartXEma, popupY+5, spentLabelEma)
-        gpu.setForeground(colors.tomato)
-        gpu.set(spentStartXEma + unicode.len(spentLabelEma), popupY+5, spentValueEma)
+        drawCenteredText(popupY+5, "Списано ЭМЫ: " .. string.format("%.2f", partialRefundEma) .. " ۞", colors.tomato)
     end
 
     local okBtnText = "[ ПРИНЯТЬ ]"
@@ -3540,8 +3519,9 @@ function drawPartialPopup()
         bg = colors.bg_button,
         fg = colors.success
     }
-    drawFlexButton(okBtn)
+    drawButton(okBtn)
     drawTempMessage()
+    flushBuffer()
 end
 
 function drawInventoryFullPopup()
@@ -3551,24 +3531,14 @@ function drawInventoryFullPopup()
     local popupX = math.floor((80 - popupWidth) / 2)
     local popupY = 9
 
-    gpu.setBackground(colors.black_fon)
-    gpu.fill(popupX, popupY, popupWidth, popupHeight, " ")
-    gpu.fill(popupX+1, popupY+1, popupWidth-2, popupHeight-2, " ")
+    fillBuffer(popupX, popupY, popupWidth, popupHeight, " ", colors.bg_main, colors.black_fon)
+    fillBuffer(popupX+1, popupY+1, popupWidth-2, popupHeight-2, " ", colors.bg_main, colors.black_fon)
     drawPopupBorder(popupX, popupY, popupWidth, popupHeight, colors.error)
 
-    gpu.setForeground(colors.error)
-    local title = "ПРЕДУПРЕЖДЕНИЕ"
-    local titleX = popupX + math.floor((popupWidth - unicode.len(title)) / 2)
-    gpu.set(titleX, popupY, title)
+    drawCenteredText(popupY, "ПРЕДУПРЕЖДЕНИЕ", colors.error)
 
-    gpu.setForeground(colors.text_main)
-    local line1 = "Ваш инвентарь полон!"
-    local line1X = popupX + math.floor((popupWidth - unicode.len(line1)) / 2)
-    gpu.set(line1X, popupY+2, line1)
-
-    local line2 = "Освободите его и повторите попытку."
-    local line2X = popupX + math.floor((popupWidth - unicode.len(line2)) / 2)
-    gpu.set(line2X, popupY+3, line2)
+    drawCenteredText(popupY+2, "Ваш инвентарь полон!", colors.text_main)
+    drawCenteredText(popupY+3, "Освободите его и повторите попытку.", colors.text_main)
 
     local okBtnText = "[ ПОНЯТНО ]"
     local okBtnWidth = unicode.len(okBtnText) + 2
@@ -3581,8 +3551,9 @@ function drawInventoryFullPopup()
         bg = colors.bg_button,
         fg = colors.success
     }
-    drawFlexButton(okBtn)
+    drawButton(okBtn)
     drawTempMessage()
+    flushBuffer()
 end
 
 -- ============================================================
@@ -3610,6 +3581,7 @@ function goToBuy()
     if not playerAgreed then
         drawCenteredText(12, "Вы не приняли пользовательское соглашение!", colors.error)
         drawCenteredText(13, "Нажмите [Помощь] и ознакомьтесь с условиями.", colors.text_main)
+        flushBuffer()
         os.sleep(3)
         markDirty()
         return
@@ -3633,6 +3605,7 @@ function goToSell()
     if not playerAgreed then
         drawCenteredText(12, "Вы не приняли пользовательское соглашение!", colors.error)
         drawCenteredText(13, "Нажмите [Помощь] и ознакомьтесь с условиями.", colors.text_main)
+        flushBuffer()
         os.sleep(3)
         markDirty()
         return
@@ -3677,7 +3650,7 @@ function goToPurchase(item)
     end
     purchaseItem = item
     purchaseQuantity = 1
-    currentScreen = "purchase"  -- <-- ДОБАВИТЬ ЭТУ СТРОКУ!
+    currentScreen = "purchase"
     writeDebugFile("✅ purchaseItem установлен: " .. tostring(purchaseItem.displayName))
     writeDebugFile("✅ currentScreen = " .. currentScreen)
     markDirty()
@@ -3696,6 +3669,8 @@ function goToHelp()
     if type(drawAgreementScreen) == "function" then
         markDirty()
     else
+        clearBuffer()
+        drawScreenBorder()
         drawCenteredText(10, "СОГЛАШЕНИЕ НЕ ЗАГРУЖЕНО", colors.error)
         drawCenteredText(12, "Файл agreement.lua отсутствует", colors.text_main)
         drawCenteredText(14, "Нажмите [НАЗАД] для возврата", colors.text_main)
@@ -3708,8 +3683,9 @@ function goToHelp()
             bg = colors.bg_button,
             fg = colors.accent_secondary
         }
-        drawFlexButton(backButton)
+        drawButton(backButton)
         drawTempMessage()
+        flushBuffer()
         
         while currentScreen == "agreement" do
             local ev = {event.pull(0.5)}
@@ -3820,7 +3796,7 @@ function showAuthPopup()
             bg = 0x441111,
             fg = colors.error
         }
-        drawFlexButton(unbindBtn)
+        drawButton(unbindBtn)
         
         local closeBtn = {
             text = "[ ЗАКРЫТЬ ]",
@@ -3831,7 +3807,7 @@ function showAuthPopup()
             bg = colors.bg_button,
             fg = colors.accent_secondary
         }
-        drawFlexButton(closeBtn)
+        drawButton(closeBtn)
         
         while currentScreen == "auth_popup" do
             local ev = {event.pull(0.5)}
@@ -3897,8 +3873,8 @@ function showAuthPopup()
             fg = colors.success
         }
         
-        drawFlexButton(closeBtn)
-        drawFlexButton(confirmBtn)
+        drawButton(closeBtn)
+        drawButton(confirmBtn)
         
         local isEditing = true
         while currentScreen == "auth_popup" and isEditing do
@@ -4019,8 +3995,8 @@ function showUnbindConfirmPopup()
         bg = colors.bg_button,
         fg = colors.accent_secondary
     }
-    drawFlexButton(yesBtn)
-    drawFlexButton(noBtn)
+    drawButton(yesBtn)
+    drawButton(noBtn)
     
     while true do
         local ev = {event.pull(0.5)}
@@ -4052,6 +4028,7 @@ function verifyAuthCode(code)
     writeDebugLog("verifyAuthCode: " .. code)
     
     drawCenteredText(15, "Проверка кода...", colors.accent_secondary)
+    flushBuffer()
     os.sleep(0.5)
     
     local success, response = pcall(function()
@@ -4265,7 +4242,7 @@ function showQRCodePopup()
         bg = colors.bg_button,
         fg = colors.accent_secondary
     }
-    drawFlexButton(closeBtn)
+    drawButton(closeBtn)
     
     while currentScreen == "qr_popup" do
         local ev = {event.pull(0.5)}
@@ -4368,6 +4345,7 @@ function performSell()
     showSellPopup = false
     markDirty()
     drawCenteredText(17, "Выполняется пополнение...", colors.accent_main)
+    flushBuffer()
     os.sleep(0.2)
 
     sellConfirmItem._processing = true
@@ -4376,6 +4354,7 @@ function performSell()
     if realExtracted == 0 then
         sellConfirmItem._processing = false
         drawCenteredText(17, "Не удалось изъять предметы! Проверьте инвентарь.", colors.error)
+        flushBuffer()
         os.sleep(2)
         unlockTransactions()
         currentScreen = "shop_sell"
@@ -4407,10 +4386,10 @@ function performSell()
     sellConfirmItem._processed = true
     sellConfirmItem._processing = false
 
-    gpu.setBackground(colors.bg_main)
-    gpu.fill(2, 17, 78, 1, " ")
+    fillBuffer(2, 17, 78, 1, " ", colors.bg_main, colors.bg_main)
     local currencySymbol = (sellConfirmItem.internalName == "customnpcs:npcMoney") and "۞" or "₵"
     drawCenteredText(17, "Успешно! +" .. string.format("%.2f", value) .. " " .. currencySymbol, colors.success)
+    flushBuffer()
     os.sleep(0.8)
 
     unlockTransactions()
@@ -4418,7 +4397,6 @@ function performSell()
     showSellPopup = false
     markDirty()
     
-    -- ★★★ ЛОГИ В КОНЦЕ ★★★
     writeDebugFile("========================================")
     writeDebugFile("✅ performSell() ЗАВЕРШЕНА")
     writeDebugFile("   realExtracted=" .. tostring(realExtracted))
@@ -4426,7 +4404,6 @@ function performSell()
     writeDebugFile("   currentPlayer=" .. tostring(currentPlayer))
     writeDebugFile("========================================")
 end
-
 
 -- ============================================================
 -- ИНКРЕМЕНТАЛЬНОЕ ПРИМЕНЕНИЕ ИЗМЕНЕНИЙ (ДЛЯ ТОВАРОВ)
@@ -4459,6 +4436,7 @@ function performBuy()
     local actualQty = getActualItemQuantity(item.internalName, item.damage)
     if actualQty <= 0 then
         drawCenteredText(20, "Товар закончился! Обновление списка...", colors.error)
+        flushBuffer()
         os.sleep(0.8)
         loadBuyItems(true)
         unlockTransactions()
@@ -4476,6 +4454,7 @@ function performBuy()
 
     if qty <= 0 then
         drawCenteredText(20, "Выберите количество!", colors.error)
+        flushBuffer()
         os.sleep(0.8)
         unlockTransactions()
         currentScreen = "shop_buy"
@@ -4496,6 +4475,7 @@ function performBuy()
     end
 
     drawCenteredText(20, "Выполняется покупка...", colors.accent_main)
+    flushBuffer()
     os.sleep(0.4)
 
     local id = item.internalName
@@ -4609,8 +4589,7 @@ function performBuy()
 
     addTransaction("buy", currentPlayer, item.displayName, extracted, totalCoin, totalEma)
 
-    gpu.setBackground(colors.bg_main)
-    gpu.fill(2, 20, 78, 1, " ")
+    fillBuffer(2, 20, 78, 1, " ", colors.bg_main, colors.bg_main)
     local priceStr = ""
     if totalCoin > 0 then
         priceStr = priceStr .. string.format("%.2f", totalCoin) .. "₵"
@@ -4622,6 +4601,7 @@ function performBuy()
         priceStr = priceStr .. string.format("%.2f", totalEma) .. "۞"
     end
     drawCenteredText(20, "Куплено " .. extracted .. " шт. за " .. priceStr, colors.success)
+    flushBuffer()
 
     loadBuyItems(true)
     for _, newItem in ipairs(shopItems) do
@@ -4635,7 +4615,6 @@ function performBuy()
     currentScreen = "shop_buy"
     markDirty()
     
-    -- ★★★ ЛОГИ В КОНЦЕ ★★★
     writeDebugFile("========================================")
     writeDebugFile("✅ performBuy() ЗАВЕРШЕНА")
     writeDebugFile("   extracted=" .. tostring(extracted))
@@ -4829,7 +4808,7 @@ function applyIncrementalChanges(itemsFile, changes, itemType)
 
     broadcastUpdate()
     return true
-end  -- <-- ВОТ ЭТОТ end БЫЛ ПРОПУЩЕН!
+end
 
 -- ============================================================
 -- ★★★ ИСПРАВЛЕННЫЙ checkWebCommands ★★★
@@ -4947,7 +4926,6 @@ function checkWebCommands()
                     addLog("💰 Баланс обновлён: " .. playerName)
                     markDirty()
                     
-                    -- ★★★ ЕСЛИ ЭТО ТЕКУЩИЙ ИГРОК - ОБНОВЛЯЕМ ЛОКАЛЬНЫЕ ПЕРЕМЕННЫЕ ★★★
                     if currentPlayer == playerName then
                         coinBalance = player.balance
                         emaBalance = player.emaBalance
@@ -5241,7 +5219,7 @@ end
 if not drawAgreementScreen then
     drawAgreementScreen = function()
         writeDebugLog("drawAgreementScreen (заглушка)")
-        clear()
+        clearBuffer()
         drawScreenBorder()
         drawCenteredText(6, "ПОЛЬЗОВАТЕЛЬСКОЕ СОГЛАШЕНИЕ", colors.accent_secondary)
         drawCenteredText(8, "Файл agreement.lua не найден!", colors.error)
@@ -5256,8 +5234,9 @@ if not drawAgreementScreen then
             bg = colors.bg_button,
             fg = colors.accent_secondary
         }
-        drawFlexButton(backButton)
+        drawButton(backButton)
         drawTempMessage()
+        flushBuffer()
         
         while currentScreen == "agreement" do
             local ev = {event.pull(0.5)}
@@ -5608,6 +5587,7 @@ function main()
                     goto continue
                 elseif y == 13 and x >= 30 and x <= 50 then
                     drawCenteredText(17, "Сканирование...", colors.accent_secondary)
+                    flushBuffer()
                     os.sleep(0.6)
                     if not sellConfirmItem then
                         writeErrorLog("❌ sellConfirmItem = nil при сканировании!")
@@ -5619,6 +5599,7 @@ function main()
                         markDirty()
                     else
                         drawCenteredText(17, "Предмет не найден!", colors.error)
+                        flushBuffer()
                         os.sleep(0.8)
                         markDirty()
                     end
@@ -5658,6 +5639,7 @@ function main()
                         globalStats.totalReports = (globalStats.totalReports or 0) + 1
                         saveGlobalStats()
                         drawCenteredText(18, "Сообщение успешно отправлено! Ожидайте ответа.", colors.success)
+                        flushBuffer()
                         os.sleep(0.8)
                         goBackToMenu()
                         goto continue
@@ -6017,7 +5999,6 @@ function main()
             end
             currentPlayer = playerName:match("^%s*(.-)%s*$") or playerName
             
-            -- ★★★ ПРОВЕРКА: currentPlayer не должен быть nil ★★★
             if not currentPlayer or currentPlayer == "" then
                 writeDebugLog("⚠️ currentPlayer стал nil, используем исходное имя")
                 currentPlayer = playerName
@@ -6062,10 +6043,9 @@ function main()
                 local formattedExpire = banInfo.expires and formatDate(banInfo.expires) or ""
                 local isPermanent = not banInfo.expires or banInfo.expires == ""
                 
-                gpu.setBackground(colors.bg_main)
+                clearBuffer()
                 gpu.fill(1, 1, 80, 25, " ")
                 
-                gpu.setForeground(colors.error)
                 drawCenteredText(6, "╔══════════════════════════════════════════════════════════════╗", colors.error)
                 drawCenteredText(7, "║                       ВЫ ЗАБЛОКИРОВАНЫ                       ║", colors.error)
                 drawCenteredText(8, "╚══════════════════════════════════════════════════════════════╝", colors.error)
@@ -6085,15 +6065,14 @@ function main()
                 
                 drawCenteredText(15, " Доступ запрещён", colors.error)
                 
-                gpu.setForeground(colors.accent_secondary)
                 drawCenteredText(22, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", colors.accent_secondary)
                 
                 drawTempMessage()
+                flushBuffer()
                 
                 while true do
                     local ev2 = {event.pull(1)}
                     if ev2[1] == "player_off" or ev2[1] == "pim_player_leave" then
-                        writeDebugLog("👤 Игрок ушёл с PIM: " .. playerName)
                         drawWelcomeScreen()
                         break
                     end
@@ -6158,6 +6137,7 @@ function main()
                 
                 if player.banned then
                     drawCenteredText(20, "Вы забанены!", colors.error)
+                    flushBuffer()
                     os.sleep(2)
                     currentPlayer = nil
                     currentScreen = "welcome"
@@ -6170,8 +6150,6 @@ function main()
                     playerAgreed = player.agreed or false
                     playerRegDate = player.regDate or getRealTimeString()
                     alreadyAuthorized = true
-                    
-                    writeDebugLog("Вход выполнен: " .. currentPlayer .. ", баланс: " .. coinBalance .. ", agreed: " .. tostring(playerAgreed))
                     
                     if selector then
                         addLog("🖥 Селектор доступен")
@@ -6252,7 +6230,6 @@ while running do
         os.sleep(5)
     end
 end
-
 
 -- ★★★ ПРИ ВЫХОДЕ ИЗ ЦИКЛА - СОХРАНЯЕМ ДАННЫЕ ★★★
 forceSaveData()

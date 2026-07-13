@@ -11,7 +11,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ★★ АВТОМАТИЧЕСКАЯ1246 НАСТРОЙКА АВТОЗАПУСКА ★★
+-- ★★ АВТОМАТИЧЕСКАЯ12461 НАСТРОЙКА АВТОЗАПУСКА ★★
 -- ============================================================
 
 local function setupAutoStart()
@@ -2755,10 +2755,20 @@ function drawBuyButtons()
     nextButton.bg = colors.bg_button
     nextButton.fg = colors.inactive
 
+    -- ★★★ ОТЛАДОЧНЫЙ ЛОГ ★★★
+    writeDebugLog("🔍 Проверка кнопки: selectedItem=" .. tostring(selectedItem))
+    if selectedItem then
+        writeDebugLog("   displayName=" .. tostring(selectedItem.displayName))
+        writeDebugLog("   qty=" .. tostring(selectedItem.qty))
+        writeDebugLog("   currentShopMode=" .. tostring(currentShopMode))
+    end
+
     if selectedItem and (currentShopMode ~= "buy" or selectedItem.qty > 0) then
         nextButton.fg = colors.accent_secondary
+        writeDebugLog("✅ Кнопка АКТИВНА")
     else
         nextButton.fg = colors.inactive
+        writeDebugLog("❌ Кнопка НЕ АКТИВНА")
     end
 
     drawFlexButton(backButton)
@@ -3228,6 +3238,8 @@ function drawPurchaseScreen()
         drawTempMessage()
         return
     end
+
+    writeDebugLog("✅ purchaseItem: " .. tostring(purchaseItem.displayName))
 
     gpu.setForeground(colors.success)
     gpu.set(3, 3, "Имя предмета: ")
@@ -5420,11 +5432,23 @@ function main()
                 end
 
                 if isButtonClicked(nextButton, x, y) then
+                    writeDebugLog("🖱️ Нажата кнопка: " .. (nextButton.text or "unknown"))
+                    writeDebugLog("   selectedItem=" .. tostring(selectedItem))
+                    if selectedItem then
+                        writeDebugLog("   displayName=" .. tostring(selectedItem.displayName))
+                        writeDebugLog("   qty=" .. tostring(selectedItem.qty))
+                    end
+                    
                     if selectedItem and (currentShopMode ~= "buy" or selectedItem.qty > 0) then
+                        writeDebugLog("✅ Условие выполнено")
                         if currentShopMode == "buy" then
                             local needCoin = selectedItem.priceCoin or 0
                             local needEma = selectedItem.priceEma or 0
+                            writeDebugLog("   needCoin=" .. tostring(needCoin) .. ", needEma=" .. tostring(needEma))
+                            writeDebugLog("   coinBalance=" .. tostring(coinBalance) .. ", emaBalance=" .. tostring(emaBalance))
+                            
                             if (needCoin > 0 and coinBalance < needCoin) or (needEma > 0 and emaBalance < needEma) then
+                                writeDebugLog("❌ Недостаточно средств!")
                                 showInsufficientPopup = true
                                 insufficientBalanceCoin = coinBalance
                                 insufficientBalanceEma = emaBalance
@@ -5432,10 +5456,14 @@ function main()
                                 drawInsufficientPopup()
                                 goto continue
                             end
+                            writeDebugLog("✅ Переход на экран покупки")
                             goToPurchase(selectedItem)
                         else
+                            writeDebugLog("✅ Переход на экран продажи")
                             goToSellConfirm(selectedItem)
                         end
+                    else
+                        writeDebugLog("❌ Условие НЕ выполнено")
                     end
                     goto continue
                 end

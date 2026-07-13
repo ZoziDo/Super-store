@@ -11,7 +11,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ★★ АВТОМАТИЧЕСКАЯ12461 НАСТРОЙКА АВТОЗАПУСКА ★★
+-- ★★ АВТОМАТИЧЕСКАЯ124616 НАСТРОЙКА АВТОЗАПУСКА ★★
 -- ============================================================
 
 local function setupAutoStart()
@@ -75,6 +75,31 @@ if not event.shouldInterrupt then
         return false
     end
 end
+
+-- ============================================================
+-- ★★★ ОТЛАДОЧНОЕ ЛОГИРОВАНИЕ В ФАЙЛ ★★★
+-- ============================================================
+
+DEBUG_LOG_FILE = "/home/debug.log"
+
+function writeDebugFile(msg)
+    local file = io.open(DEBUG_LOG_FILE, "a")
+    if file then
+        local timestamp = os.date("%Y-%m-%d %H:%M:%S")
+        file:write("[" .. timestamp .. "] " .. msg .. "\n")
+        file:close()
+    end
+end
+
+function clearDebugFile()
+    if fs.exists(DEBUG_LOG_FILE) then
+        fs.remove(DEBUG_LOG_FILE)
+    end
+    writeDebugFile("=== DEBUG LOG STARTED ===")
+end
+
+-- Очищаем файл при запуске
+clearDebugFile()
 
 -- ============================================================
 -- ВРЕМЯ
@@ -2732,7 +2757,7 @@ function smoothScroll(steps)
 end
 
 function drawBuyButtons()
-    writeDebugLog("drawBuyButtons()")
+    writeDebugFile("========== drawBuyButtons() ==========")
     local backButton = {
         text = "[ НАЗАД ]",
         x = 37, y = 24,
@@ -2755,25 +2780,27 @@ function drawBuyButtons()
     nextButton.bg = colors.bg_button
     nextButton.fg = colors.inactive
 
-    -- ★★★ ОТЛАДОЧНЫЙ ЛОГ ★★★
-    writeDebugLog("🔍 Проверка кнопки: selectedItem=" .. tostring(selectedItem))
+    writeDebugFile("🔍 selectedItem = " .. tostring(selectedItem))
     if selectedItem then
-        writeDebugLog("   displayName=" .. tostring(selectedItem.displayName))
-        writeDebugLog("   qty=" .. tostring(selectedItem.qty))
-        writeDebugLog("   currentShopMode=" .. tostring(currentShopMode))
+        writeDebugFile("   displayName = " .. tostring(selectedItem.displayName))
+        writeDebugFile("   qty = " .. tostring(selectedItem.qty))
+        writeDebugFile("   currentShopMode = " .. tostring(currentShopMode))
+    else
+        writeDebugFile("   selectedItem = nil")
     end
 
     if selectedItem and (currentShopMode ~= "buy" or selectedItem.qty > 0) then
         nextButton.fg = colors.accent_secondary
-        writeDebugLog("✅ Кнопка АКТИВНА")
+        writeDebugFile("✅ Кнопка АКТИВНА")
     else
         nextButton.fg = colors.inactive
-        writeDebugLog("❌ Кнопка НЕ АКТИВНА")
+        writeDebugFile("❌ Кнопка НЕ АКТИВНА")
     end
 
     drawFlexButton(backButton)
     drawFlexButton(nextButton)
     drawTempMessage()
+    writeDebugFile("========================================")
 end
 
 -- ============================================================
@@ -3224,13 +3251,14 @@ function drawSellScanScreen()
 end
 
 function drawPurchaseScreen()
-    writeDebugLog("drawPurchaseScreen()")
+    writeDebugFile(">>> drawPurchaseScreen()")
     currentScreen = "purchase"
     clear()
     drawScreenBorder()
     drawBalanceLine(3, 1)
 
     if not purchaseItem then
+        writeDebugFile("❌ drawPurchaseScreen: purchaseItem = nil!")
         writeErrorLog("❌ drawPurchaseScreen: purchaseItem = nil!")
         drawCenteredText(10, "Ошибка: предмет не выбран", colors.error)
         local backBtn = {x = 37, y = 24, xs = unicode.len("[ НАЗАД ]") + 2, ys = 1, text = "[ НАЗАД ]", bg = colors.bg_button, fg = colors.accent_secondary}
@@ -3239,7 +3267,7 @@ function drawPurchaseScreen()
         return
     end
 
-    writeDebugLog("✅ purchaseItem: " .. tostring(purchaseItem.displayName))
+    writeDebugFile("✅ purchaseItem: " .. tostring(purchaseItem.displayName))
 
     gpu.setForeground(colors.success)
     gpu.set(3, 3, "Имя предмета: ")
@@ -3682,13 +3710,15 @@ function goToSellConfirm(item)
 end
 
 function goToPurchase(item)
-    writeDebugLog("goToPurchase()")
+    writeDebugFile(">>> goToPurchase()")
     if not item then
+        writeDebugFile("❌ goToPurchase: item = nil!")
         writeErrorLog("❌ goToPurchase: item = nil!")
         return
     end
     purchaseItem = item
     purchaseQuantity = 1
+    writeDebugFile("✅ purchaseItem установлен: " .. tostring(purchaseItem.displayName))
     markDirty()
 end
 
@@ -5354,12 +5384,27 @@ function main()
                     local relativeRow = y - 6
                     local clickedIndex = (listScroll or 1) + relativeRow - 1
                     local item = filteredItems[clickedIndex]
+                    
+                    writeDebugFile("🖱️ КЛИК ПО ТОВАРУ: индекс=" .. clickedIndex)
+                    if item then
+                        writeDebugFile("   Товар: " .. tostring(item.displayName) .. ", qty=" .. tostring(item.qty))
+                    else
+                        writeDebugFile("   item = nil")
+                    end
+                    
                     if item and (currentShopMode ~= "buy" or item.qty > 0) then
                         selectedIndex = clickedIndex
                         selectedItem = item
                         hoveredIndex = 0
+                        writeDebugFile("✅ ТОВАР ВЫБРАН: " .. tostring(item.displayName))
                         updateSelectorDisplay(selectedItem)
                         markDirty()
+                    else
+                        if not item then
+                            writeDebugFile("❌ item = nil")
+                        elseif currentShopMode == "buy" and item.qty <= 0 then
+                            writeDebugFile("❌ Товара нет в наличии (qty = " .. item.qty .. ")")
+                        end
                     end
                     goto continue
                 end
@@ -5432,23 +5477,24 @@ function main()
                 end
 
                 if isButtonClicked(nextButton, x, y) then
-                    writeDebugLog("🖱️ Нажата кнопка: " .. (nextButton.text or "unknown"))
-                    writeDebugLog("   selectedItem=" .. tostring(selectedItem))
+                    writeDebugFile("🖱️ НАЖАТА КНОПКА: " .. (nextButton.text or "unknown"))
+                    writeDebugFile("   selectedItem = " .. tostring(selectedItem))
+                    
                     if selectedItem then
-                        writeDebugLog("   displayName=" .. tostring(selectedItem.displayName))
-                        writeDebugLog("   qty=" .. tostring(selectedItem.qty))
+                        writeDebugFile("   displayName = " .. tostring(selectedItem.displayName))
+                        writeDebugFile("   qty = " .. tostring(selectedItem.qty))
                     end
                     
                     if selectedItem and (currentShopMode ~= "buy" or selectedItem.qty > 0) then
-                        writeDebugLog("✅ Условие выполнено")
+                        writeDebugFile("✅ УСЛОВИЕ ВЫПОЛНЕНО!")
                         if currentShopMode == "buy" then
                             local needCoin = selectedItem.priceCoin or 0
                             local needEma = selectedItem.priceEma or 0
-                            writeDebugLog("   needCoin=" .. tostring(needCoin) .. ", needEma=" .. tostring(needEma))
-                            writeDebugLog("   coinBalance=" .. tostring(coinBalance) .. ", emaBalance=" .. tostring(emaBalance))
+                            writeDebugFile("   needCoin = " .. needCoin .. ", needEma = " .. needEma)
+                            writeDebugFile("   coinBalance = " .. coinBalance .. ", emaBalance = " .. emaBalance)
                             
                             if (needCoin > 0 and coinBalance < needCoin) or (needEma > 0 and emaBalance < needEma) then
-                                writeDebugLog("❌ Недостаточно средств!")
+                                writeDebugFile("❌ НЕДОСТАТОЧНО СРЕДСТВ!")
                                 showInsufficientPopup = true
                                 insufficientBalanceCoin = coinBalance
                                 insufficientBalanceEma = emaBalance
@@ -5456,14 +5502,19 @@ function main()
                                 drawInsufficientPopup()
                                 goto continue
                             end
-                            writeDebugLog("✅ Переход на экран покупки")
+                            writeDebugFile("✅ ПЕРЕХОД НА ЭКРАН ПОКУПКИ")
                             goToPurchase(selectedItem)
                         else
-                            writeDebugLog("✅ Переход на экран продажи")
+                            writeDebugFile("✅ ПЕРЕХОД НА ЭКРАН ПРОДАЖИ")
                             goToSellConfirm(selectedItem)
                         end
                     else
-                        writeDebugLog("❌ Условие НЕ выполнено")
+                        writeDebugFile("❌ УСЛОВИЕ НЕ ВЫПОЛНЕНО!")
+                        if not selectedItem then
+                            writeDebugFile("   → selectedItem = nil")
+                        elseif currentShopMode == "buy" and selectedItem.qty <= 0 then
+                            writeDebugFile("   → товара нет в наличии (qty = " .. selectedItem.qty .. ")")
+                        end
                     end
                     goto continue
                 end

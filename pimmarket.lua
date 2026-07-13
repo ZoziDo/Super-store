@@ -11,7 +11,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА2
+-- АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА777
 -- ============================================================
 
 local function setupAutoStart()
@@ -5378,6 +5378,47 @@ function checkWebCommands()
                 end
                 goto continue
             end
+
+            if cmd.command == "new_feedback" then
+                local feedback = d.feedback
+                writeDebugFile("📝 Новый отзыв от " .. (feedback and feedback.name or "?"))
+                
+                -- ★★★ ОБНОВЛЯЕМ ЛОКАЛЬНЫЙ ФАЙЛ ★★★
+                local feedbacks = {}
+                if fs.exists(FEEDBACKS_PATH) then
+                    local file = io.open(FEEDBACKS_PATH, "r")
+                    if file then
+                        local data = file:read("*a")
+                        file:close()
+                        if data and #data > 0 then
+                            local ok, result = pcall(serialization.unserialize, data)
+                            if ok and type(result) == "table" then feedbacks = result end
+                        end
+                    end
+                end
+                
+                -- Проверяем, нет ли уже такого отзыва
+                local exists = false
+                for _, fb in ipairs(feedbacks) do
+                    if fb.name == feedback.name and fb.text == feedback.text then
+                        exists = true
+                        break
+                    end
+                end
+                
+                if not exists then
+                    table.insert(feedbacks, 1, feedback)
+                    local file = io.open(FEEDBACKS_PATH, "w")
+                    if file then
+                        file:write(serialization.serialize(feedbacks))
+                        file:close()
+                        writeDebugFile("✅ Отзыв сохранён локально")
+                    end
+                end
+                
+                sendResult(true, "Отзыв обработан")
+                goto continue
+            end
             
             sendResult(false, "Неизвестная команда: " .. tostring(cmd.command))
             
@@ -5851,15 +5892,40 @@ function main()
                     markDirty()
                     goto continue
                 end
+                
                 local addBtn = {x=36, y=24, xs=14, ys=1}
                 if isButtonClicked(addBtn, x, y) then
-                    -- ★★★ ПРОВЕРЯЕМ ЗАНОВО ПЕРЕД КЛИКОМ ★★★
+                    -- ★★★ ПРОВЕРЯЕМ ЗАНОВО ★★★
                     if currentPlayer then
                         local player = playersIndex[currentPlayer]
                         if player then
                             playerHasFeedback = player.hasFeedback or false
+                            -- ★★★ ПРОВЕРЯЕМ В ФАЙЛЕ ОТЗЫВОВ ★★★
+                            if not playerHasFeedback then
+                                local feedbacks = {}
+                                if fs.exists(FEEDBACKS_PATH) then
+                                    local file = io.open(FEEDBACKS_PATH, "r")
+                                    if file then
+                                        local data = file:read("*a")
+                                        file:close()
+                                        if data and #data > 0 then
+                                            local ok, result = pcall(serialization.unserialize, data)
+                                            if ok and type(result) == "table" then feedbacks = result end
+                                        end
+                                    end
+                                end
+                                for _, fb in ipairs(feedbacks) do
+                                    if fb.name == currentPlayer then
+                                        playerHasFeedback = true
+                                        player.hasFeedback = true
+                                        saveDBDeferred()
+                                        break
+                                    end
+                                end
+                            end
                         end
                     end
+                    
                     if playerHasFeedback then
                         showTempMessage("Вы уже оставляли отзыв!", 2)
                     else
@@ -5870,6 +5936,7 @@ function main()
                     end
                     goto continue
                 end
+                
                 if isButtonClicked({x=59, y=24, xs=7, ys=1}, x, y) and feedbacksPage > 1 then
                     feedbacksPage = feedbacksPage - 1
                     markDirty()
@@ -5890,7 +5957,19 @@ function main()
                     markDirty()
                     goto continue
                 end
+                
                 if isButtonClicked({x=46, y=24, xs=15, ys=1}, x, y) and feedbackInput and feedbackInput ~= "" then
+                    -- ★★★ ОТПРАВЛЯЕМ ОТЗЫВ НА СЕРВЕР ★★★
+                    local feedbackData = {
+                        name = currentPlayer or "Аноним",
+                        text = feedbackInput,
+                        time = getRealTimeString()
+                    }
+                    
+                    -- ★★★ 1. ОТПРАВЛЯЕМ НА СЕРВЕР ЧЕРЕЗ /api/new_feedback ★★★
+                    sendToWeb("/api/new_feedback", toJson(feedbackData))
+                    
+                    -- ★★★ 2. СОХРАНЯЕМ ЛОКАЛЬНО ★★★
                     local feedbacks = {}
                     if fs.exists(FEEDBACKS_PATH) then
                         local file = io.open(FEEDBACKS_PATH, "r")
@@ -5903,17 +5982,33 @@ function main()
                             end
                         end
                     end
-                    table.insert(feedbacks, 1, {
-                        name = currentPlayer or "Аноним",
-                        text = feedbackInput,
-                        time = getRealTimeString()
-                    })
+                    table.insert(feedbacks, 1, feedbackData)
                     local file = io.open(FEEDBACKS_PATH, "w")
                     if file then
                         file:write(serialization.serialize(feedbacks))
                         file:close()
                     end
+                    
+                    -- ★★★ 3. ОБНОВЛЯЕМ ДАННЫЕ ИГРОКА ★★★
                     playerHasFeedback = true
+                    if currentPlayer and playersIndex[currentPlayer] then
+                        local player = playersIndex[currentPlayer]
+                        player.hasFeedback = true
+                        saveDBDeferred()
+                        
+                        -- ★★★ 4. ОТПРАВЛЯЕМ ИЗМЕНЕНИЕ ЧЕРЕЗ DELTA ★★★
+                        local change = {
+                            id = "fb_" .. os.time() .. "_" .. math.random(100000),
+                            type = "new_feedback",
+                            data = {
+                                player = currentPlayer,
+                                feedback = feedbackInput,
+                                time = getRealTimeString()
+                            }
+                        }
+                        add_pending_change(change)
+                    end
+                    
                     showTempMessage("✅ Отзыв отправлен! Спасибо!", 10)
                     feedbackEditMode = false
                     feedbackInput = ""

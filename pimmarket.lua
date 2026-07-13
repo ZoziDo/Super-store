@@ -11,7 +11,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- АВТОМАТИЧЕСКАЯ246 НАСТРОЙКА АВТОЗАПУСКА1123
+-- АВТОМАТИЧЕСКАЯ246 НАСТРОЙКА АВТОЗАПУСКА1233367
 -- ============================================================
 
 local function setupAutoStart()
@@ -77,31 +77,6 @@ if not event.shouldInterrupt then
 end
 
 -- ============================================================
--- ★★★ ОТЛАДОЧНОЕ ЛОГИРОВАНИЕ В ФАЙЛ ★★★
--- ============================================================
-
-DEBUG_LOG_FILE = "/home/debug.log"
-
-function writeDebugFile(msg)
-    local file = io.open(DEBUG_LOG_FILE, "a")
-    if file then
-        local timestamp = os.date("%Y-%m-%d %H:%M:%S")
-        file:write("[" .. timestamp .. "] " .. msg .. "\n")
-        file:close()
-    end
-end
-
-function clearDebugFile()
-    if fs.exists(DEBUG_LOG_FILE) then
-        fs.remove(DEBUG_LOG_FILE)
-    end
-    writeDebugFile("=== DEBUG LOG STARTED ===")
-end
-
--- Очищаем файл при запуске
-clearDebugFile()
-
--- ============================================================
 -- ВРЕМЯ
 -- ============================================================
 
@@ -165,11 +140,11 @@ function writeLog(level, msg)
 end
 
 function writeDebugLog(msg)
-    writeLog(LOG_LEVELS.DEBUG, msg)
+    -- пусто
 end
 
 function writeErrorLog(msg)
-    writeLog(LOG_LEVELS.ERROR, msg)
+    -- пусто
 end
 
 -- ============================================================

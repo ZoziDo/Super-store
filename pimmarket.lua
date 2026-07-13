@@ -11,7 +11,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ★★ АВТОМАТИЧЕСКАЯ124 НАСТРОЙКА АВТОЗАПУСКА ★★
+-- ★★ АВТОМАТИЧЕСКАЯ1245 НАСТРОЙКА АВТОЗАПУСКА ★★
 -- ============================================================
 
 local function setupAutoStart()
@@ -1774,6 +1774,10 @@ playerHasFeedback = false
 -- JSON ПАРСЕР
 -- ============================================================
 
+-- ============================================================
+-- JSON ПАРСЕР
+-- ============================================================
+
 function parseJSON(json_str)
     if not json_str or json_str == "" then 
         writeDebugLog("parseJSON: пустая строка")
@@ -1784,8 +1788,6 @@ function parseJSON(json_str)
     local pos = 1
     local len = #str
 
-    local parseValue, parseArray, parseObject
-
     local function skipSpace()
         while pos <= len do
             local c = str:sub(pos, pos)
@@ -1794,64 +1796,60 @@ function parseJSON(json_str)
         end
     end
 
-   ✅ Нашёл ошибку!
-В функции parseString() отсутствует end для первого if.
-Исправленный код функции:
-Замени всю функцию parseString() на этот вариант:
-Luafunction parseString()
-    if str:sub(pos, pos) ~= '"' then 
-        return nil 
-    end
-    
-    pos = pos + 1
-    local start = pos
-    local result = ""
-    
-    while pos <= len do
-        local ch = str:sub(pos, pos)
-        if ch == '"' then
-            result = result .. str:sub(start, pos-1)
-            pos = pos + 1
-            return result
-        elseif ch == '\\' then
-            result = result .. str:sub(start, pos-1)
-            pos = pos + 1
-            if pos > len then return nil end
-            
-            local esc = str:sub(pos, pos)
-            local map = {
-                ['"'] = '"',
-                ['\\'] = '\\',
-                ['/'] = '/',
-                b = '\b',
-                f = '\f',
-                n = '\n',
-                r = '\r',
-                t = '\t'
-            }
-            
-            if map[esc] then
-                result = result .. map[esc]
-            elseif esc == 'u' then
-                local hex = str:sub(pos+1, pos+4)
-                if #hex == 4 then
-                    local code = tonumber(hex, 16)
-                    if code then
-                        result = result .. unicode.char(code)
-                        pos = pos + 4
-                    end
-                end
-            else
-                result = result .. '\\' .. esc
-            end
-            pos = pos + 1
-            start = pos
-        else
-            pos = pos + 1
+    local function parseString()
+        if str:sub(pos, pos) ~= '"' then 
+            return nil 
         end
+        
+        pos = pos + 1
+        local start = pos
+        local result = ""
+        
+        while pos <= len do
+            local ch = str:sub(pos, pos)
+            if ch == '"' then
+                result = result .. str:sub(start, pos-1)
+                pos = pos + 1
+                return result
+            elseif ch == '\\' then
+                result = result .. str:sub(start, pos-1)
+                pos = pos + 1
+                if pos > len then return nil end
+                
+                local esc = str:sub(pos, pos)
+                local map = {
+                    ['"'] = '"',
+                    ['\\'] = '\\',
+                    ['/'] = '/',
+                    b = '\b',
+                    f = '\f',
+                    n = '\n',
+                    r = '\r',
+                    t = '\t'
+                }
+                
+                if map[esc] then
+                    result = result .. map[esc]
+                elseif esc == 'u' then
+                    local hex = str:sub(pos+1, pos+4)
+                    if #hex == 4 then
+                        local code = tonumber(hex, 16)
+                        if code then
+                            result = result .. unicode.char(code)
+                            pos = pos + 4
+                        end
+                    end
+                else
+                    result = result .. '\\' .. esc
+                end
+                pos = pos + 1
+                start = pos
+            else
+                pos = pos + 1
+            end
+        end
+        return nil
     end
-    return nil
-end
 
     local function parseNumber()
         local start = pos
@@ -1863,8 +1861,11 @@ end
         return tonumber(str:sub(start, pos-1))
     end
 
-    function parseArray()
-        if str:sub(pos, pos) ~= '[' then return nil
+    local function parseArray()
+        if str:sub(pos, pos) ~= '[' then 
+            return nil
+        end
+        
         pos = pos + 1
         local arr = {}
         skipSpace()
@@ -1872,21 +1873,30 @@ end
             pos = pos + 1
             return arr
         end
+        
         while true do
             local val = parseValue()
-            if val == nil then break
+            if val == nil then break end
             table.insert(arr, val)
             skipSpace()
             local ch = str:sub(pos, pos)
-            if ch == ',' then pos = pos + 1
-            elseif ch == ']' then pos = pos + 1; break
-            else break end
+            if ch == ',' then 
+                pos = pos + 1
+            elseif ch == ']' then 
+                pos = pos + 1
+                break
+            else 
+                break 
+            end
         end
         return arr
     end
 
-    function parseObject()
-        if str:sub(pos, pos) ~= '{' then return nil
+    local function parseObject()
+        if str:sub(pos, pos) ~= '{' then 
+            return nil
+        end
+        
         pos = pos + 1
         local obj = {}
         skipSpace()
@@ -1894,29 +1904,37 @@ end
             pos = pos + 1
             return obj
         end
+        
         while true do
             skipSpace()
             local key = parseString()
-            if not key then break
+            if not key then break end
             skipSpace()
-            if str:sub(pos, pos) ~= ':' then break
+            if str:sub(pos, pos) ~= ':' then break end
             pos = pos + 1
             skipSpace()
             local val = parseValue()
-            if val == nil then break
+            if val == nil then break end
             obj[key] = val
             skipSpace()
             local ch = str:sub(pos, pos)
-            if ch == ',' then pos = pos + 1
-            elseif ch == '}' then pos = pos + 1; break
-            else break end
+            if ch == ',' then 
+                pos = pos + 1
+            elseif ch == '}' then 
+                pos = pos + 1
+                break
+            else 
+                break 
+            end
         end
         return obj
     end
 
-    function parseValue()
+    local function parseValue()
         skipSpace()
-        if pos > len then return nil
+        if pos > len then 
+            return nil
+        end
         local ch = str:sub(pos, pos)
 
         if ch == '"' then
@@ -1945,7 +1963,7 @@ end
     local result = parseValue()
     writeDebugLog("parseJSON результат: " .. (result and "таблица" or "nil"))
     return result
-end
+end  -- <-- ЭТОТ end ЗАКРЫВАЕТ parseJSON
 
 -- ============================================================
 -- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
@@ -2098,7 +2116,7 @@ function updateSelectorDisplay(item)
 end
 
 function sortableName(name)
-    if not name then return ""
+    if not name then return "" end
     local lower = string.lower(name)
     local result = lower:gsub("(%d+)", function(d)
         return string.format("%08d", tonumber(d))
@@ -2107,7 +2125,7 @@ function sortableName(name)
 end
 
 function toLowerCase(str)
-    if not str then return ""
+    if not str then return "" end
     str = string.lower(str)
     str = str:gsub("А", "а"):gsub("Б", "б"):gsub("В", "в"):gsub("Г", "г"):gsub("Д", "д")
     str = str:gsub("Е", "е"):gsub("Ё", "ё"):gsub("Ж", "ж"):gsub("З", "з"):gsub("И", "и")
@@ -2332,7 +2350,7 @@ end
 
 function extractToME(targetName, amount, targetDamage)
     writeDebugLog("extractToME: " .. tostring(targetName) .. " x" .. tostring(amount))
-    local pimAddr = getPimAddr()
+    local pimAddr = getPimAddr() 
     if not pimAddr or amount <= 0 then 
         return 0
     end
@@ -2340,7 +2358,10 @@ function extractToME(targetName, amount, targetDamage)
     targetDamage = targetDamage or 0
     local extracted = 0
     for slot = 1, 36 do
-        if extracted >= amount then break
+        if extracted >= amount then
+            break
+        end
+        
         local stack = component.invoke(pimAddr, "getStackInSlot", slot)
         if stack then
             local qty = stack.size or stack.qty or 0
@@ -2585,6 +2606,7 @@ function getFilteredItems()
     local filtered = {}
     local searchLower = toLowerCase(shopSearch or "")
     local searchWords = {}
+
     if searchLower ~= "" then
         for word in searchLower:gmatch("%S+") do
             table.insert(searchWords, word)
@@ -2592,9 +2614,13 @@ function getFilteredItems()
     end
 
     for _, item in ipairs(shopItems) do
-        if not item then goto continue end
+        if not item then
+            goto continue
+        end
+
         local nameLower = toLowerCase(item.displayName or item.internalName or "")
         local matchesSearch = false
+
         if #searchWords == 0 then
             matchesSearch = true
         else
@@ -2605,21 +2631,28 @@ function getFilteredItems()
                 end
             end
         end
+
         if matchesSearch then
             table.insert(filtered, item)
         end
+
         ::continue::
     end
 
+    -- ★★★ ВОССТАНАВЛИВАЕМ СОРТИРОВКУ ★★★
     table.sort(filtered, function(a, b)
         return sortableName(a.displayName) < sortableName(b.displayName)
     end)
 
+    -- ★★★ ВОССТАНАВЛИВАЕМ ВЫЧИСЛЕНИЕ maxItemWidth ★★★
     maxItemWidth = 0
     for _, item in ipairs(filtered) do
         local len = unicode.len(item.displayName or item.internalName or "")
-        if len > maxItemWidth then maxItemWidth = len
+        if len > maxItemWidth then
+            maxItemWidth = len
+        end
     end
+
     writeDebugLog("getFilteredItems: найдено " .. #filtered .. " товаров")
     return filtered
 end
@@ -2643,7 +2676,9 @@ function drawBuyItemsList()
         for i = 1, visibleRows do
             local itemIndex = listScroll + i - 1
             local item = filteredItems[itemIndex]
-            if not item then break
+            if not item then
+                break
+            end
             local y = 6 + i
             local isSelected = (itemIndex == selectedIndex)
             local isHovered = (itemIndex == hoveredIndex)
@@ -2664,7 +2699,11 @@ function smoothScroll(steps)
     local maxScroll = math.max(1, total - visibleRows + 1)
     local newScroll = (listScroll or 1) + steps
     newScroll = math.max(1, math.min(newScroll, maxScroll))
-    if newScroll == listScroll then return
+    
+    if newScroll == listScroll then
+        return
+    end
+    
     if math.abs(steps) == 1 and total > visibleRows then
         if steps > 0 then
             gpu.copy(2, 8, 76, visibleRows - 1, 0, -1)
@@ -2687,6 +2726,7 @@ function smoothScroll(steps)
         drawBuyItemsList()
         return
     end
+    
     listScroll = newScroll
     drawScrollBar()
 end
@@ -4247,7 +4287,9 @@ function showQRCodePopup()
 end
 
 function decodeBase64(data)
-    if not data or data == "" then return ""
+    if not data or data == "" then
+        return ""
+    end
     
     local b64chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
     local result = {}
@@ -4255,12 +4297,17 @@ function decodeBase64(data)
     
     data = data:gsub('[^A-Za-z0-9+/=]', '')
     
-    if data:sub(-1) == '=' then padding = padding + 1 end
-    if data:sub(-2, -1) == '==' then padding = padding + 1 end
+    if data:sub(-1) == '=' then
+        padding = padding + 1
+    end
+    if data:sub(-2, -1) == '==' then
+        padding = padding + 1
+    end
     
     for i = 1, #data, 4 do
-        local chunk = data:sub(i, i+3)
+        local chunk = data:sub(i, i + 3)
         local n = 0
+        
         for j = 1, #chunk do
             local c = chunk:sub(j, j)
             if c ~= '=' then
@@ -4270,6 +4317,7 @@ function decodeBase64(data)
                 end
             end
         end
+        
         local bytes = {}
         for j = 3, 1, -1 do
             if i + j - 1 <= #data - padding then
@@ -4367,6 +4415,11 @@ function performSell()
     showSellPopup = false
     markDirty()
 end
+
+
+-- ============================================================
+-- ИНКРЕМЕНТАЛЬНОЕ ПРИМЕНЕНИЕ ИЗМЕНЕНИЙ (ДЛЯ ТОВАРОВ)
+-- ============================================================
 
 function performBuy()
     if not playerAgreed then
@@ -4548,9 +4601,13 @@ function performBuy()
     gpu.setBackground(colors.bg_main)
     gpu.fill(2, 20, 78, 1, " ")
     local priceStr = ""
-    if totalCoin > 0 then priceStr = priceStr .. string.format("%.2f", totalCoin) .. "₵"
+    if totalCoin > 0 then
+        priceStr = priceStr .. string.format("%.2f", totalCoin) .. "₵"
+    end
     if totalEma > 0 then
-        if priceStr ~= "" then priceStr = priceStr .. " + "
+        if priceStr ~= "" then
+            priceStr = priceStr .. " + "
+        end
         priceStr = priceStr .. string.format("%.2f", totalEma) .. "۞"
     end
     drawCenteredText(20, "Куплено " .. extracted .. " шт. за " .. priceStr, colors.success)
@@ -4566,7 +4623,7 @@ function performBuy()
     unlockTransactions()
     currentScreen = "shop_buy"
     markDirty()
-end
+end  -- <-- Этот end закрывает функцию performBuy
 
 -- ============================================================
 -- ИНКРЕМЕНТАЛЬНОЕ ПРИМЕНЕНИЕ ИЗМЕНЕНИЙ (ДЛЯ ТОВАРОВ)
@@ -4752,14 +4809,17 @@ function applyIncrementalChanges(itemsFile, changes, itemType)
 
     broadcastUpdate()
     return true
-end
+end  -- <-- ВОТ ЭТОТ end БЫЛ ПРОПУЩЕН!
 
 -- ============================================================
 -- ★★★ ИСПРАВЛЕННЫЙ checkWebCommands ★★★
 -- ============================================================
 
 function checkWebCommands()
-    if currentPlayer then syncCurrentPlayer()
+    if currentPlayer then
+        syncCurrentPlayer()
+    end
+    
     writeDebugLog("🔍 checkWebCommands() запущена в " .. getRealTimeHM())
 
     local success, err = pcall(function()
@@ -5896,7 +5956,7 @@ function main()
                 local admin = cleanString(banInfo.admin or "Система")
                 
                 local function formatDate(isoDate)
-                    if not isoDate or isoDate == "" then return ""
+                    if not isoDate or isoDate == "" then return "" end
                     local year, month, day = isoDate:match("(%d+)-(%d+)-(%d+)")
                     if year and month and day then
                         return day .. "." .. month .. "." .. year
@@ -6090,7 +6150,6 @@ while running do
         writeErrorLog("Стек вызовов:\n" .. stack)
         print(stack)
         
-        -- ★★★ ЕСЛИ ОШИБКА КРИТИЧЕСКАЯ - ВЫХОДИМ ★★★
         if err and type(err) == "string" and err:find("shutdown") then
             running = false
             break
@@ -6100,6 +6159,5 @@ while running do
     end
 end
 
--- ★★★ ПРИ ВЫХОДЕ ИЗ ЦИКЛА - СОХРАНЯЕМ ДАННЫЕ ★★★
 forceSaveData()
 writeErrorLog("🔴 Терминал #1 завершил работу")

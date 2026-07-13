@@ -11,7 +11,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА777
+-- АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА111
 -- ============================================================
 
 local function setupAutoStart()
@@ -5893,48 +5893,55 @@ function main()
                     goto continue
                 end
                 
-                local addBtn = {x=36, y=24, xs=14, ys=1}
-                if isButtonClicked(addBtn, x, y) then
-                    -- ★★★ ПРОВЕРЯЕМ ЗАНОВО ★★★
-                    if currentPlayer then
-                        local player = playersIndex[currentPlayer]
-                        if player then
-                            playerHasFeedback = player.hasFeedback or false
-                            -- ★★★ ПРОВЕРЯЕМ В ФАЙЛЕ ОТЗЫВОВ ★★★
-                            if not playerHasFeedback then
-                                local feedbacks = {}
-                                if fs.exists(FEEDBACKS_PATH) then
-                                    local file = io.open(FEEDBACKS_PATH, "r")
-                                    if file then
-                                        local data = file:read("*a")
-                                        file:close()
-                                        if data and #data > 0 then
-                                            local ok, result = pcall(serialization.unserialize, data)
-                                            if ok and type(result) == "table" then feedbacks = result end
+                -- ★★★ ПРОВЕРЯЕМ, НЕ ДОЛЖНА ЛИ КНОПКА БЫТЬ СКРЫТА ★★★
+                local showAddButton = not playerHasFeedback
+                
+                -- ★★★ ЕСЛИ КНОПКА ДОЛЖНА БЫТЬ СКРЫТА - НЕ ОБРАБАТЫВАЕМ КЛИК ★★★
+                if showAddButton then
+                    local addBtn = {x=36, y=24, xs=14, ys=1}
+                    if isButtonClicked(addBtn, x, y) then
+                        -- ★★★ ПРОВЕРЯЕМ ЗАНОВО ★★★
+                        if currentPlayer then
+                            local player = playersIndex[currentPlayer]
+                            if player then
+                                playerHasFeedback = player.hasFeedback or false
+                                -- ★★★ ПРОВЕРЯЕМ В ФАЙЛЕ ОТЗЫВОВ ★★★
+                                if not playerHasFeedback then
+                                    local feedbacks = {}
+                                    if fs.exists(FEEDBACKS_PATH) then
+                                        local file = io.open(FEEDBACKS_PATH, "r")
+                                        if file then
+                                            local data = file:read("*a")
+                                            file:close()
+                                            if data and #data > 0 then
+                                                local ok, result = pcall(serialization.unserialize, data)
+                                                if ok and type(result) == "table" then feedbacks = result end
+                                            end
                                         end
                                     end
-                                end
-                                for _, fb in ipairs(feedbacks) do
-                                    if fb.name == currentPlayer then
-                                        playerHasFeedback = true
-                                        player.hasFeedback = true
-                                        saveDBDeferred()
-                                        break
+                                    for _, fb in ipairs(feedbacks) do
+                                        if fb.name == currentPlayer then
+                                            playerHasFeedback = true
+                                            player.hasFeedback = true
+                                            saveDBDeferred()
+                                            break
+                                        end
                                     end
                                 end
                             end
                         end
+                        
+                        -- ★★★ ЕСЛИ ОТЗЫВ УЖЕ ЕСТЬ - ПОКАЗЫВАЕМ СООБЩЕНИЕ ★★★
+                        if playerHasFeedback then
+                            showTempMessage("Вы уже оставляли отзыв!", 2)
+                        else
+                            feedbackInput = ""
+                            feedbackEditMode = true
+                            currentScreen = "feedback_input"
+                            markDirty()
+                        end
+                        goto continue
                     end
-                    
-                    if playerHasFeedback then
-                        showTempMessage("Вы уже оставляли отзыв!", 2)
-                    else
-                        feedbackInput = ""
-                        feedbackEditMode = true
-                        currentScreen = "feedback_input"
-                        markDirty()
-                    end
-                    goto continue
                 end
                 
                 if isButtonClicked({x=59, y=24, xs=7, ys=1}, x, y) and feedbacksPage > 1 then

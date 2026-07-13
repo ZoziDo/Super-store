@@ -11,7 +11,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА
+-- АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА1
 -- ============================================================
 
 local function setupAutoStart()
@@ -3133,7 +3133,7 @@ function drawReportScreen()
     drawFlexButton(sendBtn)
     drawFlexButton(backButton)
     gpu.setForeground(colors.text_main)
-    drawCenteredText(16, "Ограничение: 1 репорт в сутки (сброс в 00:00 МСК)", colors.text_main)
+    drawCenteredText(16, "Ограничение: 1 репорт в сутки (сброс в 00:00 МСК)", colors.error)
     drawTempMessage()
 end
 
@@ -3584,14 +3584,24 @@ function drawFeedbackInputScreen()
     gpu.setForeground(colors.text_main)
     drawCenteredText(15, "Оставьте свой отзыв о магазине:", colors.text_main)
 
+    -- ★★★ ПОЛЕ ВВОДА (ИСПРАВЛЕНО: feedbackInput, правильные координаты) ★★★
     gpu.setBackground(colors.bg_input)
-    gpu.fill(11, 9, 59, 3, " ")  -- x: 10 -> 11, ширина: 60 -> 59
+    gpu.fill(11, 17, 59, 3, " ")  -- y = 17 (под текстом "Оставьте свой отзыв")
     gpu.setForeground(colors.text_bright)
-    if reportInput and reportInput ~= "" then
-        gpu.set(12, 10, unicode.sub(reportInput, -58))  -- x: 11 -> 12
+    if feedbackEditMode then
+        if feedbackInput and feedbackInput ~= "" then
+            gpu.set(12, 18, unicode.sub(feedbackInput, -58) .. "_")
+        else
+            gpu.setForeground(colors.inactive)
+            gpu.set(12, 18, "Введите ваш отзыв..._")
+        end
     else
-        gpu.setForeground(colors.inactive)
-        gpu.set(12, 10, "Введите текст сообщения...")  -- x: 11 -> 12
+        if feedbackInput and feedbackInput ~= "" then
+            gpu.set(12, 18, unicode.sub(feedbackInput, -58))
+        else
+            gpu.setForeground(colors.inactive)
+            gpu.set(12, 18, "Введите ваш отзыв...")
+        end
     end
     gpu.setBackground(colors.bg_main)
 

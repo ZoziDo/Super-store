@@ -10,6 +10,9 @@ local math = require("math")
 local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
+writeDebugFile("🚀 СКРИПТ ЗАПУЩЕН")
+writeDebugFile("📌 Создаём таймер отправки дельты")
+
 -- ============================================================
 -- ★★ АВТОМАТИЧЕСКАЯ1246167 НАСТРОЙКА АВТОЗАПУСКА ★★
 -- ============================================================
@@ -1156,12 +1159,16 @@ end
 
 function send_pending_changes()
     writeDebugFile(">>> send_pending_changes()")
-    writeDebugFile("   pending_buffer размер: " .. #pending_buffer)
+    writeDebugFile("   pending_buffer: " .. #pending_buffer .. " записей")
     
     if #pending_buffer == 0 then
-        writeDebugFile("   буфер пуст")
-        retry_delay = 10
+        writeDebugFile("   буфер пуст, выходим")
         return true
+    end
+
+    -- Показываем, что будем отправлять
+    for i, ch in ipairs(pending_buffer) do
+        writeDebugFile("   [" .. i .. "] " .. ch.type .. " " .. ch.data.player .. " " .. ch.data.item)
     end
 
     local changes_to_send = {}
@@ -1224,16 +1231,13 @@ function send_pending_changes()
     end
 end
 
-createTimer(10, function()
-    writeDebugFile("⏰ Таймер отправки дельты сработал")
+event.timer(10, function()
+    writeDebugFile("⏰ Таймер сработал (event.timer)")
     if #pending_buffer > 0 then
-        writeDebugFile("📤 Отправка дельты (буфер: " .. #pending_buffer .. ")")
         send_pending_changes()
-    else
-        writeDebugFile("   буфер пуст")
     end
     return true
-end, true)
+end, math.huge)
 
 function ensureFileExists(path, defaultData)
     writeDebugLog("ensureFileExists: " .. path)

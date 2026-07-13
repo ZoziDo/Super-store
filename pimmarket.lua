@@ -11,7 +11,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- АВТОМАТИЧЕСКАЯ246 НАСТРОЙКА АВТОЗАПУСКА11114444
+-- АВТОМАТИЧЕСКАЯ246 НАСТРОЙКА АВТОЗАПУСКА99999
 -- ============================================================
 
 local function setupAutoStart()
@@ -4211,6 +4211,81 @@ function unbindAccount()
     else
         gpu.setForeground(colors.error)
         gpu.set(20, 17, "❌ Ошибка соединения")
+        os.sleep(2)
+        markDirty()
+    end
+end
+
+function verifyAuthCode(code)
+    drawCenteredText(15, "Проверка кода...", colors.accent_secondary)
+    os.sleep(0.5)
+    
+    local success, response = pcall(function()
+        return internet.request(WEB_URL .. "/api/verify_auth_code", toJson({
+            code = code,
+            game_player = currentPlayer
+        }), {
+            ["Content-Type"] = "application/json",
+            ["Connection"] = "close",
+            ["Timeout"] = "5"
+        })
+    end)
+    
+    if success and response then
+        local body = ""
+        for chunk in response do
+            body = body .. chunk
+        end
+        local data = parseJSON(body)
+        
+        if data and data.success then
+            -- ★★★ СОХРАНЯЕМ ПРИВЯЗКУ В ДАННЫХ ИГРОКА ★★★
+            if currentPlayer and playersIndex[currentPlayer] then
+                local player = playersIndex[currentPlayer]
+                player.site_user = data.player
+                saveDBDeferred()
+                
+                local change = {
+                    id = "bind_" .. os.time() .. "_" .. math.random(100000),
+                    type = "bind_player",
+                    data = {
+                        player = currentPlayer,
+                        site_user = data.player
+                    }
+                }
+                add_pending_change(change)
+                
+                boundPlayer = data.player
+                saveBoundPlayer(data.player)
+                bindingCache.isBound = true
+                bindingCache.lastCheck = os.time()
+                
+                addLog("🔗 Аккаунт привязан: " .. boundPlayer .. " -> " .. currentPlayer)
+                
+                drawCenteredText(15, "✅ Аккаунт успешно привязан!", colors.success)
+                drawCenteredText(16, "Теперь вы можете пользоваться магазином", colors.text_main)
+                
+                syncCurrentPlayer()
+                os.sleep(2)
+                goBackToMenu()
+            else
+                drawCenteredText(15, "❌ Ошибка: игрок не найден", colors.error)
+                os.sleep(2)
+                markDirty()
+            end
+        else
+            local errorMsg = (data and data.error) or "Ошибка привязки"
+            drawCenteredText(15, "❌ " .. errorMsg, colors.error)
+            
+            if data and data.bound then
+                drawCenteredText(16, "Этот игрок уже привязан к другому аккаунту", colors.text_main)
+            end
+            
+            os.sleep(2)
+            markDirty()
+        end
+    else
+        drawCenteredText(15, "❌ Ошибка соединения с сервером", colors.error)
         os.sleep(2)
         markDirty()
     end

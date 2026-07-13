@@ -11,7 +11,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ★★ АВТОМАТИЧЕСКАЯ123567 НАСТРОЙКА АВТОЗАПУСКА ★★
+-- ★★ АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА ★★
 -- ============================================================
 
 local function setupAutoStart()
@@ -1660,14 +1660,22 @@ PUSH_DIRECTION = "down"
 PULL_DIRECTION = "up"
 
 function normalizeName(name)
-    if not name then return ""
+    if not name then 
+        return "" 
+    end
     local lastColon = name:match(".*:([^:]+)$")
     return lastColon or name
 end
 
 function namesMatch(name1, name2)
-    if not name1 or not name2 then return false
-    if name1 == name2 then return true
+    if not name1 or not name2 then 
+        return false 
+    end
+    
+    if name1 == name2 then 
+        return true 
+    end
+    
     local short1 = normalizeName(name1)
     local short2 = normalizeName(name2)
     return short1 == short2
@@ -1934,12 +1942,16 @@ end
 -- ============================================================
 
 function isPimOwner(playerName)
-    if not playerName or not pimOwner then return false
+    if not playerName or not pimOwner then 
+        return false
+    end
     return playerName == pimOwner
 end
 
 function syncCurrentPlayer()
-    if not currentPlayer then return
+    if not currentPlayer then 
+        return
+    end
     
     writeDebugLog("🔄 Синхронизация игрока: " .. currentPlayer)
     
@@ -1960,7 +1972,9 @@ function syncCurrentPlayer()
 end
 
 function checkBindingStatus()
-    if not currentPlayer then return
+    if not currentPlayer then 
+        return
+    end
     
     local checkSuccess, checkResponse = pcall(function()
         return internet.request(WEB_URL .. "/api/player_binding?game_player=" .. currentPlayer, nil, {
@@ -2043,14 +2057,21 @@ createTimer(30, function()
 end, true)
 
 function updateSelectorDisplay(item)
-    if not selector then return
+    if not selector then 
+        return
+    end
+    
     if not item then
         pcall(selector.setSlot, 0, nil)
         pcall(selector.setSlot, 1, nil)
         return
     end
+    
     local raw = item.internalName or item.name or item.displayName
-    if not raw then return
+    if not raw then 
+        return
+    end
+    
     local id = raw
     if not id:find(":") then
         id = "minecraft:" .. id
@@ -2084,7 +2105,10 @@ function toLowerCase(str)
 end
 
 function canSendReport()
-    if not lastReportTime then return true
+    if not lastReportTime then 
+        return true
+    end
+    
     local now = getRealTimestamp()
     local reportDate = os.date("*t", lastReportTime)
     local nowDate = os.date("*t", now)
@@ -2095,7 +2119,10 @@ function canSendReport()
 end
 
 function getActualItemQuantity(internalName, damage)
-    if not component.isAvailable("me_interface") then return 0
+    if not component.isAvailable("me_interface") then 
+        return 0
+    end
+    
     local me = component.me_interface
     local items = me.getItemsInNetwork()
     local total = 0
@@ -2291,7 +2318,10 @@ end
 function extractToME(targetName, amount, targetDamage)
     writeDebugLog("extractToME: " .. tostring(targetName) .. " x" .. tostring(amount))
     local pimAddr = getPimAddr()
-    if not pimAddr or amount <= 0 then return 0
+    if not pimAddr or amount <= 0 then 
+        return 0
+    end
+    
     targetDamage = targetDamage or 0
     local extracted = 0
     for slot = 1, 36 do
@@ -2520,7 +2550,10 @@ function drawScrollBar()
     local barHeight = 15
     gpu.setBackground(colors.bg_main)
     gpu.fill(barX, barY, 2, barHeight, " ")
-    if total <= visibleRows then return
+    if total <= visibleRows then 
+        return
+    end
+    
     gpu.setBackground(colors.bg_secondary)
     gpu.fill(barX, barY, 2, barHeight, " ")
     local thumbHeight = math.max(2, math.floor(barHeight * visibleRows / total))

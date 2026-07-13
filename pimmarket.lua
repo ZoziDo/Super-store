@@ -11,7 +11,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА
+-- АВТОМАТИЧЕСКАЯ246 НАСТРОЙКА АВТОЗАПУСКА123
 -- ============================================================
 
 local function setupAutoStart()
@@ -853,7 +853,7 @@ function renderCurrentScreen()
         drawBuyStatic()
         drawBuyItemsList()
         drawBuyButtons()
-        forceRender()  -- ★★★ ПРИНУДИТЕЛЬНЫЙ РЕНДЕР ★★★
+        -- ★★★ УБЕРИ forceRender() ЗДЕСЬ! ★★★
     elseif currentScreen == "sell_scan" then
         drawSellScanScreen()
     elseif currentScreen == "purchase" then
@@ -3020,8 +3020,13 @@ shopMenuButtons = {
 
 function drawWelcomeScreen()
     writeDebugLog("drawWelcomeScreen()")
+    drawWelcomeScreenBuffer()
+    -- ★★★ НЕ ВЫЗЫВАЙ forceRender() ЗДЕСЬ! ★★★
+end
+
+function drawWelcomeScreenBuffer()
+    writeDebugLog("drawWelcomeScreenBuffer()")
     
-    -- ★★★ РИСУЕМ В БУФЕР, А НЕ НАПРЯМУЮ В GPU ★★★
     bufferClear()
     
     local border_color = 0x00E5C9
@@ -3098,8 +3103,6 @@ function drawWelcomeScreen()
             bufferSet(cx - 10, 23, "Встаньте на ПИМ для входа", hint_color)
         end
     end
-    
-    -- ★★★ НЕ ДОБАВЛЯЙ forceRender() ЗДЕСЬ! ★★★
 end
 
 function drawMainMenu()
@@ -3203,7 +3206,6 @@ function drawMainMenu()
     end
     
     -- ★★★ НЕ ДОБАВЛЯЙ forceRender() ЗДЕСЬ! ★★★
-    -- forceRender() -- ❌ УБРАТЬ!
 end
 
 function drawShopMenu()
@@ -5604,8 +5606,10 @@ MOUSE_DEBOUNCE = 0.05
 function main()
     writeDebugLog("🚀 main() запущен")
     
-    drawWelcomeScreen()
-    forceRender()  -- ★★★ ТОЛЬКО ЗДЕСЬ ★★★
+    -- ★★★ РИСУЕМ ПРИВЕТСТВИЕ В БУФЕР ★★★
+    drawWelcomeScreenBuffer()
+    -- ★★★ ВЫВОДИМ БУФЕР НА ЭКРАН (ОДИН РАЗ) ★★★
+    renderBuffer()
     
     writeErrorLog("🟢 Терминал #1 (PIM MARKET) запущен")
 

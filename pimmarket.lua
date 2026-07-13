@@ -11,7 +11,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА111
+-- АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА
 -- ============================================================
 
 local function setupAutoStart()
@@ -1727,12 +1727,9 @@ feedbacks = {}
 feedbacksPage = 1
 feedbacksTotalPages = 1
 feedbackInput = ""
+feedbackRating = 5  -- ★★★ НОВАЯ ПЕРЕМЕННАЯ ДЛЯ РЕЙТИНГА ★★★
 feedbackEditMode = false
 playerHasFeedback = false
-
--- ============================================================
--- JSON ПАРСЕР
--- ============================================================
 
 -- ============================================================
 -- JSON ПАРСЕР
@@ -3513,27 +3510,50 @@ function drawFeedbackInputScreen()
 
     gpu.setForeground(colors.text_main)
     drawCenteredText(7, "Ваше имя: " .. (currentPlayer or "Игрок"), colors.accent_main)
-    drawCenteredText(9, "Оставьте свой отзыв о магазине:", colors.text_main)
-    drawCenteredText(10, "Ваше мнение поможет нам стать лучше!", colors.inactive)
+    drawCenteredText(9, "Оцените магазин:", colors.text_main)
+
+    -- ★★★ РИСУЕМ ЗВЁЗДЫ ★★★
+    local starsY = 11
+    local starsX = 30
+    gpu.setForeground(colors.accent_secondary)
+    gpu.set(starsX, starsY, "Рейтинг: ")
+    for i = 1, 5 do
+        local starX = starsX + unicode.len("Рейтинг: ") + (i - 1) * 3
+        if i <= feedbackRating then
+            gpu.setForeground(0xFFD700)  -- Золотые звёзды
+            gpu.set(starX, starsY, "★")
+        else
+            gpu.setForeground(colors.inactive)  -- Серые звёзды
+            gpu.set(starX, starsY, "☆")
+        end
+    end
+
+    -- ★★★ ПОДСКАЗКА ДЛЯ ВЫБОРА ЗВЁЗД ★★★
+    gpu.setForeground(colors.inactive)
+    drawCenteredText(13, "Нажмите 1-5 для выбора рейтинга", colors.inactive)
+
+    gpu.setForeground(colors.text_main)
+    drawCenteredText(15, "Оставьте свой отзыв о магазине:", colors.text_main)
 
     gpu.setBackground(colors.black_fon)
-    gpu.fill(10, 12, 60, 3, " ")
+    gpu.fill(10, 17, 60, 3, " ")
     gpu.setForeground(colors.text_bright)
     if feedbackEditMode then
         if feedbackInput and feedbackInput ~= "" then
-            gpu.set(11, 13, unicode.sub(feedbackInput, -58) .. "_")
+            gpu.set(11, 18, unicode.sub(feedbackInput, -58) .. "_")
         else
             gpu.setForeground(colors.inactive)
-            gpu.set(11, 13, "Введите ваш отзыв..._")
+            gpu.set(11, 18, "Введите ваш отзыв..._")
         end
     else
         if feedbackInput and feedbackInput ~= "" then
-            gpu.set(11, 13, unicode.sub(feedbackInput, -58))
+            gpu.set(11, 18, unicode.sub(feedbackInput, -58))
         else
             gpu.setForeground(colors.inactive)
-            gpu.set(11, 13, "Введите ваш отзыв...")
+            gpu.set(11, 18, "Введите ваш отзыв...")
         end
     end
+    gpu.setBackground(colors.bg_main)
 
     local cancelBtn = {x = 20, y = 24, xs = 12, ys = 1, text = "[ ОТМЕНА ]", bg = colors.bg_button, fg = colors.error}
     local sendBtn = {x = 46, y = 24, xs = 15, ys = 1, text = "[ ОТПРАВИТЬ ]", bg = colors.bg_button, fg = colors.success}
@@ -3542,6 +3562,8 @@ function drawFeedbackInputScreen()
     drawFlexButton(sendBtn)
     drawTempMessage()
 end
+
+
 
 function drawInsufficientPopup()
     writeDebugLog("drawInsufficientPopup()")
@@ -5407,6 +5429,10 @@ function checkWebCommands()
                 end
                 
                 if not exists then
+                    -- ★★★ ДОБАВЛЯЕМ РЕЙТИНГ ★★★
+                    if not feedback.rating then
+                        feedback.rating = 5
+                    end
                     table.insert(feedbacks, 1, feedback)
                     local file = io.open(FEEDBACKS_PATH, "w")
                     if file then
@@ -5519,10 +5545,161 @@ function main()
         local e = ev[1]
 
         if e == "key_down" then
-            local _, _, _, code, char = table.unpack(ev)
-            if char == 3 then
+            local playerName = ev[5] or "Неизвестный"
+            local keyCode = ev[3] or 0
+            
+            if keyCode == 18 or keyCode == 17 or keyCode == 16 or keyCode == 91 or keyCode == 93 then
                 goto continue
             end
+            
+            if not isPimOwner(playerName) then
+                goto continue
+            end
+            
+            if currentScreen == "report" and canSendReport() then
+                local ch = ev[3]
+                if ch == 13 then
+                    markDirty()
+                elseif ch == 8 then
+                    reportInput = unicode.sub(reportInput or "", 1, -2)
+                    markDirty()
+                elseif ch >= 32 then
+                    reportInput = (reportInput or "") .. unicode.char(ch)
+                    markDirty()
+                end
+            elseif (currentScreen == "shop_buy" or currentScreen == "shop_sell") and searchActive then
+                local ch = ev[3]
+                if ch == 13 then
+                    shopSearch = searchInput or ""
+                    searchActive = false
+                    listScroll = 1
+                    selectedIndex = 0
+                    selectedItem = nil
+                    hoveredIndex = 0
+                    markDirty()
+                elseif ch == 8 then
+                    searchInput = unicode.sub(searchInput or "", 1, -2)
+                    shopSearch = searchInput or ""
+                    -- ★★★ ПЕРЕРИСОВЫВАЕМ ТОЛЬКО СПИСОК ★★★
+                    filteredItems = getFilteredItems()
+                    drawBuyItemsList()
+                    redrawSearchField()
+                    
+                    -- ★★★ НОВОЕ: ПРОВЕРЯЕМ, ЕСЛИ ПОИСК ПУСТ - СБРАСЫВАЕМ ВЫБОР ★★★
+                    if shopSearch == "" then
+                        -- Если поиск пустой, сбрасываем выбранный товар
+                        if selectedItem ~= nil then
+                            selectedItem = nil
+                            selectedIndex = 0
+                            -- ★★★ ОБНОВЛЯЕМ КНОПКУ (СТАНОВИТСЯ НЕАКТИВНОЙ) ★★★
+                            drawBuyButton()
+                        end
+                    end
+                elseif ch >= 32 then
+                    searchInput = (searchInput or "") .. unicode.char(ch)
+                    shopSearch = searchInput or ""
+                    -- ★★★ ПЕРЕРИСОВЫВАЕМ ТОЛЬКО СПИСОК ★★★
+                    filteredItems = getFilteredItems()
+                    drawBuyItemsList()
+                    redrawSearchField()
+                    
+                    -- ★★★ НОВОЕ: ЕСЛИ ВВЕЛИ НОВЫЙ СИМВОЛ - СБРАСЫВАЕМ ВЫБОР ★★★
+                    if selectedItem ~= nil then
+                        -- Проверяем, есть ли выбранный товар в отфильтрованном списке
+                        local stillVisible = false
+                        for _, item in ipairs(filteredItems) do
+                            if item == selectedItem then
+                                stillVisible = true
+                                break
+                            end
+                        end
+                        if not stillVisible then
+                            -- Если товар не виден в поиске - сбрасываем выбор
+                            selectedItem = nil
+                            selectedIndex = 0
+                            drawBuyButton()
+                        end
+                    end
+                end
+                goto continue
+            elseif currentScreen == "feedback_input" and feedbackEditMode then
+                local ch = ev[3]
+                if ch == 13 then
+                    if feedbackInput and feedbackInput ~= "" then
+                        -- ★★★ ОТПРАВЛЯЕМ ОТЗЫВ С РЕЙТИНГОМ ★★★
+                        local feedbackData = {
+                            name = currentPlayer or "Аноним",
+                            text = feedbackInput,
+                            time = getRealTimeString(),
+                            rating = feedbackRating or 5  -- ★★★ ДОБАВЛЯЕМ РЕЙТИНГ ★★★
+                        }
+                        
+                        -- ★★★ 1. ОТПРАВЛЯЕМ НА СЕРВЕР ★★★
+                        sendToWeb("/api/new_feedback", toJson(feedbackData))
+                        
+                        -- ★★★ 2. СОХРАНЯЕМ ЛОКАЛЬНО ★★★
+                        local feedbacks = {}
+                        if fs.exists(FEEDBACKS_PATH) then
+                            local file = io.open(FEEDBACKS_PATH, "r")
+                            if file then
+                                local data = file:read("*a")
+                                file:close()
+                                if data and #data > 0 then
+                                    local ok, result = pcall(serialization.unserialize, data)
+                                    if ok and type(result) == "table" then feedbacks = result end
+                                end
+                            end
+                        end
+                        table.insert(feedbacks, 1, feedbackData)
+                        local file = io.open(FEEDBACKS_PATH, "w")
+                        if file then
+                            file:write(serialization.serialize(feedbacks))
+                            file:close()
+                        end
+                        
+                        -- ★★★ 3. ОБНОВЛЯЕМ ДАННЫЕ ИГРОКА ★★★
+                        playerHasFeedback = true
+                        if currentPlayer and playersIndex[currentPlayer] then
+                            local player = playersIndex[currentPlayer]
+                            player.hasFeedback = true
+                            saveDBDeferred()
+                            
+                            local change = {
+                                id = "fb_" .. os.time() .. "_" .. math.random(100000),
+                                type = "new_feedback",
+                                data = {
+                                    player = currentPlayer,
+                                    feedback = feedbackInput,
+                                    time = getRealTimeString(),
+                                    rating = feedbackRating or 5
+                                }
+                            }
+                            add_pending_change(change)
+                        end
+                        
+                        showTempMessage("✅ Отзыв отправлен! Спасибо!", 10)
+                    end
+                    feedbackEditMode = false
+                    feedbackInput = ""
+                    feedbackRating = 5  -- ★★★ СБРАСЫВАЕМ РЕЙТИНГ ★★★
+                    currentScreen = "feedbacks"
+                    markDirty()
+                elseif ch == 8 then
+                    feedbackInput = unicode.sub(feedbackInput or "", 1, -2)
+                    markDirty()
+                -- ★★★ ОБРАБОТКА КЛАВИШ 1-5 ДЛЯ РЕЙТИНГА ★★★
+                elseif ch >= 49 and ch <= 53 then  -- Клавиши 1,2,3,4,5
+                    feedbackRating = ch - 48  -- Преобразуем ASCII код в число
+                    markDirty()
+                elseif ch >= 32 then
+                    if unicode.len(feedbackInput or "") < 200 then
+                        feedbackInput = (feedbackInput or "") .. unicode.char(ch)
+                        markDirty()
+                    end
+                end
+                goto continue
+            end
+            goto continue
         end
 
         if currentScreen == "auth" then
@@ -5960,20 +6137,22 @@ function main()
                 if isButtonClicked({x=20, y=24, xs=12, ys=1}, x, y) then
                     feedbackEditMode = false
                     feedbackInput = ""
+                    feedbackRating = 5  -- ★★★ СБРАСЫВАЕМ РЕЙТИНГ ★★★
                     currentScreen = "feedbacks"
                     markDirty()
                     goto continue
                 end
                 
                 if isButtonClicked({x=46, y=24, xs=15, ys=1}, x, y) and feedbackInput and feedbackInput ~= "" then
-                    -- ★★★ ОТПРАВЛЯЕМ ОТЗЫВ НА СЕРВЕР ★★★
+                    -- ★★★ ОТПРАВЛЯЕМ ОТЗЫВ С РЕЙТИНГОМ ★★★
                     local feedbackData = {
                         name = currentPlayer or "Аноним",
                         text = feedbackInput,
-                        time = getRealTimeString()
+                        time = getRealTimeString(),
+                        rating = feedbackRating or 5  -- ★★★ ДОБАВЛЯЕМ РЕЙТИНГ ★★★
                     }
                     
-                    -- ★★★ 1. ОТПРАВЛЯЕМ НА СЕРВЕР ЧЕРЕЗ /api/new_feedback ★★★
+                    -- ★★★ 1. ОТПРАВЛЯЕМ НА СЕРВЕР ★★★
                     sendToWeb("/api/new_feedback", toJson(feedbackData))
                     
                     -- ★★★ 2. СОХРАНЯЕМ ЛОКАЛЬНО ★★★
@@ -6003,14 +6182,14 @@ function main()
                         player.hasFeedback = true
                         saveDBDeferred()
                         
-                        -- ★★★ 4. ОТПРАВЛЯЕМ ИЗМЕНЕНИЕ ЧЕРЕЗ DELTA ★★★
                         local change = {
                             id = "fb_" .. os.time() .. "_" .. math.random(100000),
                             type = "new_feedback",
                             data = {
                                 player = currentPlayer,
                                 feedback = feedbackInput,
-                                time = getRealTimeString()
+                                time = getRealTimeString(),
+                                rating = feedbackRating or 5
                             }
                         }
                         add_pending_change(change)
@@ -6019,6 +6198,7 @@ function main()
                     showTempMessage("✅ Отзыв отправлен! Спасибо!", 10)
                     feedbackEditMode = false
                     feedbackInput = ""
+                    feedbackRating = 5  -- ★★★ СБРАСЫВАЕМ РЕЙТИНГ ★★★
                     currentScreen = "feedbacks"
                     markDirty()
                     goto continue

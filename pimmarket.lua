@@ -11,7 +11,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- ★★ АВТОМАТИЧЕСКАЯ12 НАСТРОЙКА АВТОЗАПУСКА ★★
+-- ★★ АВТОМАТИЧЕСКАЯ123 НАСТРОЙКА АВТОЗАПУСКА ★★
 -- ============================================================
 
 local function setupAutoStart()
@@ -153,8 +153,9 @@ end
 
 timers = {}
 
-function createTimer(interval, callback, repeat)
-    local timerId = event.timer(interval, callback, repeat and math.huge or 1)
+function createTimer(interval, callback, shouldRepeat)
+    local times = shouldRepeat and math.huge or 1
+    local timerId = event.timer(interval, callback, times)
     table.insert(timers, timerId)
     return timerId
 end

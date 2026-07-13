@@ -11,7 +11,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- АВТОМАТИЧЕСКАЯ246 НАСТРОЙКА АВТОЗАПУСКА66666
+-- АВТОМАТИЧЕСКАЯ246 НАСТРОЙКА АВТОЗАПУСКА1123
 -- ============================================================
 
 local function setupAutoStart()
@@ -77,298 +77,6 @@ if not event.shouldInterrupt then
 end
 
 -- ============================================================
--- ★★★ БЫСТРАЯ ОТРИСОВКА БЕЗ МОРГАНИЯ ★★★
--- ============================================================
-
--- Двойной буфер
-local backBuffer = {}
-local frontBuffer = {}
-local bufferDirty = false
-local renderInProgress = false
-
--- Инициализация буферов
-for i = 1, 25 do
-    backBuffer[i] = {}
-    frontBuffer[i] = {}
-    for j = 1, 80 do
-        backBuffer[i][j] = { char = " ", fg = 0xFFFFFF, bg = 0x0A0A0F }
-        frontBuffer[i][j] = { char = " ", fg = 0xFFFFFF, bg = 0x0A0A0F }
-    end
-end
-
--- ★★★ СЮДА ВСТАВИТЬ fullClear() ★★★
--- Полная очистка буфера и экрана
-function fullClear()
-    -- Очищаем экран
-    gpu.setBackground(colors.bg_main)
-    gpu.fill(1, 1, 80, 25, " ")
-    
-    -- Очищаем буфер
-    for y = 1, 25 do
-        for x = 1, 80 do
-            backBuffer[y][x] = { char = " ", fg = colors.text_main, bg = colors.bg_main }
-            frontBuffer[y][x] = { char = " ", fg = colors.text_main, bg = colors.bg_main }
-        end
-    end
-    bufferDirty = true
-end
-
--- Буферизированный вывод
-function bufferSet(x, y, text, fg, bg)
-    if not text or text == "" then return end
-    if type(text) ~= "string" then text = tostring(text) end
-    
-    fg = fg or colors.text_main
-    bg = bg or colors.bg_main
-    
-    local len = unicode.len(text)
-    for i = 1, len do
-        local px = x + i - 1
-        local py = y
-        if px >= 1 and px <= 80 and py >= 1 and py <= 25 then
-            local ch = unicode.sub(text, i, i)
-            if backBuffer[py] and backBuffer[py][px] then
-                backBuffer[py][px] = { char = ch, fg = fg, bg = bg }
-            end
-        end
-    end
-    bufferDirty = true
-end
-
-function renderBuffer()
-    if renderInProgress then return end
-    renderInProgress = true
-    
-    -- ★★★ УБЕРИ ЭТО ОТСЮДА ★★★
-    -- gpu.setBackground(colors.bg_main)
-    -- gpu.fill(1, 1, 80, 25, " ")
-    
-    local changes = 0
-    for y = 1, 25 do
-        for x = 1, 80 do
-            local new = backBuffer[y][x]
-            local old = frontBuffer[y][x]
-            if new and old then
-                if new.char ~= old.char or new.fg ~= old.fg or new.bg ~= old.bg then
-                    gpu.setForeground(new.fg)
-                    gpu.setBackground(new.bg)
-                    gpu.set(x, y, new.char)
-                    frontBuffer[y][x] = { char = new.char, fg = new.fg, bg = new.bg }
-                    changes = changes + 1
-                end
-            end
-        end
-    end
-    
-    bufferDirty = false
-    renderInProgress = false
-end
-
--- Очистка буфера (быстрая, без моргания)
-function bufferClear()
-    for y = 1, 25 do
-        for x = 1, 80 do
-            backBuffer[y][x] = { char = " ", fg = colors.text_main, bg = colors.bg_main }
-        end
-    end
-    bufferDirty = true
-end
-
--- Заполнение буфера
-function bufferFill(x, y, w, h, char, fg, bg)
-    fg = fg or colors.text_main
-    bg = bg or colors.bg_main
-    if type(char) ~= "string" then char = " " end
-    
-    for row = y, y + h - 1 do
-        for col = x, x + w - 1 do
-            if row >= 1 and row <= 25 and col >= 1 and col <= 80 then
-                if backBuffer[row] and backBuffer[row][col] then
-                    backBuffer[row][col] = { char = char, fg = fg, bg = bg }
-                end
-            end
-        end
-    end
-    bufferDirty = true
-end
-
--- Переопределяем стандартные функции на буферизированные
-local originalClear = clear
-clear = function()
-    bufferClear()
-end
-
-local originalDrawScreenBorder = drawScreenBorder
-drawScreenBorder = function()
-    bufferSet(1, 1, "┌", colors.accent_secondary)
-    bufferFill(2, 1, 78, 1, "─", colors.accent_secondary)
-    bufferSet(80, 1, "┐", colors.accent_secondary)
-    for y = 2, 24 do
-        bufferSet(1, y, "│", colors.accent_secondary)
-        bufferSet(80, y, "│", colors.accent_secondary)
-    end
-    bufferSet(1, 24, "└", colors.accent_secondary)
-    bufferFill(2, 24, 78, 1, "─", colors.accent_secondary)
-    bufferSet(80, 24, "┘", colors.accent_secondary)
-end
-
-local originalDrawCenteredText = drawCenteredText
-drawCenteredText = function(y, text, color)
-    if not text then return end
-    color = color or colors.text_main
-    local x = math.floor((80 - unicode.len(text)) / 2) + 1
-    bufferSet(x, y, text, color)
-end
-
-local originalDrawButton = drawButton
-drawButton = function(btn)
-    if not btn then return end
-    bufferFill(btn.x, btn.y, btn.xs, btn.ys, " ", btn.fg or colors.text_main, btn.bg or colors.bg_button)
-    local text = btn.text or ""
-    local textX = btn.x + math.floor((btn.xs - unicode.len(text)) / 2)
-    local textY = btn.y + math.floor((btn.ys - 1) / 2)
-    bufferSet(textX, textY, text, btn.fg or colors.text_main, btn.bg or colors.bg_button)
-end
-
--- Новая функция "быстрой" очистки (без мерцания)
-function quickClear()
-    gpu.setBackground(colors.bg_main)
-    gpu.fill(1, 1, 80, 25, " ")
-end
-
--- Таймер рендера - НЕ чаще чем раз в 16ms (60 FPS)
-renderTimer = nil
-lastRenderTime = 0
-MIN_RENDER_INTERVAL = 0.05
-
-function safeRender()
-    local now = os.clock()
-    if now - lastRenderTime < MIN_RENDER_INTERVAL then
-        if not renderTimer then
-            renderTimer = event.timer(MIN_RENDER_INTERVAL - (now - lastRenderTime), function()
-                renderTimer = nil
-                renderBuffer()
-                lastRenderTime = os.clock()
-                return false
-            end)
-        end
-        return
-    end
-    
-    renderBuffer()
-    lastRenderTime = now
-end
-
--- ★★★ ПЕРЕОПРЕДЕЛЯЕМ markDirty ДЛЯ БЫСТРОЙ ОТРИСОВКИ ★★★
-local originalMarkDirty = markDirty
-markDirty = function()
-    guiDirty = true
-    if not renderTimer then
-        renderTimer = event.timer(0.016, function()  -- ~60 FPS
-            renderTimer = nil
-            safeRender()
-            return false
-        end)
-    end
-end
-
--- ★★★ ПЕРЕОПРЕДЕЛЯЕМ forceRender ★★★
-local originalForceRender = forceRender
-forceRender = function()
-    guiDirty = true
-    if renderTimer then
-        event.cancel(renderTimer)
-        renderTimer = nil
-    end
-    safeRender()
-    guiDirty = false
-end
-
--- ★★★ НЕЙМАРКЕР ДЛЯ ПАРТИАЛЬНОГО ОБНОВЛЕНИЯ ★★★
-function partialRedraw()
-    -- Обновляем только изменившуюся область, а не весь экран
-    renderBuffer()
-end
-
--- ★★★ ПЕРЕОПРЕДЕЛЯЕМ drawTempMessage ★★★
-local originalDrawTempMessage = drawTempMessage
-drawTempMessage = function()
-    if tempMessage and tempMessage ~= "" then
-        bufferFill(1, 25, 80, 1, " ", colors.success, colors.bg_main)
-        local x = math.floor((80 - unicode.len(tempMessage)) / 2) + 1
-        bufferSet(x, 25, tempMessage, colors.success, colors.bg_main)
-    else
-        bufferFill(1, 25, 80, 1, " ", colors.text_main, colors.bg_main)
-    end
-end
-
--- ★★★ ПЕРЕОПРЕДЕЛЯЕМ drawBalanceLine ★★★
-local originalDrawBalanceLine = drawBalanceLine
-drawBalanceLine = function(x, y)
-    local coin = coinBalance or 0.0
-    local ema = emaBalance or 0.0
-    
-    bufferSet(x, y, "Баланс: ", colors.white)
-    local coinStr = string.format("%.2f", coin) .. " Coina ₵"
-    bufferSet(x + unicode.len("Баланс: "), y, coinStr, colors.accent_main)
-    bufferSet(x + unicode.len("Баланс: ") + unicode.len(coinStr), y, " | ", colors.white)
-    local emaStr = "ЭМЫ: " .. string.format("%.2f", ema) .. " ۞"
-    bufferSet(x + unicode.len("Баланс: ") + unicode.len(coinStr) + unicode.len(" | "), y, emaStr, colors.tomato)
-end
-
--- ★★★ АСИНХРОННАЯ ЗАГРУЗКА ДАННЫХ ★★★
-function asyncLoadItems(callback)
-    event.timer(0.01, function()
-        local success, err = pcall(function()
-            if currentShopMode == "buy" then
-                loadBuyItems()
-            else
-                loadSellItems()
-            end
-        end)
-        if callback then
-            callback(success, err)
-        end
-        markDirty()
-        return false
-    end)
-end
-
--- ★★★ БЫСТРЫЙ ПЕРЕХОД МЕЖДУ ЭКРАНАМИ ★★★
-function quickScreenSwitch(newScreen)
-    currentScreen = newScreen
-    bufferClear()
-    if newScreen == "menu" then
-        drawMainMenu()
-    elseif newScreen == "shop" then
-        drawShopMenu()
-    elseif newScreen == "shop_buy" then
-        drawBuyStatic()
-        drawBuyItemsList()
-        drawBuyButtons()
-    elseif newScreen == "shop_sell" then
-        drawBuyStatic()
-        drawBuyItemsList()
-        drawBuyButtons()
-    elseif newScreen == "welcome" then
-        drawWelcomeScreen()
-    end
-    forceRender()
-end
-
--- Асинхронный показ сообщения без блокировки
-function showMessageAsync(msg, duration, callback)
-    drawCenteredText(17, msg, colors.success)
-    forceRender()
-    event.timer(duration or 2, function()
-        if callback then
-            callback()
-        end
-        return false
-    end)
-end
-
--- ============================================================
 -- ★★★ ОТЛАДОЧНОЕ ЛОГИРОВАНИЕ В ФАЙЛ ★★★
 -- ============================================================
 
@@ -390,6 +98,7 @@ function clearDebugFile()
     writeDebugFile("=== DEBUG LOG STARTED ===")
 end
 
+-- Очищаем файл при запуске
 clearDebugFile()
 
 -- ============================================================
@@ -487,22 +196,28 @@ end
 -- ★★★ GRACEFUL SHUTDOWN - ПЛАВНОЕ ЗАВЕРШЕНИЕ ★★★
 -- ============================================================
 
+-- Флаг, что мы в процессе завершения
 isShuttingDown = false
 
+-- Функция для безопасного сохранения всех данных
 function saveAllData()
     writeDebugLog("💾 Сохранение всех данных...")
     
+    -- 1. Сохраняем игроков
     if dbDirty then
         saveDB()
         writeDebugLog("   ✅ Игроки сохранены")
     end
     
+    -- 2. Сохраняем статистику
     saveGlobalStats()
     writeDebugLog("   ✅ Статистика сохранена")
     
+    -- 3. Отправляем все логи
     flushLogQueue()
     writeDebugLog("   ✅ Логи отправлены")
     
+    -- 4. Сохраняем pending изменения
     if #pending_buffer > 0 then
         save_pending_buffer()
         writeDebugLog("   ✅ Буфер изменений сохранён")
@@ -511,13 +226,15 @@ function saveAllData()
     writeDebugLog("💾 Все данные сохранены!")
 end
 
+-- Функция для асинхронного сохранения (не блокирует GUI)
 function asyncSaveData()
     if isShuttingDown then
-        return
+        return  -- Уже сохраняем
     end
     
     isShuttingDown = true
     
+    -- Сохраняем в фоне через 0.1 секунду
     event.timer(0.1, function()
         pcall(saveAllData)
         isShuttingDown = false
@@ -525,27 +242,34 @@ function asyncSaveData()
     end)
 end
 
+-- Функция для принудительного сохранения (блокирует до завершения)
 function forceSaveData()
     isShuttingDown = true
     saveAllData()
     isShuttingDown = false
 end
 
+-- ★★★ КОНЕЦ БЛОКА GRACEFUL SHUTDOWN ★★★      
+
 -- ============================================================
 -- ★★★ ОБРАБОТЧИК ВЫКЛЮЧЕНИЯ КОМПЬЮТЕРА ★★★
 -- ============================================================
 
+-- Слушаем событие выключения (если есть)
 event.listen("computer_shutdown", function()
     writeErrorLog("⏻ Компьютер выключается! Сохраняем данные...")
     forceSaveData()
     writeErrorLog("✅ Данные сохранены перед выключением")
 end)
 
+-- Также сохраняем при завершении процесса
 event.listen("terminate", function()
     writeErrorLog("⏻ Процесс завершается! Сохраняем данные...")
     forceSaveData()
     writeErrorLog("✅ Данные сохранены перед завершением")
 end)
+
+-- ★★★ КОНЕЦ БЛОКА ОБРАБОТЧИКА ★★★            
 
 -- ============================================================
 -- ★★★ ЗАЩИТА ОТ ЗАВИСАНИЙ ★★★
@@ -574,8 +298,10 @@ end
 function safeExit()
     writeDebugLog("🚪 Безопасный выход")
     
+    -- ★★★ 1. МГНОВЕННО ПОМЕЧАЕМ, ЧТО ВЫХОДИМ ★★★
     isShuttingDown = true
     
+    -- ★★★ 2. ЛОГГИРУЕМ ВЫХОД ИГРОКА ★★★
     if currentPlayer ~= nil then
         addLog("👤 Выход: " .. currentPlayer)
         writeDebugLog("👤 Выход игрока: " .. tostring(currentPlayer))
@@ -583,6 +309,7 @@ function safeExit()
         writeDebugLog("🚪 Выход без игрока")
     end
     
+    -- ★★★ 3. СБРАСЫВАЕМ ВСЕ ПЕРЕМЕННЫЕ (МГНОВЕННО) ★★★
     currentPlayer = nil
     currentToken = nil
     alreadyAuthorized = false
@@ -596,6 +323,7 @@ function safeExit()
         writeDebugLog("🔓 Блокировка сброшена при выходе")
     end
     
+    -- ★★★ 4. СБРАСЫВАЕМ ВСЕ UI ПЕРЕМЕННЫЕ ★★★
     selectedItem = nil
     hoveredIndex = 0
     selectedIndex = 0
@@ -620,20 +348,25 @@ function safeExit()
         tempMessageTimer = nil
     end
     
+    -- ★★★ 5. СБРАСЫВАЕМ СЕЛЕКТОР ★★★
     pcall(updateSelectorDisplay, nil)
     pcall(selector.setSlot, 0, nil)
     pcall(selector.setSlot, 1, nil)
     
+    -- ★★★ 6. ОСТАНАВЛИВАЕМ ВСЕ ТАЙМЕРЫ ★★★
     clearAllTimers()
     writeDebugLog("⏹️ Все таймеры остановлены")
     
+    -- ★★★ 7. МГНОВЕННО РИСУЕМ ЭКРАН ПРИВЕТСТВИЯ ★★★
     drawWelcomeScreen()
-    forceRender()
     writeDebugLog("🖥️ Экран приветствия отображён")
     
+    -- ★★★ 8. АСИНХРОННО СОХРАНЯЕМ ДАННЫЕ (В ФОНЕ) ★★★
+    -- Это НЕ БЛОКИРУЕТ GUI!
     asyncSaveData()
     writeDebugLog("💾 Запущено фоновое сохранение данных")
     
+    -- ★★★ 9. СБРАСЫВАЕМ ФЛАГ ВЫХОДА ★★★
     isShuttingDown = false
     
     writeDebugLog("✅ Безопасный выход завершён")
@@ -736,6 +469,7 @@ function flushLogQueue()
     
     if not success then
         writeDebugLog("⚠️ Не удалось отправить логи: " .. tostring(err))
+        -- Логи остаются в очереди для повторной отправки
         return
     end
     
@@ -809,13 +543,31 @@ guiDirty = true
 renderTimer = nil
 lastRenderedScreen = ""
 
+function markDirty()
+    guiDirty = true
+    if not renderTimer then
+        renderTimer = event.timer(0.1, function()
+            renderTimer = nil
+            if guiDirty then
+                renderCurrentScreen()
+                guiDirty = false
+            end
+            return false
+        end)
+    end
+end
+
+function forceRender()
+    guiDirty = true
+    if renderTimer then
+        event.cancel(renderTimer)
+        renderTimer = nil
+    end
+    renderCurrentScreen()
+    guiDirty = false
+end
+
 function renderCurrentScreen()
-    if renderInProgress then return end
-    renderInProgress = true
-
-    -- ★★★ ПОЛНАЯ ОЧИСТКА ★★★
-    fullClear()
-
     if currentScreen == "welcome" then
         drawWelcomeScreen()
     elseif currentScreen == "menu" then
@@ -847,35 +599,7 @@ function renderCurrentScreen()
     elseif currentScreen == "qr_popup" then
         showQRCodePopup()
     end
-
     drawTempMessage()
-    renderBuffer()
-    renderInProgress = false
-end
-
-function forceRender()
-    if renderInProgress then return end
-    guiDirty = true
-    if renderTimer then
-        event.cancel(renderTimer)
-        renderTimer = nil
-    end
-    renderCurrentScreen()
-    guiDirty = false
-end
-
-function markDirty()
-    guiDirty = true
-    if not renderTimer then
-        renderTimer = event.timer(0.016, function()
-            renderTimer = nil
-            if guiDirty then
-                renderCurrentScreen()
-                guiDirty = false
-            end
-            return false
-        end)
-    end
 end
 
 -- ============================================================
@@ -897,13 +621,11 @@ function processMouseMove(x, y)
         if newHover <= #filteredItems and newHover ~= hoveredIndex then
             hoveredIndex = newHover
             drawBuyItemsList()
-            partialRedraw()
         end
     else
         if hoveredIndex ~= 0 then
             hoveredIndex = 0
             drawBuyItemsList()
-            partialRedraw()
         end
     end
 end
@@ -1089,12 +811,14 @@ function drawFlexButton(btn)
         return
     end
     writeDebugLog("drawFlexButton: " .. (btn.text or "?"))
-    
-    bufferFill(btn.x, btn.y, btn.xs, btn.ys, " ", btn.fg or colors.text_main, btn.bg or colors.bg_button)
+    gpu.setBackground(btn.bg)
+    gpu.fill(btn.x, btn.y, btn.xs, btn.ys, " ")
+    gpu.setForeground(btn.fg)
     local text = btn.text or ""
     local textX = btn.x + math.floor((btn.xs - unicode.len(text)) / 2)
     local textY = btn.y + math.floor((btn.ys - 1) / 2)
-    bufferSet(textX, textY, text, btn.fg or colors.text_main, btn.bg or colors.bg_button)
+    gpu.set(textX, textY, text)
+    gpu.setBackground(colors.bg_main)
 end
 
 function drawPopupBorder(x, y, w, h, color)
@@ -1201,6 +925,10 @@ globalStats = { totalReports = 0, totalBuys = 0, totalSells = 0, totalRevenue = 
 transactions = {}
 pending_buffer = {}
 retry_delay = 10
+
+-- ============================================================
+-- ★★★ ИНДЕКСЫ ДЛЯ БЫСТРОГО ПОИСКА ИГРОКОВ ★★★
+-- ============================================================
 
 playersIndex = {}
 
@@ -1361,6 +1089,7 @@ function send_pending_changes()
         return true
     end
 
+    -- Показываем, что будем отправлять
     for i, ch in ipairs(pending_buffer) do
         writeDebugFile("   [" .. i .. "] " .. ch.type .. " " .. ch.data.player .. " " .. ch.data.item)
     end
@@ -1489,6 +1218,7 @@ if fs.exists(DB_PATH) then
     end
 end
 
+-- ★★★ ИНИЦИАЛИЗИРУЕМ ИНДЕКС ПОСЛЕ ЗАГРУЗКИ ИГРОКОВ ★★★
 syncPlayerIndex()
 
 if fs.exists(STATS_PATH) then
@@ -2022,6 +1752,10 @@ playerHasFeedback = false
 -- JSON ПАРСЕР
 -- ============================================================
 
+-- ============================================================
+-- JSON ПАРСЕР
+-- ============================================================
+
 function parseJSON(json_str)
     if not json_str or json_str == "" then 
         writeDebugLog("parseJSON: пустая строка")
@@ -2207,7 +1941,7 @@ function parseJSON(json_str)
     local result = parseValue()
     writeDebugLog("parseJSON результат: " .. (result and "таблица" or "nil"))
     return result
-end
+end  -- <-- ЭТОТ end ЗАКРЫВАЕТ parseJSON
 
 -- ============================================================
 -- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
@@ -2687,57 +2421,65 @@ end
 
 function drawBuyStatic()
     writeDebugLog("drawBuyStatic()")
-    
-    bufferSet(1, 1, "┌", colors.accent_secondary)
-    bufferFill(2, 1, 78, 1, "─", colors.accent_secondary)
-    bufferSet(80, 1, "┐", colors.accent_secondary)
-    for y = 2, 24 do
-        bufferSet(1, y, "│", colors.accent_secondary)
-        bufferSet(80, y, "│", colors.accent_secondary)
-    end
-    bufferSet(1, 24, "└", colors.accent_secondary)
-    bufferFill(2, 24, 78, 1, "─", colors.accent_secondary)
-    bufferSet(80, 24, "┘", colors.accent_secondary)
-
+    clear()
+    drawScreenBorder()
     drawBalanceLine(3, 1)
 
-    local title = currentShopMode == "buy" and "Магазин продаёт" or "Магазин покупает"
-    bufferSet(3, 3, title, colors.accent_secondary)
-
-    local searchX = 42
-    local searchText = ""
-    if searchActive then
-        searchText = (searchInput or "") .. "_"
-    else
-        searchText = (shopSearch == "" and "Поиск..." or (shopSearch or ""))
-    end
-    bufferFill(searchX, 3, 23, 1, " ", colors.accent_main, colors.bg_button)
-    bufferSet(searchX + 1, 3, unicode.sub(searchText, 1, 21), colors.accent_main, colors.bg_button)
-
-    local clearText = "[ СТЕРЕТЬ ]"
-    local clearWidth = unicode.len(clearText) + 2
-    local clearX = searchX + 23 + 1
-    bufferFill(clearX, 3, clearWidth, 1, " ", colors.accent_secondary, colors.error)
-    local textX = clearX + math.floor((clearWidth - unicode.len(clearText)) / 2)
-    bufferSet(textX, 3, clearText, colors.accent_secondary, colors.error)
-
-    bufferFill(2, 5, 76, 1, " ", colors.text_bright, colors.bg_button)
-    bufferSet(3, 5, "Название", colors.text_bright, colors.bg_button)
-    bufferSet(42, 5, "Кол-во", colors.text_bright, colors.bg_button)
     if currentShopMode == "buy" then
-        bufferSet(55, 5, "Coina", colors.text_bright, colors.bg_button)
-        bufferSet(67, 5, "ЭМЫ", colors.text_bright, colors.bg_button)
+        gpu.setForeground(colors.accent_secondary)
+        gpu.set(3, 3, "Магазин продаёт")
     else
-        bufferSet(65, 5, "Цена", colors.text_bright, colors.bg_button)
+        gpu.setForeground(colors.accent_secondary)
+        gpu.set(3, 3, "Магазин покупает")
     end
 
-    bufferFill(2, 6, 76, 15, " ", colors.text_main, colors.bg_main)
-    
+    redrawSearchField()
+
+    gpu.setBackground(colors.bg_button)
+    gpu.fill(2, 5, 76, 1, " ")
+    gpu.setForeground(colors.text_bright)
+    gpu.set(3, 5, "Название")
+    gpu.set(42, 5, "Кол-во")
+    if currentShopMode == "buy" then
+        gpu.set(55, 5, "Coina")
+        gpu.set(67, 5, "ЭМЫ")
+    else
+        gpu.set(65, 5, "Цена")
+    end
+    gpu.setBackground(colors.bg_main)
+
     drawTempMessage()
 end
 
 function drawSingleRow(y, item, isHovered, isSelected, itemIndex)
-    if not item then return end
+    writeDebugLog("drawSingleRow: y=" .. tostring(y) .. ", itemIndex=" .. tostring(itemIndex))
+    
+    if not item then
+        writeErrorLog("❌ item = nil в drawSingleRow!")
+        return
+    end
+    
+    if not item.displayName then
+        writeErrorLog("⚠️ item.displayName = nil, устанавливаем 'Неизвестно'")
+        item.displayName = "Неизвестно"
+    end
+    if not item.internalName then
+        writeErrorLog("⚠️ item.internalName = nil, устанавливаем 'unknown'")
+        item.internalName = "unknown"
+    end
+    if item.qty == nil then
+        writeErrorLog("⚠️ item.qty = nil, устанавливаем 0")
+        item.qty = 0
+    end
+    if item.price == nil then
+        item.price = 0
+    end
+    if item.priceCoin == nil then
+        item.priceCoin = 0
+    end
+    if item.priceEma == nil then
+        item.priceEma = 0
+    end
     
     local bg, fg
     if currentShopMode == "buy" and item.qty == 0 then
@@ -2754,36 +2496,65 @@ function drawSingleRow(y, item, isHovered, isSelected, itemIndex)
     end
     
     if currentShopMode == "buy" then
-        fg = (item.qty > 0) and colors.accent_main or colors.inactive
+        if item.qty > 0 then
+            fg = colors.accent_main
+        else
+            fg = colors.inactive
+        end
     else
         fg = colors.accent_main
     end
     
-    bufferFill(2, y, 76, 1, " ", fg, bg)
+    gpu.setBackground(bg)
+    gpu.fill(2, y, 76, 1, " ")
+    gpu.setForeground(fg)
     
     local name = item.displayName or "Неизвестно"
     if unicode.len(name) > 37 then
         name = unicode.sub(name, (horizontalScroll or 1), (horizontalScroll or 1) + 36)
     end
-    bufferSet(3, y, name, fg, bg)
+    gpu.set(3, y, name)
     
-    bufferSet(42, y, tostring(item.qty or 0), (item.qty > 0) and colors.text_bright or colors.inactive, bg)
-    
+    if currentShopMode == "buy" then
+        if item.qty > 0 then
+            gpu.setForeground(colors.text_bright)
+        else
+            gpu.setForeground(colors.inactive)
+        end
+    else
+        gpu.setForeground(colors.text_bright)
+    end
+    gpu.set(42, y, tostring(item.qty or 0))
+
     if currentShopMode == "sell" then
-        local priceColor = (item.internalName == "customnpcs:npcMoney") and colors.tomato or colors.text_bright
-        bufferSet(65, y, string.format("%.2f", item.price or 0) .. (item.internalName == "customnpcs:npcMoney" and " ۞" or " ₵"), priceColor, bg)
+        if item.internalName == "customnpcs:npcMoney" then
+            gpu.setForeground(colors.tomato)
+            local priceStr = string.format("%.2f", item.price or 0) .. " ۞"
+            gpu.set(65, y, priceStr)
+        else
+            gpu.setForeground(colors.text_bright)
+            local priceStr = string.format("%.2f", item.price or 0) .. " ₵"
+            gpu.set(65, y, priceStr)
+        end
     else
         if item.priceCoin and item.priceCoin > 0 then
-            bufferSet(55, y, string.format("%.2f", item.priceCoin), colors.accent_main, bg)
+            gpu.setForeground(colors.accent_main)
+            local coinStr = string.format("%.2f", item.priceCoin)
+            gpu.set(55, y, coinStr)
         else
-            bufferSet(55, y, "0", colors.inactive, bg)
+            gpu.setForeground(colors.inactive)
+            gpu.set(55, y, "0")
         end
         if item.priceEma and item.priceEma > 0 then
-            bufferSet(67, y, string.format("%.2f", item.priceEma), colors.tomato, bg)
+            gpu.setForeground(colors.tomato)
+            local emaStr = string.format("%.2f", item.priceEma)
+            gpu.set(67, y, emaStr)
         else
-            bufferSet(67, y, "0", colors.inactive, bg)
+            gpu.setForeground(colors.inactive)
+            gpu.set(67, y, "0")
         end
     end
+    gpu.setBackground(colors.bg_main)
 end
 
 function drawScrollBar()
@@ -2791,21 +2562,21 @@ function drawScrollBar()
     local barX = 78
     local barY = 7
     local barHeight = 15
-    
-    bufferFill(barX, barY, 2, barHeight, " ", colors.text_main, colors.bg_main)
-    
+    gpu.setBackground(colors.bg_main)
+    gpu.fill(barX, barY, 2, barHeight, " ")
     if total <= visibleRows then 
         return
     end
     
-    bufferFill(barX, barY, 2, barHeight, " ", colors.text_main, colors.bg_secondary)
-    
+    gpu.setBackground(colors.bg_secondary)
+    gpu.fill(barX, barY, 2, barHeight, " ")
     local thumbHeight = math.max(2, math.floor(barHeight * visibleRows / total))
     local maxPos = barHeight - thumbHeight
     local thumbPos = math.floor((listScroll - 1) * maxPos / (total - visibleRows)) + 1
     thumbPos = math.min(thumbPos, maxPos + 1)
-    
-    bufferFill(barX, barY + thumbPos - 1, 2, thumbHeight, " ", colors.text_main, colors.accent_main)
+    gpu.setBackground(colors.accent_main)
+    gpu.fill(barX, barY + thumbPos - 1, 2, thumbHeight, " ")
+    gpu.setBackground(colors.bg_main)
 end
 
 function getFilteredItems()
@@ -2846,10 +2617,12 @@ function getFilteredItems()
         ::continue::
     end
 
+    -- ★★★ ВОССТАНАВЛИВАЕМ СОРТИРОВКУ ★★★
     table.sort(filtered, function(a, b)
         return sortableName(a.displayName) < sortableName(b.displayName)
     end)
 
+    -- ★★★ ВОССТАНАВЛИВАЕМ ВЫЧИСЛЕНИЕ maxItemWidth ★★★
     maxItemWidth = 0
     for _, item in ipairs(filtered) do
         local len = unicode.len(item.displayName or item.internalName or "")
@@ -2865,16 +2638,17 @@ end
 function drawBuyItemsList()
     writeDebugLog("drawBuyItemsList()")
     filteredItems = getFilteredItems()
-    local total = #filteredItems
-    local maxScroll = math.max(1, total - visibleRows + 1)
+    local maxScroll = math.max(1, #filteredItems - visibleRows + 1)
     listScroll = math.max(1, math.min(listScroll or 1, maxScroll))
 
-    bufferFill(2, 6, 76, 15, " ", colors.text_main, colors.bg_main)
-
-    if total == 0 then
+    if #filteredItems == 0 then
+        gpu.setBackground(colors.bg_main)
+        gpu.fill(2, 7, 78, visibleRows, " ")
         local msg = "ПО ТВОЕМУ ЗАПРОСУ, НИЧЕГО НЕ НАЙДЕНО!"
         local msgX = math.floor((80 - unicode.len(msg)) / 2) + 1
-        bufferSet(msgX, 14, msg, colors.error)
+        local msgY = 14
+        gpu.setForeground(colors.error)
+        gpu.set(msgX, msgY, msg)
     else
         for i = 1, visibleRows do
             local itemIndex = listScroll + i - 1
@@ -2886,7 +2660,8 @@ function drawBuyItemsList()
             if item then
                 drawSingleRow(y, item, isHovered, isSelected, itemIndex)
             else
-                bufferFill(2, y, 76, 1, " ", colors.text_main, colors.bg_main)
+                gpu.setBackground(colors.bg_main)
+                gpu.fill(2, y, 76, 1, " ")
             end
         end
     end
@@ -2909,15 +2684,35 @@ function smoothScroll(steps)
         return
     end
     
+    if math.abs(steps) == 1 and total > visibleRows then
+        if steps > 0 then
+            gpu.copy(2, 8, 76, visibleRows - 1, 0, -1)
+            gpu.setBackground(colors.bg_main)
+            gpu.fill(2, 21, 76, 1, " ")
+            local newIdx = newScroll + visibleRows - 1
+            if newIdx <= total then
+                drawSingleRow(21, filtered[newIdx], (newIdx == hoveredIndex), (newIdx == selectedIndex), newIdx)
+            end
+        else
+            gpu.copy(2, 7, 76, visibleRows - 1, 0, 1)
+            gpu.setBackground(colors.bg_main)
+            gpu.fill(2, 7, 76, 1, " ")
+            local newIdx = newScroll
+            if newIdx >= 1 then
+                drawSingleRow(7, filtered[newIdx], (newIdx == hoveredIndex), (newIdx == selectedIndex), newIdx)
+            end
+        end
+    else
+        drawBuyItemsList()
+        return
+    end
+    
     listScroll = newScroll
-    markDirty()
+    drawScrollBar()
 end
 
 function drawBuyButtons()
     writeDebugFile("========== drawBuyButtons() ==========")
-    
-    bufferFill(2, 24, 76, 1, " ", colors.text_main, colors.bg_main)
-    
     local backButton = {
         text = "[ НАЗАД ]",
         x = 37, y = 24,
@@ -2926,7 +2721,6 @@ function drawBuyButtons()
         bg = colors.bg_button,
         fg = colors.accent_secondary
     }
-    
     local nextButton = {}
     if currentShopMode == "buy" then
         nextButton.text = "[ КУПИТЬ ]"
@@ -2939,11 +2733,23 @@ function drawBuyButtons()
     nextButton.y = 24
     nextButton.ys = 1
     nextButton.bg = colors.bg_button
-    
+    nextButton.fg = colors.inactive
+
+    writeDebugFile("🔍 selectedItem = " .. tostring(selectedItem))
+    if selectedItem then
+        writeDebugFile("   displayName = " .. tostring(selectedItem.displayName))
+        writeDebugFile("   qty = " .. tostring(selectedItem.qty))
+        writeDebugFile("   currentShopMode = " .. tostring(currentShopMode))
+    else
+        writeDebugFile("   selectedItem = nil")
+    end
+
     if selectedItem and (currentShopMode ~= "buy" or selectedItem.qty > 0) then
         nextButton.fg = colors.accent_secondary
+        writeDebugFile("✅ Кнопка АКТИВНА")
     else
         nextButton.fg = colors.inactive
+        writeDebugFile("❌ Кнопка НЕ АКТИВНА")
     end
 
     drawFlexButton(backButton)
@@ -2969,23 +2775,21 @@ shopMenuButtons = {
 function drawWelcomeScreen()
     writeDebugLog("drawWelcomeScreen()")
     
-    bufferClear()
+    gpu.setBackground(colors.bg_main)
+    gpu.fill(1, 1, 80, 25, " ")
     
     local border_color = 0x00E5C9
     local text_color = 0x00FFCC
     local sub_color = 0xFFFF00
     local hint_color = 0xAAAAAA
     
-    bufferSet(1, 1, "┌", border_color)
-    bufferFill(2, 1, 78, 1, "─", border_color)
-    bufferSet(80, 1, "┐", border_color)
+    gpu.setForeground(border_color)
+    gpu.set(1, 1, "+" .. string.rep("=", 78) .. "+")
+    gpu.set(1, 25, "+" .. string.rep("=", 78) .. "+")
     for y = 2, 24 do
-        bufferSet(1, y, "│", border_color)
-        bufferSet(80, y, "│", border_color)
+        gpu.set(1, y, "|")
+        gpu.set(80, y, "|")
     end
-    bufferSet(1, 24, "└", border_color)
-    bufferFill(2, 24, 78, 1, "─", border_color)
-    bufferSet(80, 24, "┘", border_color)
     
     local diamond = {
         "             ▓▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▓            ",
@@ -3023,53 +2827,68 @@ function drawWelcomeScreen()
     
     for i, line in ipairs(diamond) do
         local color = gradient[math.min(math.floor((i-1) / 2) + 1, #gradient)]
-        bufferSet(diamX, diamY + i - 1, line, color)
+        gpu.setForeground(color)
+        gpu.set(diamX, diamY + i - 1, line)
     end
     
     local cx = 41
     
     if shopPaused then
-        bufferSet(cx - 2, 21, " РЕЖИМ ОБСЛУЖИВАНИЯ", colors.error)
-        bufferSet(cx - 2, 22, " Магазин временно закрыт", colors.error)
-        bufferSet(cx - 2, 23, " Пожалуйста, зайдите позже", colors.text_main)
+        gpu.setForeground(colors.error)
+        drawCenteredText(21, " РЕЖИМ ОБСЛУЖИВАНИЯ", colors.error)
+        drawCenteredText(22, " Магазин временно закрыт", colors.error)
+        drawCenteredText(23, " Пожалуйста, зайдите позже", colors.text_main)
     else
-        bufferSet(cx - 2, 21, "VIP SHOP", text_color)
-        bufferSet(cx - 6, 22, "◆ McSkill HiTech ◆", sub_color)
-        bufferSet(cx - 10, 23, "Встаньте на ПИМ для входа", hint_color)
+        if currentPlayer and currentPlayer ~= "" then
+            gpu.setForeground(text_color)
+            gpu.set(cx - 2, 21, "VIP SHOP")
+            
+            gpu.setForeground(sub_color)
+            gpu.set(cx - 6, 22, "◆ McSkill HiTech ◆")
+            
+            gpu.setForeground(hint_color)
+            gpu.set(cx - 10, 23, "Встаньте на ПИМ для входа")
+        else
+            gpu.setForeground(text_color)
+            gpu.set(cx - 2, 21, "VIP SHOP")
+            
+            gpu.setForeground(sub_color)
+            gpu.set(cx - 6, 22, "◆ McSkill HiTech ◆")
+            
+            gpu.setForeground(hint_color)
+            gpu.set(cx - 10, 23, "Встаньте на ПИМ для входа")
+        end
     end
 end
 
 function drawMainMenu()
     writeDebugLog("drawMainMenu()")
-    
-    bufferSet(1, 1, "┌", colors.accent_secondary)
-    bufferFill(2, 1, 78, 1, "─", colors.accent_secondary)
-    bufferSet(80, 1, "┐", colors.accent_secondary)
-    for y = 2, 24 do
-        bufferSet(1, y, "│", colors.accent_secondary)
-        bufferSet(80, y, "│", colors.accent_secondary)
-    end
-    bufferSet(1, 24, "└", colors.accent_secondary)
-    bufferFill(2, 24, 78, 1, "─", colors.accent_secondary)
-    bufferSet(80, 24, "┘", colors.accent_secondary)
+    clear()
+    drawScreenBorder()
     
     if currentPlayer then
         local hello1 = "Добро пожаловать, "
         local hello2 = currentPlayer .. "!"
         local full1 = hello1 .. hello2
         local x1 = math.floor((80 - unicode.len(full1))/2) + 2
-        bufferSet(x1, 4, hello1, colors.success)
-        bufferSet(x1 + unicode.len(hello1), 4, hello2, colors.text_bright)
+        gpu.setForeground(colors.success)
+        gpu.set(x1, 4, hello1)
+        gpu.setForeground(colors.text_bright)
+        gpu.set(x1 + unicode.len(hello1), 4, hello2)
 
         local coin = coinBalance or 0.0
         local ema = emaBalance or 0.0
         
+        gpu.setForeground(colors.white)
         local balanceText = "Баланс: " .. string.format("%.2f", coin) .. " Coina ₵"
         local balanceX = math.floor((80 - unicode.len(balanceText .. " | ЭМЫ: " .. string.format("%.2f", ema) .. " ۞")) / 2) + 1
-        bufferSet(balanceX, 5, "Баланс: ", colors.white)
-        bufferSet(balanceX + unicode.len("Баланс: "), 5, string.format("%.2f", coin) .. " Coina ₵", colors.accent_main)
-        bufferSet(balanceX + unicode.len("Баланс: ") + unicode.len(string.format("%.2f", coin) .. " Coina ₵"), 5, " | ", colors.white)
-        bufferSet(balanceX + unicode.len("Баланс: ") + unicode.len(string.format("%.2f", coin) .. " Coina ₵") + unicode.len(" | "), 5, "ЭМЫ: " .. string.format("%.2f", ema) .. " ۞", colors.tomato)
+        gpu.set(balanceX, 5, "Баланс: ")
+        gpu.setForeground(colors.accent_main)
+        gpu.set(balanceX + unicode.len("Баланс: "), 5, string.format("%.2f", coin) .. " Coina ₵")
+        gpu.setForeground(colors.white)
+        gpu.set(balanceX + unicode.len("Баланс: ") + unicode.len(string.format("%.2f", coin) .. " Coina ₵"), 5, " | ")
+        gpu.setForeground(colors.tomato)
+        gpu.set(balanceX + unicode.len("Баланс: ") + unicode.len(string.format("%.2f", coin) .. " Coina ₵") + unicode.len(" | "), 5, "ЭМЫ: " .. string.format("%.2f", ema) .. " ۞")
         
         local boundInfo = ""
         local boundColor = colors.error
@@ -3084,47 +2903,31 @@ function drawMainMenu()
             boundColor = colors.error
         end
         
+        gpu.setForeground(boundColor)
         local boundX = math.floor((80 - unicode.len(boundInfo)) / 2) + 1
-        bufferSet(boundX, 2, boundInfo, boundColor)
+        gpu.set(boundX, 2, boundInfo)
 
         if not playerAgreed then
+            gpu.setForeground(colors.accent_secondary)
             if showShopDenied then
-                bufferSet(math.floor((80 - unicode.len("Доступ запрещён. Примите соглашение [Соглашение]")) / 2) + 1, 8, "Доступ запрещён. Примите соглашение [Соглашение]", colors.error)
+                drawCenteredText(8, "Доступ запрещён. Примите соглашение [Соглашение]", colors.error)
             else
-                bufferSet(math.floor((80 - unicode.len("Вы не приняли пользовательское соглашение! Нажмите [Соглашение]")) / 2) + 1, 8, "Вы не приняли пользовательское соглашение! Нажмите [Соглашение]", colors.accent_secondary)
+                drawCenteredText(8, "Вы не приняли пользовательское соглашение! Нажмите [Соглашение]", colors.accent_secondary)
             end
-        else
-            bufferFill(2, 8, 76, 1, " ", colors.text_main, colors.bg_main)
         end
 
         for _, btn in pairs(menuButtons) do
-            bufferFill(btn.x, btn.y, btn.xs, btn.ys, " ", btn.fg or colors.text_main, btn.bg or colors.bg_button)
-            local text = btn.text or ""
-            local textX = btn.x + math.floor((btn.xs - unicode.len(text)) / 2)
-            local textY = btn.y + math.floor((btn.ys - 1) / 2)
-            bufferSet(textX, textY, text, btn.fg or colors.text_main, btn.bg or colors.bg_button)
+            drawButton(btn)
         end
         
-        bufferSet(4, 24, "[ ПОДДЕРЖКА ]", colors.error)
-        bufferSet(35, 24, "[ СОГЛАШЕНИЕ ]", colors.error)
-        bufferSet(68, 24, "[ ОТЗЫВЫ ]", colors.error)
-        
-        bufferFill(2, 6, 76, 1, " ", colors.text_main, colors.bg_main)
-        bufferFill(2, 7, 76, 1, " ", colors.text_main, colors.bg_main)
-        bufferFill(2, 9, 76, 8, " ", colors.text_main, colors.bg_main)
-        bufferFill(2, 18, 76, 6, " ", colors.text_main, colors.bg_main)
-        
+        gpu.setForeground(colors.error)
+        gpu.set(4, 24, "[ ПОДДЕРЖКА ]")
+        gpu.set(35, 24, "[ СОГЛАШЕНИЕ ]")
+        gpu.set(68, 24, "[ ОТЗЫВЫ ]")
     else
         drawWelcomeScreen()
     end
-    
-    if tempMessage and tempMessage ~= "" then
-        bufferFill(1, 25, 80, 1, " ", colors.success, colors.bg_main)
-        local x = math.floor((80 - unicode.len(tempMessage)) / 2) + 1
-        bufferSet(x, 25, tempMessage, colors.success, colors.bg_main)
-    else
-        bufferFill(1, 25, 80, 1, " ", colors.text_main, colors.bg_main)
-    end
+    drawTempMessage()
 end
 
 function drawShopMenu()
@@ -3790,18 +3593,16 @@ function goBackToMenu()
     writeDebugLog("goBackToMenu()")
     showShopDenied = false
     currentScreen = "menu"
+    markDirty()
     updateSelectorDisplay(nil)
     pcall(selector.setSlot, 0, nil)
     pcall(selector.setSlot, 1, nil)
-    drawMainMenu()
-    renderBuffer()
 end
 
 function goToShop()
     writeDebugLog("goToShop()")
     currentScreen = "shop"
-    drawShopMenu()
-    renderBuffer()
+    markDirty()
 end
 
 function goToBuy()
@@ -3809,11 +3610,8 @@ function goToBuy()
     if not playerAgreed then
         drawCenteredText(12, "Вы не приняли пользовательское соглашение!", colors.error)
         drawCenteredText(13, "Нажмите [Помощь] и ознакомьтесь с условиями.", colors.text_main)
-        renderBuffer()
-        event.timer(3, function() 
-            markDirty() 
-            return false 
-        end)
+        os.sleep(3)
+        markDirty()
         return
     end
     currentScreen = "shop_buy"
@@ -3827,11 +3625,7 @@ function goToBuy()
     searchActive = false
     searchInput = ""
     loadBuyItems()
-    
-    drawBuyStatic()
-    drawBuyItemsList()
-    drawBuyButtons()
-    renderBuffer()
+    markDirty()
 end
 
 function goToSell()
@@ -3839,11 +3633,8 @@ function goToSell()
     if not playerAgreed then
         drawCenteredText(12, "Вы не приняли пользовательское соглашение!", colors.error)
         drawCenteredText(13, "Нажмите [Помощь] и ознакомьтесь с условиями.", colors.text_main)
-        renderBuffer()
-        event.timer(3, function() 
-            markDirty() 
-            return false 
-        end)
+        os.sleep(3)
+        markDirty()
         return
     end
 
@@ -3858,11 +3649,7 @@ function goToSell()
     searchActive = false
     searchInput = ""
     loadSellItems()
-    
-    drawBuyStatic()
-    drawBuyItemsList()
-    drawBuyButtons()
-    renderBuffer()
+    markDirty()
 end
 
 function goToSellConfirm(item)
@@ -3890,7 +3677,7 @@ function goToPurchase(item)
     end
     purchaseItem = item
     purchaseQuantity = 1
-    currentScreen = "purchase"
+    currentScreen = "purchase"  -- <-- ДОБАВИТЬ ЭТУ СТРОКУ!
     writeDebugFile("✅ purchaseItem установлен: " .. tostring(purchaseItem.displayName))
     writeDebugFile("✅ currentScreen = " .. currentScreen)
     markDirty()
@@ -3923,7 +3710,18 @@ function goToHelp()
         }
         drawFlexButton(backButton)
         drawTempMessage()
-        renderBuffer()
+        
+        while currentScreen == "agreement" do
+            local ev = {event.pull(0.5)}
+            if ev[1] == "touch" then
+                local x = tonumber(ev[3]) or 0
+                local y = tonumber(ev[4]) or 0
+                if isButtonClicked(backButton, x, y) then
+                    goBackToMenu()
+                    break
+                end
+            end
+        end
     end
 end
 
@@ -4122,35 +3920,33 @@ function showAuthPopup()
                     break
                 end
                 
-                if authCodeInput and #authCodeInput == 6 then
-                    isEditing = false
-                    verifyAuthCode(authCodeInput)
-                else
-                    gpu.setForeground(colors.error)
-                    gpu.set(popupX + 3, popupY + 13, " Введите 6-значный код!")
-                    forceRender()
-                    event.timer(1.5, function()
+                if isButtonClicked(confirmBtn, x, y) then
+                    if authCodeInput and #authCodeInput == 6 then
+                        isEditing = false
+                        verifyAuthCode(authCodeInput)
+                    else
+                        gpu.setForeground(colors.error)
+                        gpu.set(popupX + 3, popupY + 13, " Введите 6-значный код!")
+                        os.sleep(1.5)
                         markDirty()
-                        return false
-                    end)
+                    end
+                    break
                 end
                 
             elseif ev[1] == "key_down" then
                 local ch = ev[3]
                 
                 if ch == 13 then
-                if authCodeInput and #authCodeInput == 6 then
-                    isEditing = false
-                    verifyAuthCode(authCodeInput)
-                else
-                    gpu.setForeground(colors.error)
-                    gpu.set(popupX + 3, popupY + 13, " Введите 6-значный код!")
-                    forceRender()
-                    event.timer(1.5, function()
+                    if authCodeInput and #authCodeInput == 6 then
+                        isEditing = false
+                        verifyAuthCode(authCodeInput)
+                    else
+                        gpu.setForeground(colors.error)
+                        gpu.set(popupX + 3, popupY + 13, " Введите 6-значный код!")
+                        os.sleep(1.5)
                         markDirty()
-                        return false
-                    end)
-                end
+                    end
+                    break
                     
                 elseif ch == 8 then
                     authCodeInput = unicode.sub(authCodeInput or "", 1, -2)
@@ -4253,68 +4049,61 @@ function showUnbindConfirmPopup()
 end
 
 function verifyAuthCode(code)
-    drawCenteredText(15, "Проверка кода...", colors.accent_secondary)
-    forceRender()
+    writeDebugLog("verifyAuthCode: " .. code)
     
-    event.timer(0.1, function()
-        local success, response = pcall(function()
-            return internet.request(WEB_URL .. "/api/verify_auth_code", toJson({
-                code = code,
-                game_player = currentPlayer
-            }), {
-                ["Content-Type"] = "application/json",
-                ["Connection"] = "close",
-                ["Timeout"] = "5"
-            })
-        end)
-        
-        if success and response then
-            local body = ""
-            for chunk in response do
-                body = body .. chunk
-            end
-            local data = parseJSON(body)
-            
-            if data and data.success then
-                drawCenteredText(15, "✅ Аккаунт успешно привязан!", colors.success)
-                drawCenteredText(16, "Теперь вы можете пользоваться магазином", colors.text_main)
-                
-                if data.player then
-                    boundPlayer = data.player
-                    saveBoundPlayer(data.player)
-                    bindingCache.isBound = true
-                    bindingCache.lastCheck = os.clock()
-                    addLog("🔗 Аккаунт привязан: " .. boundPlayer)
-                end
-                
-                syncCurrentPlayer()
-                event.timer(2, function() 
-                    goBackToMenu() 
-                    return false 
-                end)
-                
-            else
-                local errorMsg = (data and data.error) or "Ошибка привязки"
-                drawCenteredText(15, "❌ " .. errorMsg, colors.error)
-                
-                if data and data.bound then
-                    drawCenteredText(16, "Этот игрок уже привязан к другому аккаунту", colors.text_main)
-                end
-                
-                event.timer(2, function() 
-                    markDirty() 
-                    return false 
-                end)
-            end
-        else
-            drawCenteredText(15, "❌ Ошибка соединения с сервером", colors.error)
-            event.timer(2, function() 
-                markDirty() 
-                return false 
-            end)
-        end
-        return false
+    drawCenteredText(15, "Проверка кода...", colors.accent_secondary)
+    os.sleep(0.5)
+    
+    local success, response = pcall(function()
+        return internet.request(WEB_URL .. "/api/verify_auth_code", toJson({
+            code = code,
+            game_player = currentPlayer
+        }), {
+            ["Content-Type"] = "application/json",
+            ["Connection"] = "close",
+            ["Timeout"] = "5"
+        })
     end)
+    
+    if success and response then
+        local body = ""
+        for chunk in response do
+            body = body .. chunk
+        end
+        local data = parseJSON(body)
+        
+        if data and data.success then
+            drawCenteredText(15, "✅ Аккаунт успешно привязан!", colors.success)
+            drawCenteredText(16, "Теперь вы можете пользоваться магазином", colors.text_main)
+            
+            if data.player then
+                boundPlayer = data.player
+                saveBoundPlayer(data.player)
+                bindingCache.isBound = true
+                bindingCache.lastCheck = os.clock()
+                addLog("🔗 Аккаунт привязан: " .. boundPlayer)
+            end
+            
+            syncCurrentPlayer()
+            os.sleep(2)
+            goBackToMenu()
+            
+        else
+            local errorMsg = (data and data.error) or "Ошибка привязки"
+            drawCenteredText(15, "❌ " .. errorMsg, colors.error)
+            
+            if data and data.bound then
+                drawCenteredText(16, "Этот игрок уже привязан к другому аккаунту", colors.text_main)
+            end
+            
+            os.sleep(2)
+            markDirty()
+        end
+    else
+        drawCenteredText(15, "❌ Ошибка соединения с сервером", colors.error)
+        os.sleep(2)
+        markDirty()
+    end
 end
 
 function unbindAccount()
@@ -4351,28 +4140,20 @@ function unbindAccount()
             gpu.setForeground(colors.text_main)
             gpu.set(23, 18, "   Доступ к магазину ограничен")
             addLog("🔓 Аккаунт отвязан: " .. currentPlayer)
-            event.timer(2, function()
-                goBackToMenu()
-                return false
-            end)
+            os.sleep(2)
+            goBackToMenu()
         else
             local errorMsg = (data and data.error) or "Ошибка отвязки"
             gpu.setForeground(colors.error)
             gpu.set(20, 17, "❌ " .. errorMsg)
-            forceRender()
-            event.timer(2, function()
-                markDirty()
-                return false
-            end)
+            os.sleep(2)
+            markDirty()
         end
     else
         gpu.setForeground(colors.error)
         gpu.set(20, 17, "❌ Ошибка соединения")
-        forceRender()
-        event.timer(2, function()
-            markDirty()
-            return false
-        end)
+        os.sleep(2)
+        markDirty()
     end
 end
 
@@ -4560,11 +4341,8 @@ end
 function performSell()
     if not playerAgreed then
         drawCenteredText(17, "Сначала примите пользовательское соглашение", colors.error)
-        forceRender()
-        event.timer(2, function() 
-            markDirty() 
-            return false 
-        end)
+        os.sleep(2)
+        markDirty()
         return
     end
 
@@ -4588,80 +4366,77 @@ function performSell()
     end
 
     showSellPopup = false
+    markDirty()
     drawCenteredText(17, "Выполняется пополнение...", colors.accent_main)
-    forceRender()
-    
-    event.timer(0.01, function()
-        sellConfirmItem._processing = true
+    os.sleep(0.2)
 
-        local realExtracted = extractToME(sellConfirmItem.internalName, foundAmount, sellConfirmItem.damage or 0)
-        if realExtracted == 0 then
-            sellConfirmItem._processing = false
-            drawCenteredText(17, "Не удалось изъять предметы! Проверьте инвентарь.", colors.error)
-            forceRender()
-            event.timer(2, function()
-                unlockTransactions()
-                currentScreen = "shop_sell"
-                markDirty()
-                return false
-            end)
-            return false
-        end
+    sellConfirmItem._processing = true
 
-        local value = realExtracted * sellConfirmItem.price
-        if sellConfirmItem.internalName == "customnpcs:npcMoney" then
-            emaBalance = emaBalance + value
-        else
-            coinBalance = coinBalance + value
-        end
-        playerTransactions = playerTransactions + 1
-
-        if currentPlayer and playersIndex[currentPlayer] then
-            local player = playersIndex[currentPlayer]
-            player.balance = coinBalance
-            player.emaBalance = emaBalance
-            player.transactions = playerTransactions
-            saveDB()
-            writeDebugLog("💾 Баланс сохранён после продажи для " .. currentPlayer .. ": Coin=" .. coinBalance .. ", EMA=" .. emaBalance)
-        else
-            writeErrorLog("⚠️ Игрок не найден при продаже: " .. tostring(currentPlayer))
-        end
-
-        addTransaction("sell", currentPlayer, sellConfirmItem.displayName, realExtracted, value, 0)
-
-        sellConfirmItem._processed = true
+    local realExtracted = extractToME(sellConfirmItem.internalName, foundAmount, sellConfirmItem.damage or 0)
+    if realExtracted == 0 then
         sellConfirmItem._processing = false
+        drawCenteredText(17, "Не удалось изъять предметы! Проверьте инвентарь.", colors.error)
+        os.sleep(2)
+        unlockTransactions()
+        currentScreen = "shop_sell"
+        markDirty()
+        return
+    end
 
-        local currencySymbol = (sellConfirmItem.internalName == "customnpcs:npcMoney") and "۞" or "₵"
-        drawCenteredText(17, "Успешно! +" .. string.format("%.2f", value) .. " " .. currencySymbol, colors.success)
-        forceRender()
+    local value = realExtracted * sellConfirmItem.price
+    if sellConfirmItem.internalName == "customnpcs:npcMoney" then
+        emaBalance = emaBalance + value
+    else
+        coinBalance = coinBalance + value
+    end
+    playerTransactions = playerTransactions + 1
 
-        event.timer(0.8, function()
-            unlockTransactions()
-            currentScreen = "shop_sell"
-            showSellPopup = false
-            markDirty()
-            
-            writeDebugFile("========================================")
-            writeDebugFile("✅ performSell() ЗАВЕРШЕНА")
-            writeDebugFile("   realExtracted=" .. tostring(realExtracted))
-            writeDebugFile("   value=" .. tostring(value))
-            writeDebugFile("   currentPlayer=" .. tostring(currentPlayer))
-            writeDebugFile("========================================")
-            return false
-        end)
-        return false
-    end)
+    if currentPlayer and playersIndex[currentPlayer] then
+        local player = playersIndex[currentPlayer]
+        player.balance = coinBalance
+        player.emaBalance = emaBalance
+        player.transactions = playerTransactions
+        saveDB()
+        writeDebugLog("💾 Баланс сохранён после продажи для " .. currentPlayer .. ": Coin=" .. coinBalance .. ", EMA=" .. emaBalance)
+    else
+        writeErrorLog("⚠️ Игрок не найден при продаже: " .. tostring(currentPlayer))
+    end
+
+    addTransaction("sell", currentPlayer, sellConfirmItem.displayName, realExtracted, value, 0)
+
+    sellConfirmItem._processed = true
+    sellConfirmItem._processing = false
+
+    gpu.setBackground(colors.bg_main)
+    gpu.fill(2, 17, 78, 1, " ")
+    local currencySymbol = (sellConfirmItem.internalName == "customnpcs:npcMoney") and "۞" or "₵"
+    drawCenteredText(17, "Успешно! +" .. string.format("%.2f", value) .. " " .. currencySymbol, colors.success)
+    os.sleep(0.8)
+
+    unlockTransactions()
+    currentScreen = "shop_sell"
+    showSellPopup = false
+    markDirty()
+    
+    -- ★★★ ЛОГИ В КОНЦЕ ★★★
+    writeDebugFile("========================================")
+    writeDebugFile("✅ performSell() ЗАВЕРШЕНА")
+    writeDebugFile("   realExtracted=" .. tostring(realExtracted))
+    writeDebugFile("   value=" .. tostring(value))
+    writeDebugFile("   currentPlayer=" .. tostring(currentPlayer))
+    writeDebugFile("========================================")
 end
+
+
+-- ============================================================
+-- ИНКРЕМЕНТАЛЬНОЕ ПРИМЕНЕНИЕ ИЗМЕНЕНИЙ (ДЛЯ ТОВАРОВ)
+-- ============================================================
 
 function performBuy()
     if not playerAgreed then
         drawCenteredText(20, "Сначала примите пользовательское соглашение", colors.error)
-        forceRender()
-        event.timer(2, function() 
-            markDirty() 
-            return false 
-        end)
+        os.sleep(2)
+        markDirty()
         return
     end
 
@@ -4684,14 +4459,11 @@ function performBuy()
     local actualQty = getActualItemQuantity(item.internalName, item.damage)
     if actualQty <= 0 then
         drawCenteredText(20, "Товар закончился! Обновление списка...", colors.error)
-        forceRender()
-        event.timer(0.8, function()
-            loadBuyItems(true)
-            unlockTransactions()
-            currentScreen = "shop_buy"
-            markDirty()
-            return false
-        end)
+        os.sleep(0.8)
+        loadBuyItems(true)
+        unlockTransactions()
+        currentScreen = "shop_buy"
+        markDirty()
         return
     end
 
@@ -4704,13 +4476,10 @@ function performBuy()
 
     if qty <= 0 then
         drawCenteredText(20, "Выберите количество!", colors.error)
-        forceRender()
-        event.timer(0.8, function()
-            unlockTransactions()
-            currentScreen = "shop_buy"
-            markDirty()
-            return false
-        end)
+        os.sleep(0.8)
+        unlockTransactions()
+        currentScreen = "shop_buy"
+        markDirty()
         return
     end
 
@@ -4727,105 +4496,77 @@ function performBuy()
     end
 
     drawCenteredText(20, "Выполняется покупка...", colors.accent_main)
-    forceRender()
-    
-    event.timer(0.1, function()
-        local id = item.internalName
-        if not id:find(":") then
-            id = "minecraft:" .. id
-        end
-        local fingerprint = { id = id, dmg = item.damage or 0 }
+    os.sleep(0.4)
 
-        local maxStackSize = 64
-        local ok, detail = pcall(me.getItemDetail, me, item.internalName, item.damage)
-        if ok and detail and detail.maxSize then
-            maxStackSize = detail.maxSize
-        end
+    local id = item.internalName
+    if not id:find(":") then
+        id = "minecraft:" .. id
+    end
+    local fingerprint = { id = id, dmg = item.damage or 0 }
 
-        local remaining = qty
-        local extracted = 0
-        local lastError = nil
+    local maxStackSize = 64
+    local ok, detail = pcall(me.getItemDetail, me, item.internalName, item.damage)
+    if ok and detail and detail.maxSize then
+        maxStackSize = detail.maxSize
+    end
 
-        while remaining > 0 do
-            local toTake = math.min(remaining, maxStackSize)
-            local success, result = pcall(function()
-                return me.exportItem(fingerprint, PULL_DIRECTION, toTake)
-            end)
+    local remaining = qty
+    local extracted = 0
+    local lastError = nil
 
-            local got = 0
-            if success then
-                if type(result) == "number" then
-                    got = result
-                elseif type(result) == "boolean" and result == true then
-                    got = toTake
-                elseif type(result) == "table" then
-                    if result.count then
-                        got = result.count
-                    elseif result.amount then
-                        got = result.amount
-                    elseif result.size then
-                        got = result.size
-                    else
-                        got = toTake
-                    end
+    while remaining > 0 do
+        local toTake = math.min(remaining, maxStackSize)
+        local success, result = pcall(function()
+            return me.exportItem(fingerprint, PULL_DIRECTION, toTake)
+        end)
+
+        local got = 0
+        if success then
+            if type(result) == "number" then
+                got = result
+            elseif type(result) == "boolean" and result == true then
+                got = toTake
+            elseif type(result) == "table" then
+                if result.count then
+                    got = result.count
+                elseif result.amount then
+                    got = result.amount
+                elseif result.size then
+                    got = result.size
                 else
-                    lastError = "неизвестный ответ: " .. tostring(result)
+                    got = toTake
                 end
             else
-                lastError = tostring(result)
+                lastError = "неизвестный ответ: " .. tostring(result)
             end
-
-            if got > 0 then
-                extracted = extracted + got
-                remaining = remaining - got
-            else
-                if lastError == nil then
-                    lastError = "не удалось выдать (вернулось 0 или false)"
-                end
-                break
-            end
+        else
+            lastError = tostring(result)
         end
 
-        if extracted == 0 then
-            showInventoryFullPopup = true
-            unlockTransactions()
-            markDirty()
-            drawInventoryFullPopup()
-            return false
-        end
-
-        if extracted < qty then
-            local actuallySpentCoin = extracted * (item.priceCoin or 0)
-            local actuallySpentEma = extracted * (item.priceEma or 0)
-            coinBalance = coinBalance - actuallySpentCoin
-            emaBalance = emaBalance - actuallySpentEma
-            playerTransactions = playerTransactions + 1
-
-            if currentPlayer and playersIndex[currentPlayer] then
-                local player = playersIndex[currentPlayer]
-                player.balance = coinBalance
-                player.emaBalance = emaBalance
-                player.transactions = playerTransactions
-                saveDB()
-                writeDebugLog("💾 Баланс сохранён (част.) для " .. currentPlayer .. ": Coin=" .. coinBalance .. ", EMA=" .. emaBalance)
+        if got > 0 then
+            extracted = extracted + got
+            remaining = remaining - got
+        else
+            if lastError == nil then
+                lastError = "не удалось выдать (вернулось 0 или false)"
             end
-
-            addTransaction("buy", currentPlayer, item.displayName, extracted, actuallySpentCoin, actuallySpentEma)
-
-            partialExtracted = extracted
-            partialRequested = qty
-            partialRefundCoin = actuallySpentCoin
-            partialRefundEma = actuallySpentEma
-            partialItem = item
-            showPartialPopup = true
-            unlockTransactions()
-            markDirty()
-            drawPartialPopup()
-            return false
+            break
         end
+    end
 
-        coinBalance = coinBalance - totalCoin
-        emaBalance = emaBalance - totalEma
+    if extracted == 0 then
+        showInventoryFullPopup = true
+        unlockTransactions()
+        markDirty()
+        drawInventoryFullPopup()
+        return
+    end
+
+    if extracted < qty then
+        local actuallySpentCoin = extracted * (item.priceCoin or 0)
+        local actuallySpentEma = extracted * (item.priceEma or 0)
+        coinBalance = coinBalance - actuallySpentCoin
+        emaBalance = emaBalance - actuallySpentEma
         playerTransactions = playerTransactions + 1
 
         if currentPlayer and playersIndex[currentPlayer] then
@@ -4834,50 +4575,74 @@ function performBuy()
             player.emaBalance = emaBalance
             player.transactions = playerTransactions
             saveDB()
-            writeDebugLog("💾 Баланс сохранён (полн.) для " .. currentPlayer .. ": Coin=" .. coinBalance .. ", EMA=" .. emaBalance)
-        else
-            writeErrorLog("⚠️ Игрок не найден при покупке: " .. tostring(currentPlayer))
+            writeDebugLog("💾 Баланс сохранён (част.) для " .. currentPlayer .. ": Coin=" .. coinBalance .. ", EMA=" .. emaBalance)
         end
 
-        addTransaction("buy", currentPlayer, item.displayName, extracted, totalCoin, totalEma)
+        addTransaction("buy", currentPlayer, item.displayName, extracted, actuallySpentCoin, actuallySpentEma)
 
-        local priceStr = ""
-        if totalCoin > 0 then
-            priceStr = priceStr .. string.format("%.2f", totalCoin) .. "₵"
-        end
-        if totalEma > 0 then
-            if priceStr ~= "" then
-                priceStr = priceStr .. " + "
-            end
-            priceStr = priceStr .. string.format("%.2f", totalEma) .. "۞"
-        end
-        drawCenteredText(20, "Куплено " .. extracted .. " шт. за " .. priceStr, colors.success)
-        forceRender()
+        partialExtracted = extracted
+        partialRequested = qty
+        partialRefundCoin = actuallySpentCoin
+        partialRefundEma = actuallySpentEma
+        partialItem = item
+        showPartialPopup = true
+        unlockTransactions()
+        markDirty()
+        drawPartialPopup()
+        return
+    end
 
-        loadBuyItems(true)
-        for _, newItem in ipairs(shopItems) do
-            if newItem.internalName == item.internalName and newItem.damage == item.damage then
-                purchaseItem = newItem
-                break
-            end
+    coinBalance = coinBalance - totalCoin
+    emaBalance = emaBalance - totalEma
+    playerTransactions = playerTransactions + 1
+
+    if currentPlayer and playersIndex[currentPlayer] then
+        local player = playersIndex[currentPlayer]
+        player.balance = coinBalance
+        player.emaBalance = emaBalance
+        player.transactions = playerTransactions
+        saveDB()
+        writeDebugLog("💾 Баланс сохранён (полн.) для " .. currentPlayer .. ": Coin=" .. coinBalance .. ", EMA=" .. emaBalance)
+    else
+        writeErrorLog("⚠️ Игрок не найден при покупке: " .. tostring(currentPlayer))
+    end
+
+    addTransaction("buy", currentPlayer, item.displayName, extracted, totalCoin, totalEma)
+
+    gpu.setBackground(colors.bg_main)
+    gpu.fill(2, 20, 78, 1, " ")
+    local priceStr = ""
+    if totalCoin > 0 then
+        priceStr = priceStr .. string.format("%.2f", totalCoin) .. "₵"
+    end
+    if totalEma > 0 then
+        if priceStr ~= "" then
+            priceStr = priceStr .. " + "
         end
-        
-        event.timer(0.8, function()
-            unlockTransactions()
-            currentScreen = "shop_buy"
-            markDirty()
-            
-            writeDebugFile("========================================")
-            writeDebugFile("✅ performBuy() ЗАВЕРШЕНА")
-            writeDebugFile("   extracted=" .. tostring(extracted))
-            writeDebugFile("   totalCoin=" .. tostring(totalCoin))
-            writeDebugFile("   totalEma=" .. tostring(totalEma))
-            writeDebugFile("   currentPlayer=" .. tostring(currentPlayer))
-            writeDebugFile("========================================")
-            return false
-        end)
-        return false
-    end)
+        priceStr = priceStr .. string.format("%.2f", totalEma) .. "۞"
+    end
+    drawCenteredText(20, "Куплено " .. extracted .. " шт. за " .. priceStr, colors.success)
+
+    loadBuyItems(true)
+    for _, newItem in ipairs(shopItems) do
+        if newItem.internalName == item.internalName and newItem.damage == item.damage then
+            purchaseItem = newItem
+            break
+        end
+    end
+    os.sleep(0.8)
+    unlockTransactions()
+    currentScreen = "shop_buy"
+    markDirty()
+    
+    -- ★★★ ЛОГИ В КОНЦЕ ★★★
+    writeDebugFile("========================================")
+    writeDebugFile("✅ performBuy() ЗАВЕРШЕНА")
+    writeDebugFile("   extracted=" .. tostring(extracted))
+    writeDebugFile("   totalCoin=" .. tostring(totalCoin))
+    writeDebugFile("   totalEma=" .. tostring(totalEma))
+    writeDebugFile("   currentPlayer=" .. tostring(currentPlayer))
+    writeDebugFile("========================================")
 end
 
 -- ============================================================
@@ -5064,7 +4829,7 @@ function applyIncrementalChanges(itemsFile, changes, itemType)
 
     broadcastUpdate()
     return true
-end
+end  -- <-- ВОТ ЭТОТ end БЫЛ ПРОПУЩЕН!
 
 -- ============================================================
 -- ★★★ ИСПРАВЛЕННЫЙ checkWebCommands ★★★
@@ -5155,6 +4920,7 @@ function checkWebCommands()
             writeDebugFile("🔧 Выполняем команду: " .. (cmd.command or "unknown"))
             writeDebugFile("📨 Данные команды: " .. serialization.serialize(d))
         
+            -- ★★★ UPDATE_PLAYER / SET_BALANCE ★★★
             if cmd.command == "update_player" or cmd.command == "set_balance" then
                 writeDebugFile("📥 Получена команда update_player")
                 local playerName = d.name or d.player
@@ -5181,6 +4947,7 @@ function checkWebCommands()
                     addLog("💰 Баланс обновлён: " .. playerName)
                     markDirty()
                     
+                    -- ★★★ ЕСЛИ ЭТО ТЕКУЩИЙ ИГРОК - ОБНОВЛЯЕМ ЛОКАЛЬНЫЕ ПЕРЕМЕННЫЕ ★★★
                     if currentPlayer == playerName then
                         coinBalance = player.balance
                         emaBalance = player.emaBalance
@@ -5440,6 +5207,10 @@ function checkWebCommands()
     end
 end
 
+-- ============================================================
+-- ТАЙМЕР ДЛЯ ПОЛУЧЕНИЯ КОМАНД С САЙТА 
+-- ============================================================
+
 event.timer(10, function()
     writeDebugFile("📡 ТАЙМЕР checkWebCommands СРАБОТАЛ!")
     if not TRANSACTION_LOCK then
@@ -5467,7 +5238,6 @@ if fs.exists("/home/agreement.lua") then
         writeErrorLog("❌ Ошибка загрузки agreement.lua")
     end
 end
-
 if not drawAgreementScreen then
     drawAgreementScreen = function()
         writeDebugLog("drawAgreementScreen (заглушка)")
@@ -5488,7 +5258,18 @@ if not drawAgreementScreen then
         }
         drawFlexButton(backButton)
         drawTempMessage()
-        forceRender()
+        
+        while currentScreen == "agreement" do
+            local ev = {event.pull(0.5)}
+            if ev[1] == "touch" then
+                local x = tonumber(ev[3]) or 0
+                local y = tonumber(ev[4]) or 0
+                if isButtonClicked(backButton, x, y) then
+                    goBackToMenu()
+                    break
+                end
+            end
+        end
     end
 end
 
@@ -5504,280 +5285,14 @@ MOUSE_DEBOUNCE = 0.05
 
 function main()
     writeDebugLog("🚀 main() запущен")
-    
-    gpu.setResolution(80, 25)
-    gpu.setBackground(colors.bg_main)
-    gpu.fill(1,1,80,25," ")
-
-    currentScreen = "welcome"
     drawWelcomeScreen()
-    renderBuffer()
-
+    
     writeErrorLog("🟢 Терминал #1 (PIM MARKET) запущен")
 
     while true do
         local ev = {event.pull(0.5)}
         local e = ev[1]
 
-        -- ★★★ ВХОД ИГРОКА ★★★
-        if e == "player_on" or e == "pim" or e == "pim_player_enter" then
-            local playerName = (ev[2] or ev[6] or ""):match("^%s*(.-)%s*$")
-            writeDebugLog("player_on: " .. tostring(playerName))
-            
-            if not playerName or playerName == "" then
-                writeDebugLog("⚠️ Пропущен вход: пустое имя игрока")
-                goto continue
-            end
-            
-            if currentPlayer and currentPlayer ~= "" then
-                writeDebugLog("⚠️ Игрок уже авторизован: " .. currentPlayer .. ", игнорируем вход: " .. playerName)
-                goto continue
-            end
-            
-            if shopPaused then
-                writeDebugLog("Режим обслуживания активен, вход запрещён для: " .. playerName)
-                drawWelcomeScreen()
-                renderBuffer()
-                while shopPaused do
-                    local ev2 = {event.pull(1)}
-                    if ev2[1] == "player_off" or ev2[1] == "pim_player_leave" then
-                        writeDebugLog("👤 Игрок ушёл с PIM: " .. playerName)
-                        drawWelcomeScreen()
-                        renderBuffer()
-                        break
-                    end
-                end
-                goto continue
-            end
-                        
-            if not pimOwner then
-                pimOwner = playerName
-            end
-            currentPlayer = playerName
-            
-            -- ★★★ ПРОВЕРКА БАНА ★★★
-            local banInfo = nil
-            local success, response = pcall(function()
-                return internet.request(WEB_URL .. "/api/check_ban?name=" .. currentPlayer)
-            end)
-            if success and response then
-                local body = ""
-                for chunk in response do
-                    body = body .. chunk
-                end
-                local data = parseJSON(body)
-                if data and data.banned then
-                    banInfo = data
-                end
-            end
-
-            if banInfo then
-                local reason = "Не указана"
-                if banInfo.reason_b64 then
-                    reason = decodeBase64(banInfo.reason_b64)
-                elseif banInfo.reason then
-                    reason = banInfo.reason
-                end
-                reason = cleanString(reason)
-                
-                local admin = cleanString(banInfo.admin or "Система")
-                
-                local function formatDate(isoDate)
-                    if not isoDate or isoDate == "" then return "" end
-                    local year, month, day = isoDate:match("(%d+)-(%d+)-(%d+)")
-                    if year and month and day then
-                        return day .. "." .. month .. "." .. year
-                    end
-                    return isoDate
-                end
-                
-                local formattedDate = banInfo.date and formatDate(banInfo.date) or ""
-                local formattedExpire = banInfo.expires and formatDate(banInfo.expires) or ""
-                local isPermanent = not banInfo.expires or banInfo.expires == ""
-                
-                gpu.setBackground(colors.bg_main)
-                gpu.fill(1, 1, 80, 25, " ")
-                
-                gpu.setForeground(colors.error)
-                drawCenteredText(6, "╔══════════════════════════════════════════════════════════════╗", colors.error)
-                drawCenteredText(7, "║                       ВЫ ЗАБЛОКИРОВАНЫ                       ║", colors.error)
-                drawCenteredText(8, "╚══════════════════════════════════════════════════════════════╝", colors.error)
-                
-                drawCenteredText(10, "Причина: " .. reason, colors.text_main)
-                drawCenteredText(11, "Администратор: " .. admin, colors.text_main)
-                
-                if formattedDate ~= "" then
-                    drawCenteredText(12, "Дата: " .. formattedDate, colors.text_main)
-                end
-                
-                if isPermanent then
-                    drawCenteredText(13, "Бессрочный бан", colors.text_main)
-                else
-                    drawCenteredText(13, "Срок истекает: " .. formattedExpire, colors.text_main)
-                end
-                
-                drawCenteredText(15, " Доступ запрещён", colors.error)
-                
-                gpu.setForeground(colors.accent_secondary)
-                drawCenteredText(22, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", colors.accent_secondary)
-                
-                drawTempMessage()
-                renderBuffer()
-                
-                event.timer(1, function()
-                    while true do
-                        local ev2 = {event.pull(1)}
-                        if ev2[1] == "player_off" or ev2[1] == "pim_player_leave" then
-                            writeDebugLog("👤 Игрок ушёл с PIM: " .. playerName)
-                            currentPlayer = nil
-                            pimOwner = nil
-                            alreadyAuthorized = false
-                            currentScreen = "welcome"
-                            drawWelcomeScreen()
-                            renderBuffer()
-                            break
-                        end
-                    end
-                    return false
-                end, math.huge)
-                
-                goto continue
-            end
-            
-            if alreadyAuthorized then
-                if currentScreen == "auth" or currentScreen == "account_loading" then
-                    currentScreen = "menu"
-                    drawMainMenu()
-                    renderBuffer()
-                end
-                getBindingStatus()
-                drawMainMenu()
-                renderBuffer()
-            else
-                writeDebugLog("Новый вход: " .. playerName)
-                coinBalance = 0.0
-                emaBalance = 0.0
-                playerAgreed = false
-                currentScreen = "auth"
-                authStartTime = os.clock()
-                
-                local player = playersIndex[currentPlayer]
-                if not player then
-                    player = { 
-                        balance = 0, 
-                        emaBalance = 0, 
-                        transactions = 0, 
-                        banned = false, 
-                        agreed = false, 
-                        hasFeedback = false,
-                        transactionsList = {},
-                        regDate = getRealTimeString()
-                    }
-                    players[currentPlayer] = player
-                    playersIndex[currentPlayer] = player
-                    saveDBDeferred()
-                    addLog("✅ Новый игрок: " .. currentPlayer)
-                    writeDebugLog("Создан новый игрок: " .. currentPlayer)
-                    sendToWeb("/api/new_log", toJson({
-                        time = getRealTimeHM(),
-                        level = "SUCCESS",
-                        text = "Новый игрок: " .. currentPlayer
-                    }))
-                    
-                    local change = {
-                        id = "new_" .. os.time() .. "_" .. math.random(100000),
-                        type = "new_player",
-                        data = {
-                            name = currentPlayer,
-                            balance = 0,
-                            emaBalance = 0
-                        }
-                    }
-                    add_pending_change(change)
-                end
-                
-                if player.banned then
-                    drawCenteredText(20, "Вы забанены!", colors.error)
-                    renderBuffer()
-                    event.timer(2, function()
-                        currentPlayer = nil
-                        currentScreen = "welcome"
-                        drawWelcomeScreen()
-                        renderBuffer()
-                        return false
-                    end)
-                else
-                    currentToken = tostring(math.floor(math.random() * 900000000 + 100000000))
-                    coinBalance = player.balance or 0
-                    emaBalance = player.emaBalance or 0
-                    playerTransactions = player.transactions or 0
-                    playerAgreed = player.agreed or false
-                    playerRegDate = player.regDate or getRealTimeString()
-                    alreadyAuthorized = true
-                    
-                    writeDebugLog("Вход выполнен: " .. currentPlayer .. ", баланс: " .. coinBalance .. ", agreed: " .. tostring(playerAgreed))
-                    
-                    if selector then
-                        addLog("🖥 Селектор доступен")
-                    end
-                    
-                    currentScreen = "menu"
-                    drawMainMenu()
-                    renderBuffer()
-                    addLog("👤 Вход: " .. currentPlayer)
-                    sendToWeb("/api/new_log", toJson({
-                        time = getRealTimeHM(),
-                        level = "INFO",
-                        text = "Вход: " .. currentPlayer
-                    }))
-                end
-            end
-            goto continue
-        end
-
-        if e == "player_off" or e == "pim_player_leave" then
-            local playerName = ev[2] or "Игрок"
-            writeDebugLog("player_off: " .. playerName)
-            
-            addLog("👤 Выход: " .. playerName)
-            sendToWeb("/api/new_log", toJson({
-                time = getRealTimeHM(),
-                level = "INFO",
-                text = "Выход: " .. playerName
-            }))
-            
-            if playerName == pimOwner then
-                pimOwner = nil
-                
-                if TRANSACTION_LOCK then
-                    writeDebugLog("⚠️ Игрок ушёл ВО ВРЕМЯ транзакции! Ожидаем завершения...")
-                    local waitCount = 0
-                    while TRANSACTION_LOCK and waitCount < 30 do
-                        os.sleep(0.1)
-                        waitCount = waitCount + 1
-                    end
-                    if TRANSACTION_LOCK then
-                        writeDebugLog("⚠️ Транзакция зависла, принудительный сброс")
-                        TRANSACTION_LOCK = false
-                    end
-                end
-            end
-            
-            if currentPlayer and playerName == currentPlayer then
-                safeExit()
-            else
-                if playerName == pimOwner then
-                    safeExit()
-                end
-            end
-            
-            drawWelcomeScreen()
-            renderBuffer()
-            
-            goto continue
-        end
-
-        -- ★★★ ОСТАЛЬНЫЕ СОБЫТИЯ ★★★
         if e == "key_down" then
             local _, _, _, code, char = table.unpack(ev)
             if char == 3 then
@@ -5887,9 +5402,7 @@ function main()
                         hoveredIndex = 0
                         writeDebugFile("✅ ТОВАР ВЫБРАН: " .. tostring(item.displayName))
                         updateSelectorDisplay(selectedItem)
-                        drawBuyItemsList()
-                        drawBuyButtons()
-                        renderBuffer()
+                        markDirty()
                     else
                         if not item then
                             writeDebugFile("❌ item = nil")
@@ -6095,26 +5608,20 @@ function main()
                     goto continue
                 elseif y == 13 and x >= 30 and x <= 50 then
                     drawCenteredText(17, "Сканирование...", colors.accent_secondary)
-                    renderBuffer()
-                    event.timer(0.6, function()
-                        if not sellConfirmItem then
-                            writeErrorLog("❌ sellConfirmItem = nil при сканировании!")
-                            return false
-                        end
-                        foundAmount = scanPlayerInventory(sellConfirmItem.internalName, sellConfirmItem.damage or 0)
-                        if foundAmount > 0 then
-                            showSellPopup = true
-                            markDirty()
-                        else
-                            drawCenteredText(17, "Предмет не найден!", colors.error)
-                            renderBuffer()
-                            event.timer(0.8, function()
-                                markDirty()
-                                return false
-                            end)
-                        end
-                        return false
-                    end)
+                    os.sleep(0.6)
+                    if not sellConfirmItem then
+                        writeErrorLog("❌ sellConfirmItem = nil при сканировании!")
+                        goto continue
+                    end
+                    foundAmount = scanPlayerInventory(sellConfirmItem.internalName, sellConfirmItem.damage or 0)
+                    if foundAmount > 0 then
+                        showSellPopup = true
+                        markDirty()
+                    else
+                        drawCenteredText(17, "Предмет не найден!", colors.error)
+                        os.sleep(0.8)
+                        markDirty()
+                    end
                     goto continue
                 end
             end
@@ -6151,11 +5658,8 @@ function main()
                         globalStats.totalReports = (globalStats.totalReports or 0) + 1
                         saveGlobalStats()
                         drawCenteredText(18, "Сообщение успешно отправлено! Ожидайте ответа.", colors.success)
-                        renderBuffer()
-                        event.timer(0.8, function()
-                            goBackToMenu()
-                            return false
-                        end)
+                        os.sleep(0.8)
+                        goBackToMenu()
                         goto continue
                     end
                 end
@@ -6422,18 +5926,15 @@ function main()
                     selectedIndex = 0
                     selectedItem = nil
                     hoveredIndex = 0
-                    drawBuyItemsList()
-                    renderBuffer()
+                    markDirty()
                 elseif ch == 8 then
                     searchInput = unicode.sub(searchInput or "", 1, -2)
                     shopSearch = searchInput or ""
-                    drawBuyItemsList()
-                    renderBuffer()
+                    markDirty()
                 elseif ch >= 32 then
                     searchInput = (searchInput or "") .. unicode.char(ch)
                     shopSearch = searchInput or ""
-                    drawBuyItemsList()
-                    renderBuffer()
+                    markDirty()
                 end
                 goto continue
             elseif currentScreen == "feedback_input" and feedbackEditMode then
@@ -6448,7 +5949,8 @@ function main()
                                 file:close()
                                 if data and #data > 0 then
                                     local ok, result = pcall(serialization.unserialize, data)
-                                    if ok and type(result) == "table" then feedbacks = result end                                end
+                                    if ok and type(result) == "table" then feedbacks = result end
+                                end
                             end
                         end
                         table.insert(feedbacks, 1, {
@@ -6482,6 +5984,250 @@ function main()
             goto continue
         end
 
+        if e == "player_on" or e == "pim" or e == "pim_player_enter" then
+            local playerName = ev[2] or "Игрок"
+            writeDebugLog("player_on: " .. playerName)
+            
+            if not playerName or playerName == "" or playerName == "Игрок" then
+                writeDebugLog("⚠️ Пропущен вход: пустое имя игрока")
+                goto continue
+            end
+            
+            if currentPlayer and currentPlayer ~= "" then
+                writeDebugLog("⚠️ Игрок уже авторизован: " .. currentPlayer .. ", игнорируем вход: " .. playerName)
+                goto continue
+            end
+            
+            if shopPaused then
+                writeDebugLog("Режим обслуживания активен, вход запрещён для: " .. playerName)
+                drawWelcomeScreen()
+                while shopPaused do
+                    local ev2 = {event.pull(1)}
+                    if ev2[1] == "player_off" or ev2[1] == "pim_player_leave" then
+                        writeDebugLog("👤 Игрок ушёл с PIM: " .. playerName)
+                        drawWelcomeScreen()
+                        break
+                    end
+                end
+                goto continue
+            end
+                        
+            if not pimOwner then
+                pimOwner = playerName
+            end
+            currentPlayer = playerName:match("^%s*(.-)%s*$") or playerName
+            
+            -- ★★★ ПРОВЕРКА: currentPlayer не должен быть nil ★★★
+            if not currentPlayer or currentPlayer == "" then
+                writeDebugLog("⚠️ currentPlayer стал nil, используем исходное имя")
+                currentPlayer = playerName
+            end
+            
+            local banInfo = nil
+            local success, response = pcall(function()
+                return internet.request(WEB_URL .. "/api/check_ban?name=" .. currentPlayer)
+            end)
+            if success and response then
+                local body = ""
+                for chunk in response do
+                    body = body .. chunk
+                end
+                local data = parseJSON(body)
+                if data and data.banned then
+                    banInfo = data
+                end
+            end
+        
+            if banInfo then
+                local reason = "Не указана"
+                if banInfo.reason_b64 then
+                    reason = decodeBase64(banInfo.reason_b64)
+                elseif banInfo.reason then
+                    reason = banInfo.reason
+                end
+                reason = cleanString(reason)
+                
+                local admin = cleanString(banInfo.admin or "Система")
+                
+                local function formatDate(isoDate)
+                    if not isoDate or isoDate == "" then return "" end
+                    local year, month, day = isoDate:match("(%d+)-(%d+)-(%d+)")
+                    if year and month and day then
+                        return day .. "." .. month .. "." .. year
+                    end
+                    return isoDate
+                end
+                
+                local formattedDate = banInfo.date and formatDate(banInfo.date) or ""
+                local formattedExpire = banInfo.expires and formatDate(banInfo.expires) or ""
+                local isPermanent = not banInfo.expires or banInfo.expires == ""
+                
+                gpu.setBackground(colors.bg_main)
+                gpu.fill(1, 1, 80, 25, " ")
+                
+                gpu.setForeground(colors.error)
+                drawCenteredText(6, "╔══════════════════════════════════════════════════════════════╗", colors.error)
+                drawCenteredText(7, "║                       ВЫ ЗАБЛОКИРОВАНЫ                       ║", colors.error)
+                drawCenteredText(8, "╚══════════════════════════════════════════════════════════════╝", colors.error)
+                
+                drawCenteredText(10, "Причина: " .. reason, colors.text_main)
+                drawCenteredText(11, "Администратор: " .. admin, colors.text_main)
+                
+                if formattedDate ~= "" then
+                    drawCenteredText(12, "Дата: " .. formattedDate, colors.text_main)
+                end
+                
+                if isPermanent then
+                    drawCenteredText(13, "Бессрочный бан", colors.text_main)
+                else
+                    drawCenteredText(13, "Срок истекает: " .. formattedExpire, colors.text_main)
+                end
+                
+                drawCenteredText(15, " Доступ запрещён", colors.error)
+                
+                gpu.setForeground(colors.accent_secondary)
+                drawCenteredText(22, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", colors.accent_secondary)
+                
+                drawTempMessage()
+                
+                while true do
+                    local ev2 = {event.pull(1)}
+                    if ev2[1] == "player_off" or ev2[1] == "pim_player_leave" then
+                        writeDebugLog("👤 Игрок ушёл с PIM: " .. playerName)
+                        drawWelcomeScreen()
+                        break
+                    end
+                end
+                currentPlayer = nil
+                pimOwner = nil
+                alreadyAuthorized = false
+                currentScreen = "welcome"
+                markDirty()
+                goto continue
+            end
+            
+            if alreadyAuthorized then
+                if currentScreen == "auth" or currentScreen == "account_loading" then
+                    currentScreen = "menu"
+                    markDirty()
+                end
+                getBindingStatus()
+                markDirty()
+            else
+                writeDebugLog("Новый вход: " .. playerName)
+                coinBalance = 0.0
+                emaBalance = 0.0
+                playerAgreed = false
+                currentScreen = "auth"
+                authStartTime = os.clock()
+                
+                local player = playersIndex[currentPlayer]
+                if not player then
+                    player = { 
+                        balance = 0, 
+                        emaBalance = 0, 
+                        transactions = 0, 
+                        banned = false, 
+                        agreed = false, 
+                        hasFeedback = false,
+                        transactionsList = {},
+                        regDate = getRealTimeString()
+                    }
+                    players[currentPlayer] = player
+                    playersIndex[currentPlayer] = player
+                    saveDBDeferred()
+                    addLog("✅ Новый игрок: " .. currentPlayer)
+                    writeDebugLog("Создан новый игрок: " .. currentPlayer)
+                    sendToWeb("/api/new_log", toJson({
+                        time = getRealTimeHM(),
+                        level = "SUCCESS",
+                        text = "Новый игрок: " .. currentPlayer
+                    }))
+                    
+                    local change = {
+                        id = "new_" .. os.time() .. "_" .. math.random(100000),
+                        type = "new_player",
+                        data = {
+                            name = currentPlayer,
+                            balance = 0,
+                            emaBalance = 0
+                        }
+                    }
+                    add_pending_change(change)
+                end
+                
+                if player.banned then
+                    drawCenteredText(20, "Вы забанены!", colors.error)
+                    os.sleep(2)
+                    currentPlayer = nil
+                    currentScreen = "welcome"
+                    markDirty()
+                else
+                    currentToken = tostring(math.floor(math.random() * 900000000 + 100000000))
+                    coinBalance = player.balance or 0
+                    emaBalance = player.emaBalance or 0
+                    playerTransactions = player.transactions or 0
+                    playerAgreed = player.agreed or false
+                    playerRegDate = player.regDate or getRealTimeString()
+                    alreadyAuthorized = true
+                    
+                    writeDebugLog("Вход выполнен: " .. currentPlayer .. ", баланс: " .. coinBalance .. ", agreed: " .. tostring(playerAgreed))
+                    
+                    if selector then
+                        addLog("🖥 Селектор доступен")
+                    end
+                    
+                    currentScreen = "menu"
+                    markDirty()
+                    addLog("👤 Вход: " .. currentPlayer)
+                    sendToWeb("/api/new_log", toJson({
+                        time = getRealTimeHM(),
+                        level = "INFO",
+                        text = "Вход: " .. currentPlayer
+                    }))
+                end
+            end
+            goto continue
+        end
+
+        if e == "player_off" or e == "pim_player_leave" then
+            local playerName = ev[2] or "Игрок"
+            writeDebugLog("player_off: " .. playerName)
+            
+            addLog("👤 Выход: " .. playerName)
+            sendToWeb("/api/new_log", toJson({
+                time = getRealTimeHM(),
+                level = "INFO",
+                text = "Выход: " .. playerName
+            }))
+            
+            if playerName == pimOwner then
+                pimOwner = nil
+                
+                if TRANSACTION_LOCK then
+                    writeDebugLog("⚠️ Игрок ушёл ВО ВРЕМЯ транзакции! Ожидаем завершения...")
+                    local waitCount = 0
+                    while TRANSACTION_LOCK and waitCount < 30 do
+                        os.sleep(0.1)
+                        waitCount = waitCount + 1
+                    end
+                    if TRANSACTION_LOCK then
+                        writeDebugLog("⚠️ Транзакция зависла, принудительный сброс")
+                        TRANSACTION_LOCK = false
+                    end
+                end
+            end
+            
+            if currentPlayer and playerName == currentPlayer then
+                safeExit()
+            else
+                if playerName == pimOwner then
+                    safeExit()
+                end
+            end
+            
+            goto continue
+        end
        ::continue::
     end
 end
@@ -6507,5 +6253,7 @@ while running do
     end
 end
 
+
+-- ★★★ ПРИ ВЫХОДЕ ИЗ ЦИКЛА - СОХРАНЯЕМ ДАННЫЕ ★★★
 forceSaveData()
 writeErrorLog("🔴 Терминал #1 завершил работу")

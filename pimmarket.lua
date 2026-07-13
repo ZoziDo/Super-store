@@ -11,7 +11,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА1233
+-- АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА
 -- ============================================================
 
 local function setupAutoStart()
@@ -3108,26 +3108,19 @@ function drawReportScreen()
         return
     end
 
+    -- ★★★ ПОЛЕ ВВОДА ПОД ТЕКСТОМ (y = 9) ★★★
     gpu.setBackground(colors.bg_input)
-    gpu.fill(11, 17, 59, 3, " ")  -- x: 10 -> 11, ширина: 60 -> 59
+    gpu.fill(11, 9, 59, 3, " ")  -- x: 11, y: 9 (под текстом)
     gpu.setForeground(colors.text_bright)
-    if feedbackEditMode then
-        if feedbackInput and feedbackInput ~= "" then
-            gpu.set(12, 18, unicode.sub(feedbackInput, -58) .. "_")  -- x: 11 -> 12
-        else
-            gpu.setForeground(colors.inactive)
-            gpu.set(12, 18, "Введите ваш отзыв..._")  -- x: 11 -> 12
-        end
+    if reportInput and reportInput ~= "" then
+        gpu.set(12, 10, unicode.sub(reportInput, -58))
     else
-        if feedbackInput and feedbackInput ~= "" then
-            gpu.set(12, 18, unicode.sub(feedbackInput, -58))  -- x: 11 -> 12
-        else
-            gpu.setForeground(colors.inactive)
-            gpu.set(12, 18, "Введите ваш отзыв...")  -- x: 11 -> 12
-        end
+        gpu.setForeground(colors.inactive)
+        gpu.set(12, 10, "Введите текст сообщения...")
     end
     gpu.setBackground(colors.bg_main)
 
+    -- ★★★ КНОПКА ОТПРАВИТЬ ПОД ПОЛЕМ ВВОДА (y = 14) ★★★
     local sendBtn = {x=33, y=14, xs=17, ys=1, text="[ ОТПРАВИТЬ ]", bg=colors.bg_button, fg=colors.success}
     local backButton = {
         text = "[ НАЗАД ]",
@@ -3961,16 +3954,16 @@ function showAuthPopup()
     gpu.fill(popupX, popupY, popupWidth, popupHeight, " ")
     
     gpu.setForeground(0x00FFCC)
-    gpu.fill(popupX, popupY, popupWidth, 1, "=")
-    gpu.fill(popupX, popupY + popupHeight - 1, popupWidth, 1, "=")
+    gpu.fill(popupX, popupY, popupWidth, 1, "─")
+    gpu.fill(popupX, popupY + popupHeight - 1, popupWidth, 1, "─")
     for i = 1, popupHeight - 2 do
-        gpu.set(popupX, popupY + i, "|")
-        gpu.set(popupX + popupWidth - 1, popupY + i, "|")
+        gpu.set(popupX, popupY + i, "│")
+        gpu.set(popupX + popupWidth - 1, popupY + i, "│")
     end
-    gpu.set(popupX, popupY, "+")
-    gpu.set(popupX + popupWidth - 1, popupY, "+")
-    gpu.set(popupX, popupY + popupHeight - 1, "+")
-    gpu.set(popupX + popupWidth - 1, popupY + popupHeight - 1, "+")
+    gpu.set(popupX, popupY, "┌")
+    gpu.set(popupX + popupWidth - 1, popupY, "┐")
+    gpu.set(popupX, popupY + popupHeight - 1, "└")
+    gpu.set(popupX + popupWidth - 1, popupY + popupHeight - 1, "┘")
     
     gpu.setForeground(0x00FFCC)
     gpu.set(popupX + math.floor((popupWidth - 22) / 2) + 1, popupY + 1, "🔐 АУТЕНТИФИКАЦИЯ")

@@ -11,7 +11,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА123
+-- АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА
 -- ============================================================
 
 local function setupAutoStart()
@@ -505,6 +505,7 @@ colors = {
     bg_main = 0x0A0A0F,
     bg_secondary = 0x14141F,
     bg_button = 0x1F1F2E,
+    bg_input = 0x282828,
     accent_main = 0x8B5CF6,
     accent_secondary = 0x00E5C9,
     text_main = 0xD0D0E0,
@@ -3107,7 +3108,8 @@ function drawReportScreen()
         return
     end
 
-    gpu.setBackground(colors.black_fon)
+    -- ★★★ ИЗМЕНЕНО: ВМЕСТО colors.black_fon ИСПОЛЬЗУЕМ colors.bg_input ★★★
+    gpu.setBackground(colors.bg_input)  -- <--- ЗДЕСЬ ИЗМЕНЕНИЕ
     gpu.fill(10, 9, 60, 3, " ")
     gpu.setForeground(colors.text_bright)
     if reportInput and reportInput ~= "" then
@@ -3116,7 +3118,7 @@ function drawReportScreen()
         gpu.setForeground(colors.inactive)
         gpu.set(11, 10, "Введите текст сообщения...")
     end
-    gpu.setBackground(colors.bg_main)
+    gpu.setBackground(colors.bg_main)  -- Восстанавливаем фон
 
     local sendBtn = {x=33, y=14, xs=17, ys=1, text="[ ОТПРАВИТЬ ]", bg=colors.bg_button, fg=colors.success}
     local backButton = {
@@ -3581,7 +3583,8 @@ function drawFeedbackInputScreen()
     gpu.setForeground(colors.text_main)
     drawCenteredText(15, "Оставьте свой отзыв о магазине:", colors.text_main)
 
-    gpu.setBackground(colors.black_fon)
+    -- ★★★ ИЗМЕНЕНО: ВМЕСТО colors.black_fon ИСПОЛЬЗУЕМ colors.bg_input ★★★
+    gpu.setBackground(colors.bg_input)  -- <--- ЗДЕСЬ ИЗМЕНЕНИЕ
     gpu.fill(10, 17, 60, 3, " ")
     gpu.setForeground(colors.text_bright)
     if feedbackEditMode then
@@ -3599,7 +3602,7 @@ function drawFeedbackInputScreen()
             gpu.set(11, 18, "Введите ваш отзыв...")
         end
     end
-    gpu.setBackground(colors.bg_main)
+    gpu.setBackground(colors.bg_main)  -- Восстанавливаем фон
 
     local cancelBtn = {x = 20, y = 24, xs = 12, ys = 1, text = "[ ОТМЕНА ]", bg = colors.bg_button, fg = colors.error}
     local sendBtn = {x = 46, y = 24, xs = 15, ys = 1, text = "[ ОТПРАВИТЬ ]", bg = colors.bg_button, fg = colors.success}

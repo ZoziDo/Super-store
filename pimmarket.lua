@@ -11,7 +11,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- АВТОМАТИЧЕСКАЯ2466667 НАСТРОЙКА АВТОЗАПУСКА
+-- АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА
 -- ============================================================
 
 local function setupAutoStart()
@@ -3021,22 +3021,27 @@ shopMenuButtons = {
 function drawWelcomeScreen()
     writeDebugLog("drawWelcomeScreen()")
     
-    gpu.setBackground(colors.bg_main)
-    gpu.fill(1, 1, 80, 25, " ")
+    -- ★★★ РИСУЕМ В БУФЕР, А НЕ НАПРЯМУЮ В GPU ★★★
+    bufferClear()
     
     local border_color = 0x00E5C9
     local text_color = 0x00FFCC
     local sub_color = 0xFFFF00
     local hint_color = 0xAAAAAA
     
-    gpu.setForeground(border_color)
-    gpu.set(1, 1, "+" .. string.rep("=", 78) .. "+")
-    gpu.set(1, 25, "+" .. string.rep("=", 78) .. "+")
+    -- Рамка через буфер
+    bufferSet(1, 1, "+", border_color)
+    bufferFill(2, 1, 78, 1, "=", border_color)
+    bufferSet(80, 1, "+", border_color)
     for y = 2, 24 do
-        gpu.set(1, y, "|")
-        gpu.set(80, y, "|")
+        bufferSet(1, y, "|", border_color)
+        bufferSet(80, y, "|", border_color)
     end
+    bufferSet(1, 25, "+", border_color)
+    bufferFill(2, 25, 78, 1, "=", border_color)
+    bufferSet(80, 25, "+", border_color)
     
+    -- Алмаз через буфер
     local diamond = {
         "             ▓▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▓            ",
         "           ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▒▒▒▒▓          ",
@@ -3073,36 +3078,24 @@ function drawWelcomeScreen()
     
     for i, line in ipairs(diamond) do
         local color = gradient[math.min(math.floor((i-1) / 2) + 1, #gradient)]
-        gpu.setForeground(color)
-        gpu.set(diamX, diamY + i - 1, line)
+        bufferSet(diamX, diamY + i - 1, line, color)
     end
     
     local cx = 41
     
     if shopPaused then
-        gpu.setForeground(colors.error)
-        drawCenteredText(21, " РЕЖИМ ОБСЛУЖИВАНИЯ", colors.error)
-        drawCenteredText(22, " Магазин временно закрыт", colors.error)
-        drawCenteredText(23, " Пожалуйста, зайдите позже", colors.text_main)
+        bufferSet(cx - 2, 21, " РЕЖИМ ОБСЛУЖИВАНИЯ", colors.error)
+        bufferSet(cx - 2, 22, " Магазин временно закрыт", colors.error)
+        bufferSet(cx - 2, 23, " Пожалуйста, зайдите позже", colors.text_main)
     else
         if currentPlayer and currentPlayer ~= "" then
-            gpu.setForeground(text_color)
-            gpu.set(cx - 2, 21, "VIP SHOP")
-            
-            gpu.setForeground(sub_color)
-            gpu.set(cx - 6, 22, "◆ McSkill HiTech ◆")
-            
-            gpu.setForeground(hint_color)
-            gpu.set(cx - 10, 23, "Встаньте на ПИМ для входа")
+            bufferSet(cx - 2, 21, "VIP SHOP", text_color)
+            bufferSet(cx - 6, 22, "◆ McSkill HiTech ◆", sub_color)
+            bufferSet(cx - 10, 23, "Встаньте на ПИМ для входа", hint_color)
         else
-            gpu.setForeground(text_color)
-            gpu.set(cx - 2, 21, "VIP SHOP")
-            
-            gpu.setForeground(sub_color)
-            gpu.set(cx - 6, 22, "◆ McSkill HiTech ◆")
-            
-            gpu.setForeground(hint_color)
-            gpu.set(cx - 10, 23, "Встаньте на ПИМ для входа")
+            bufferSet(cx - 2, 21, "VIP SHOP", text_color)
+            bufferSet(cx - 6, 22, "◆ McSkill HiTech ◆", sub_color)
+            bufferSet(cx - 10, 23, "Встаньте на ПИМ для входа", hint_color)
         end
     end
     

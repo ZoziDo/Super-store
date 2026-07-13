@@ -11,7 +11,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- АВТОМАТИЧЕСКАЯ246 НАСТРОЙКА АВТОЗАПУСКА1112
+-- АВТОМАТИЧЕСКАЯ246 НАСТРОЙКА АВТОЗАПУСКА66666
 -- ============================================================
 
 local function setupAutoStart()
@@ -96,6 +96,23 @@ for i = 1, 25 do
     end
 end
 
+-- ★★★ СЮДА ВСТАВИТЬ fullClear() ★★★
+-- Полная очистка буфера и экрана
+function fullClear()
+    -- Очищаем экран
+    gpu.setBackground(colors.bg_main)
+    gpu.fill(1, 1, 80, 25, " ")
+    
+    -- Очищаем буфер
+    for y = 1, 25 do
+        for x = 1, 80 do
+            backBuffer[y][x] = { char = " ", fg = colors.text_main, bg = colors.bg_main }
+            frontBuffer[y][x] = { char = " ", fg = colors.text_main, bg = colors.bg_main }
+        end
+    end
+    bufferDirty = true
+end
+
 -- Буферизированный вывод
 function bufferSet(x, y, text, fg, bg)
     if not text or text == "" then return end
@@ -118,10 +135,13 @@ function bufferSet(x, y, text, fg, bg)
     bufferDirty = true
 end
 
--- Мгновенный рендер буфера (без очистки экрана!)
 function renderBuffer()
-    if not bufferDirty or renderInProgress then return end
+    if renderInProgress then return end
     renderInProgress = true
+    
+    -- ★★★ УБЕРИ ЭТО ОТСЮДА ★★★
+    -- gpu.setBackground(colors.bg_main)
+    -- gpu.fill(1, 1, 80, 25, " ")
     
     local changes = 0
     for y = 1, 25 do
@@ -793,8 +813,8 @@ function renderCurrentScreen()
     if renderInProgress then return end
     renderInProgress = true
 
-    -- ★★★ ВСЕГДА ОЧИЩАЕМ БУФЕР ★★★
-    bufferClear()
+    -- ★★★ ПОЛНАЯ ОЧИСТКА ★★★
+    fullClear()
 
     if currentScreen == "welcome" then
         drawWelcomeScreen()

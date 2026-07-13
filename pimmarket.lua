@@ -11,7 +11,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- АВТОМАТИЧЕСКАЯ246 НАСТРОЙКА АВТОЗАПУСКА1233367
+-- АВТОМАТИЧЕСКАЯ246 НАСТРОЙКА АВТОЗАПУСКА77777777
 -- ============================================================
 
 local function setupAutoStart()
@@ -95,6 +95,7 @@ end
 function getRealTimeHM()
     return os.date("%H:%M:%S", getRealTimestamp())
 end
+
 
 -- ============================================================
 -- ★★★ ОЧИСТКА СТРОК ОТ НЕВИДИМЫХ СИМВОЛОВ ★★★
@@ -2370,7 +2371,6 @@ function drawBalanceLine(x, y)
 end
 
 function redrawSearchField()
-    writeDebugLog("redrawSearchField()")
     local searchX = 42
     local searchText = ""
     if searchActive then
@@ -2391,7 +2391,7 @@ function redrawSearchField()
     gpu.setForeground(colors.accent_secondary)
     local textX = clearX + math.floor((clearWidth - unicode.len(clearText)) / 2)
     gpu.set(textX, 3, clearText)
-    gpu.setBackground(colors.accent_secondary)
+    gpu.setBackground(colors.bg_main)  -- ★★★ ВАЖНО: ВОССТАНАВЛИВАЕМ ФОН ★★★
 end
 
 function drawBuyStatic()
@@ -5401,7 +5401,7 @@ function main()
                 if y == 3 and x >= 42 and x <= 64 then
                     searchActive = true
                     searchInput = shopSearch or ""
-                    markDirty()
+                    redrawSearchField()
                     goto continue
                 end
 
@@ -5413,7 +5413,9 @@ function main()
                     selectedIndex = 0
                     selectedItem = nil
                     hoveredIndex = 0
-                    markDirty()
+                    filteredItems = getFilteredItems()
+                    drawBuyItemsList()
+                    redrawSearchField()
                     goto continue
                 end
 
@@ -5905,11 +5907,17 @@ function main()
                 elseif ch == 8 then
                     searchInput = unicode.sub(searchInput or "", 1, -2)
                     shopSearch = searchInput or ""
-                    markDirty()
+                    -- ★★★ ИСПРАВЛЕНИЕ: ПЕРЕРИСОВЫВАЕМ ТОЛЬКО СПИСОК ★★★
+                    filteredItems = getFilteredItems()
+                    drawBuyItemsList()
+                    redrawSearchField()
                 elseif ch >= 32 then
                     searchInput = (searchInput or "") .. unicode.char(ch)
                     shopSearch = searchInput or ""
-                    markDirty()
+                    -- ★★★ ИСПРАВЛЕНИЕ: ПЕРЕРИСОВЫВАЕМ ТОЛЬКО СПИСОК ★★★
+                    filteredItems = getFilteredItems()
+                    drawBuyItemsList()
+                    redrawSearchField()
                 end
                 goto continue
             elseif currentScreen == "feedback_input" and feedbackEditMode then

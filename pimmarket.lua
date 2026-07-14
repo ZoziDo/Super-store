@@ -11,7 +11,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА12333
+-- АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА1
 -- ============================================================
 
 local function setupAutoStart()
@@ -5411,49 +5411,55 @@ function checkWebCommands()
                         if file then
                             local content = file:read("*a")
                             file:close()
-                            if content and content:find("pimmarket.lua") then
+                            if content and (content:find("startup.lua") or content:find("pimmarket")) then
                                 autostartEnabled = true
                             end
                         end
                     end
                     
-                    -- Переключаем
+                    local newStatus = false
+                    
                     if autostartEnabled then
-                        -- Отключаем автозапуск (переименовываем .shrc)
+                        -- Отключаем автозапуск
                         if fs.exists(shrcPath) then
                             if fs.exists(shrcPath .. ".bak") then
                                 fs.remove(shrcPath .. ".bak")
                             end
                             fs.rename(shrcPath, shrcPath .. ".bak")
-                            writeDebugLog("❌ Автозапуск ОТКЛЮЧЁН (.shrc переименован)")
+                            writeDebugLog("❌ Автозапуск ОТКЛЮЧЁН")
                             addLog("❌ Автозапуск терминала отключён")
-                            sendResult(true, "Автозапуск отключён")
+                            newStatus = false
                         end
                     else
-                        -- Включаем автозапуск (восстанавливаем .shrc)
+                        -- Включаем автозапуск
                         if fs.exists(shrcPath .. ".bak") then
                             if fs.exists(shrcPath) then
                                 fs.remove(shrcPath)
                             end
                             fs.rename(shrcPath .. ".bak", shrcPath)
-                            writeDebugLog("✅ Автозапуск ВКЛЮЧЁН (.shrc восстановлен)")
+                            writeDebugLog("✅ Автозапуск ВКЛЮЧЁН")
                             addLog("✅ Автозапуск терминала включён")
-                            sendResult(true, "Автозапуск включён")
+                            newStatus = true
                         else
-                            -- Если бэкапа нет - создаём новый .shrc
                             local file = io.open(shrcPath, "w")
                             if file then
-                                file:write("lua /home/pimmarket.lua\n")
+                                file:write("lua /home/startup.lua\n")
                                 file:close()
                                 writeDebugLog("✅ Автозапуск ВКЛЮЧЁН (создан новый .shrc)")
                                 addLog("✅ Автозапуск терминала включён")
-                                sendResult(true, "Автозапуск включён")
+                                newStatus = true
                             else
                                 writeDebugLog("❌ Не удалось создать .shrc")
                                 sendResult(false, "Не удалось создать .shrc")
+                                goto continue
                             end
                         end
                     end
+                    
+                    -- ★★★ ВОЗВРАЩАЕМ НОВЫЙ СТАТУС ★★★
+                    sendResult(true, newStatus and "Автозапуск включён" or "Автозапуск отключён", {autostart_enabled = newStatus})
+                    
+                    goto continue
                     
                 elseif action == "restart_script" then
                     writeDebugFile("🔄 ПЕРЕЗАПУСК СКРИПТА")

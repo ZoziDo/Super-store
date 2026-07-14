@@ -11,7 +11,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА
+-- АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА12333
 -- ============================================================
 
 local function setupAutoStart()
@@ -4092,10 +4092,16 @@ function showAuthPopup()
                 if isButtonClicked(confirmBtn, x, y) then
                     if authCodeInput and #authCodeInput == 6 then
                         isEditing = false
-                        -- ★★★ ВЫЗЫВАЕМ verifyAuthCode И ВЫХОДИМ ИЗ ПОП-АПА ★★★
-                        verifyAuthCode(authCodeInput)
-                        -- ★★★ ПОСЛЕ verifyAuthCode МЫ УЖЕ В МЕНЮ, ВЫХОДИМ ИЗ ЦИКЛА ★★★
-                        break
+                        -- ★★★ ВЫЗЫВАЕМ verifyAuthCode ★★★
+                        local success = verifyAuthCode(authCodeInput)
+                        if success then
+                            -- ★★★ ЕСЛИ УСПЕШНО - ВЫХОДИМ ИЗ ЦИКЛА ★★★
+                            break
+                        else
+                            -- ★★★ ЕСЛИ ОШИБКА - ВОЗВРАЩАЕМСЯ В РЕЖИМ ВВОДА ★★★
+                            isEditing = true
+                            markDirty()
+                        end
                     else
                         gpu.setForeground(colors.error)
                         gpu.set(popupX + 3, popupY + 13, " Введите 6-значный код!")
@@ -4111,8 +4117,13 @@ function showAuthPopup()
                 if ch == 13 then
                     if authCodeInput and #authCodeInput == 6 then
                         isEditing = false
-                        verifyAuthCode(authCodeInput)
-                        break  -- ★★★ ВЫХОДИМ ИЗ ЦИКЛА ★★★
+                        local success = verifyAuthCode(authCodeInput)
+                        if success then
+                            break
+                        else
+                            isEditing = true
+                            markDirty()
+                        end
                     else
                         gpu.setForeground(colors.error)
                         gpu.set(popupX + 3, popupY + 13, " Введите 6-значный код!")
@@ -4319,7 +4330,7 @@ function verifyAuthCode(code)
         local data = parseJSON(body)
         
         if data and data.success then
-            -- ★★★ СОХРАНЯЕМ ПРИВЯЗКУ В ДАННЫХ ИГРОКА ★★★
+            -- ★★★ СОХРАНЯЕМ ПРИВЯЗКУ ★★★
             if currentPlayer and playersIndex[currentPlayer] then
                 local player = playersIndex[currentPlayer]
                 player.site_user = data.player
@@ -4342,36 +4353,46 @@ function verifyAuthCode(code)
                 
                 addLog("🔗 Аккаунт привязан: " .. boundPlayer .. " -> " .. currentPlayer)
                 
-                -- ★★★ ОТОБРАЖАЕМ СООБЩЕНИЕ ОБ УСПЕХЕ ★★★
-                drawCenteredText(15, "✅ Аккаунт успешно привязан!", colors.success)
-                drawCenteredText(16, "Теперь вы можете пользоваться магазином", colors.text_main)
+                -- ★★★ ПОКАЗЫВАЕМ СООБЩЕНИЕ ОБ УСПЕХЕ ★★★
+                gpu.setForeground(colors.success)
+                gpu.set(20, 14, "✅ Аккаунт успешно привязан!")
+                gpu.setForeground(colors.text_main)
+                gpu.set(18, 15, "Теперь вы можете пользоваться магазином")
                 
                 syncCurrentPlayer()
                 os.sleep(2)
                 
-                -- ★★★ ВЫХОДИМ ИЗ ПОП-АПА И ВОЗВРАЩАЕМСЯ В МЕНЮ ★★★
-                currentScreen = "menu"  -- Устанавливаем экран меню
-                goBackToMenu()          -- Возвращаемся в меню
+                -- ★★★ ВОЗВРАЩАЕМСЯ В МЕНЮ ★★★
+                currentScreen = "menu"
+                goBackToMenu()
+                return true  -- ★★★ ВОЗВРАЩАЕМ УСПЕХ ★★★
             else
-                drawCenteredText(15, "❌ Ошибка: игрок не найден", colors.error)
+                gpu.setForeground(colors.error)
+                gpu.set(20, 14, "❌ Ошибка: игрок не найден")
                 os.sleep(2)
                 markDirty()
+                return false
             end
         else
             local errorMsg = (data and data.error) or "Ошибка привязки"
-            drawCenteredText(15, "❌ " .. errorMsg, colors.error)
+            gpu.setForeground(colors.error)
+            gpu.set(20, 14, "❌ " .. errorMsg)
             
             if data and data.bound then
-                drawCenteredText(16, "Этот игрок уже привязан к другому аккаунту", colors.text_main)
+                gpu.setForeground(colors.text_main)
+                gpu.set(15, 15, "Этот игрок уже привязан к другому аккаунту")
             end
             
             os.sleep(2)
             markDirty()
+            return false
         end
     else
-        drawCenteredText(15, "❌ Ошибка соединения с сервером", colors.error)
+        gpu.setForeground(colors.error)
+        gpu.set(20, 14, "❌ Ошибка соединения с сервером")
         os.sleep(2)
         markDirty()
+        return false
     end
 end
 

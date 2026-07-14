@@ -11,7 +11,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА1
+-- АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА12333
 -- ============================================================
 
 local function setupAutoStart()
@@ -1583,6 +1583,66 @@ function getPimAddr()
         return result
     end
     return nil
+end
+
+-- ============================================================
+-- ПРОВЕРКА ИГРОКА НА PIM ПЛИТЕ (БЕЗ ЗАДЕРЖЕК)
+-- ============================================================
+
+function getPlayerOnPim()
+    local pimAddr = getPimAddr()
+    if not pimAddr then 
+        return nil
+    end
+    
+    local pim = component.proxy(pimAddr)
+    local player = nil
+    
+    -- Пробуем разные методы получения игрока
+    if pim.getPlayer then
+        local ok, result = pcall(pim.getPlayer, pim)
+        if ok and result and result ~= "" then
+            player = result
+        end
+    end
+    
+    if not player and pim.getPlayerName then
+        local ok, result = pcall(pim.getPlayerName, pim)
+        if ok and result and result ~= "" then
+            player = result
+        end
+    end
+    
+    if not player and pim.getUsername then
+        local ok, result = pcall(pim.getUsername, pim)
+        if ok and result and result ~= "" then
+            player = result
+        end
+    end
+    
+    if not player then
+        local ok, result = pcall(function()
+            return pim.player
+        end)
+        if ok and result and result ~= "" then
+            player = result
+        end
+    end
+    
+    return player
+end
+
+function isPlayerOnPim(playerName)
+    if not playerName or playerName == "" then
+        return false
+    end
+    
+    local currentOnPim = getPlayerOnPim()
+    if not currentOnPim or currentOnPim == "" then
+        return false
+    end
+    
+    return currentOnPim == playerName
 end
 
 PUSH_DIRECTION = "down"
@@ -5770,7 +5830,18 @@ function main()
             local y = tonumber(ev[4]) or 0
             local playerName = ev[6] or "Неизвестный"
             
+            -- ★★★ ПРОВЕРЯЕМ, ЧТО ИГРОК ВСЁ ЕЩЁ НА PIM ★★★
             if not isPimOwner(playerName) then
+                goto continue
+            end
+
+            -- ★★★ ДОПОЛНИТЕЛЬНАЯ ПРОВЕРКА: ЕСЛИ ИГРОК СМЕНИЛСЯ ★★★
+            if currentPlayer and playerName ~= currentPlayer then
+                writeDebugLog("⚠️ Игрок сменился! Было: " .. currentPlayer .. ", стало: " .. playerName)
+                -- Сбрасываем состояние старого игрока
+                if currentPlayer then
+                    safeExit()
+                end
                 goto continue
             end
 
@@ -6382,6 +6453,15 @@ function main()
             if not isPimOwner(playerName) then
                 goto continue
             end
+
+            -- ★★★ ДОПОЛНИТЕЛЬНАЯ ПРОВЕРКА: ЕСЛИ ИГРОК СМЕНИЛСЯ ★★★
+            if currentPlayer and playerName ~= currentPlayer then
+                writeDebugLog("⚠️ Игрок сменился (scroll)! Было: " .. currentPlayer .. ", стало: " .. playerName)
+                if currentPlayer then
+                    safeExit()
+                end
+                goto continue
+            end
             local direction = ev[5] or 0
             local x = ev[3] or 0
             local y = ev[4] or 0
@@ -6397,6 +6477,20 @@ function main()
 
         if e == "mouse_move" and (currentScreen == "shop_buy" or currentScreen == "shop_sell") then
             if not pimOwner then
+                goto continue
+            end
+
+            -- ★★★ ПРОВЕРЯЕМ, ЧТО ИГРОК ВСЁ ЕЩЁ НА PIM ★★★
+            local pimPlayer = getPlayerOnPim()
+            if not pimPlayer or pimPlayer == "" then
+                goto continue
+            end
+
+            if currentPlayer and pimPlayer ~= currentPlayer then
+                writeDebugLog("⚠️ Игрок сменился (mouse)! Было: " .. currentPlayer .. ", стало: " .. pimPlayer)
+                if currentPlayer then
+                    safeExit()
+                end
                 goto continue
             end
             
@@ -6427,7 +6521,17 @@ function main()
                 goto continue
             end
             
+            -- ★★★ ПРОВЕРЯЕМ, ЧТО ИГРОК ВСЁ ЕЩЁ НА PIM ★★★
             if not isPimOwner(playerName) then
+                goto continue
+            end
+
+            -- ★★★ ДОПОЛНИТЕЛЬНАЯ ПРОВЕРКА: ЕСЛИ ИГРОК СМЕНИЛСЯ ★★★
+            if currentPlayer and playerName ~= currentPlayer then
+                writeDebugLog("⚠️ Игрок сменился (key)! Было: " .. currentPlayer .. ", стало: " .. playerName)
+                if currentPlayer then
+                    safeExit()
+                end
                 goto continue
             end
             
@@ -6743,6 +6847,19 @@ function main()
         if e == "player_off" or e == "pim_player_leave" then
             local playerName = ev[2] or "Игрок"
             writeDebugLog("player_off: " .. playerName)
+            
+            -- ★★★ ПРОВЕРЯЕМ, ДЕЙСТВИТЕЛЬНО ЛИ ИГРОК УШЁЛ ★★★
+            if currentPlayer and playerName == currentPlayer then
+                -- Спрашиваем у PIM, кто сейчас стоит на плите
+                local currentOnPim = getPlayerOnPim()
+                writeDebugLog("🔍 На PIM сейчас: " .. tostring(currentOnPim))
+                
+                -- Если PIM говорит, что тот же игрок всё ещё стоит — игнорируем событие
+                if currentOnPim and currentOnPim == currentPlayer then
+                    writeDebugLog("⚠️ PIM говорит, что игрок всё ещё стоит, игнорируем player_off")
+                    goto continue
+                end
+            end
             
             addLog("👤 Выход: " .. playerName)
             sendToWeb("/api/new_log", toJson({

@@ -1019,9 +1019,6 @@ function save_pending_buffer()
 end
 
 function add_pending_change(change)
-    if not change.id then
-        change.id = "chg_" .. os.time() .. "_" .. math.random(100000)
-    end
     table.insert(pending_buffer, change)
     save_pending_buffer()
     if #pending_buffer >= 50 then
@@ -1357,8 +1354,7 @@ function addTransaction(type, playerName, item, qty, value_coin, value_ema)
     else
         writeErrorLog("⚠️ Некорректное имя игрока при добавлении транзакции: " .. tostring(playerName))
     end
-    
-    -- ★★★ ID БУДЕТ ПРИСВОЕН НА СЕРВЕРЕ ★★★
+
     local change = {
         type = type,
         data = {

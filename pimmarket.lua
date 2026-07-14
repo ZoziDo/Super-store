@@ -6655,8 +6655,58 @@ function main()
                 goto continue
             end
             
-            if currentPlayer and currentPlayer ~= "" then
-                goto continue
+            -- ★★★ ЕСЛИ УЖЕ ЕСТЬ ИГРОК, НО ПРИШЁЛ НОВЫЙ - СБРАСЫВАЕМ СТАРОГО ★★★
+            if currentPlayer and currentPlayer ~= "" and currentPlayer ~= playerName then
+                writeDebugLog("⚠️ Пришёл новый игрок, сбрасываем старого: " .. currentPlayer .. " -> " .. playerName)
+                
+                -- Сбрасываем состояние старого игрока ПРИНУДИТЕЛЬНО
+                isShuttingDown = true
+                currentPlayer = nil
+                currentToken = nil
+                alreadyAuthorized = false
+                pimOwner = nil
+                currentScreen = "welcome"
+                authCodeInput = ""
+                boundPlayer = nil
+                
+                if TRANSACTION_LOCK then
+                    TRANSACTION_LOCK = false
+                end
+                
+                selectedItem = nil
+                hoveredIndex = 0
+                selectedIndex = 0
+                filteredItems = {}
+                shopSearch = ""
+                searchActive = false
+                searchInput = ""
+                purchaseItem = nil
+                purchaseQuantity = 1
+                sellConfirmItem = nil
+                foundAmount = 0
+                showSellPopup = false
+                showPartialPopup = false
+                showInsufficientPopup = false
+                showInventoryFullPopup = false
+                listScroll = 1
+                horizontalScroll = 1
+                tempMessage = ""
+                
+                if tempMessageTimer then
+                    event.cancel(tempMessageTimer)
+                    tempMessageTimer = nil
+                end
+                
+                pcall(updateSelectorDisplay, nil)
+                pcall(selector.setSlot, 0, nil)
+                pcall(selector.setSlot, 1, nil)
+                
+                clearAllTimers()
+                drawWelcomeScreen()
+                isShuttingDown = false
+                
+                -- ★★★ ОБНОВЛЯЕМ pimOwner НА НОВОГО ИГРОКА ★★★
+                pimOwner = playerName
             end
             
             if shopPaused then
@@ -6670,7 +6720,7 @@ function main()
                 end
                 goto continue
             end
-                                
+                                    
             if not pimOwner then
                 pimOwner = playerName
             end
@@ -6767,7 +6817,7 @@ function main()
                     currentScreen = "menu"
                     markDirty()
                 end
-                forceSyncBinding()  -- ★★★ ИСПОЛЬЗУЙ НОВУЮ ФУНКЦИЮ ★★★
+                forceSyncBinding()
                 markDirty()
             else
                 coinBalance = 0.0
@@ -6787,7 +6837,7 @@ function main()
                         hasFeedback = false,
                         transactionsList = {},
                         regDate = getRealTimeString(),
-                        site_user = nil  -- ★★★ ДОБАВИТЬ ★★★
+                        site_user = nil
                     }
                     players[currentPlayer] = player
                     playersIndex[currentPlayer] = player

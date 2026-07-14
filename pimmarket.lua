@@ -11,7 +11,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА12333
+-- АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА
 -- ============================================================
 
 local function setupAutoStart()
@@ -516,7 +516,8 @@ colors = {
     star_glow = 0xC8C8FF,
     black_fon = 0x000000,
     tomato = 0xFF6347,
-    white = 0xFFFFFF
+    white = 0xFFFFFF,
+    green_bright = 0x3BFF18
 }
 
 -- ============================================================
@@ -2903,14 +2904,14 @@ function drawMainMenu()
         local isBound = getBindingStatus()
         
         local boundText = ""
-        local boundColor = colors.error
+        local textColor = colors.error  -- По умолчанию красный
         
         if isBound then
             boundText = " АККАУНТ ПРИВЯЗАН "
-            boundColor = colors.success
+            textColor = colors.green_bright  -- ★★★ ЗЕЛЁНЫЙ 0x3BFF18 ★★★
         else
             boundText = " АККАУНТ НЕ ПРИВЯЗАН "
-            boundColor = colors.error
+            textColor = colors.error        -- ★★★ КРАСНЫЙ ★★★
         end
         
         -- ★★★ РИСУЕМ ПОЛОСКИ С ТЕКСТОМ ПОСЕРЕДИНЕ ★★★
@@ -2918,16 +2919,19 @@ function drawMainMenu()
         local fullStr = line .. boundText .. line
         local x = math.floor((80 - unicode.len(fullStr)) / 2) + 1
         
+        -- ★★★ ПОЛОСКИ ВСЕГДА accent_main ★★★
+        local frameColor = colors.accent_main
+        
         -- Левая полоска
-        gpu.setForeground(boundColor)
+        gpu.setForeground(frameColor)
         gpu.set(x, 2, line)
         
-        -- Текст
-        gpu.setForeground(boundColor)
+        -- ★★★ ТЕКСТ - ЗЕЛЁНЫЙ ИЛИ КРАСНЫЙ ★★★
+        gpu.setForeground(textColor)
         gpu.set(x + unicode.len(line), 2, boundText)
         
         -- Правая полоска
-        gpu.setForeground(boundColor)
+        gpu.setForeground(frameColor)
         gpu.set(x + unicode.len(line) + unicode.len(boundText), 2, line)
 
         if not playerAgreed then

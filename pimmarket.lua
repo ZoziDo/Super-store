@@ -11,7 +11,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА12333
+-- АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА1
 -- ============================================================
 
 local function setupAutoStart()
@@ -3993,7 +3993,7 @@ function showAuthPopup()
         
         local closeBtn = {
             text = "[ ЗАКРЫТЬ ]",
-            x = popupX + popupWidth - 12,
+            x = popupX + popupWidth - 13,
             y = popupY + popupHeight - 3,
             xs = 10,
             ys = 1,

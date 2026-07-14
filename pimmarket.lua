@@ -11,7 +11,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА12333
+-- АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА
 -- ============================================================
 
 local function setupAutoStart()
@@ -910,39 +910,6 @@ transactions = {}
 pending_buffer = {}
 retry_delay = 10
 
--- ★★★ ВСТАВЬТЕ СЮДА КОД ДЛЯ СЧЁТЧИКА ТРАНЗАКЦИЙ ★★★
--- ★★★ ЗАГРУЗКА СЧЁТЧИКА ИЗ ФАЙЛА ★★★
-TXN_COUNTER_FILE = "/home/txn_counter.dat"
-
-function load_txn_counter()
-    if fs.exists(TXN_COUNTER_FILE) then
-        local file = io.open(TXN_COUNTER_FILE, "r")
-        if file then
-            local data = file:read("*a")
-            file:close()
-            if data and data ~= "" then
-                transaction_counter_oc = tonumber(data) or 0
-                writeDebugLog("📂 Загружен счётчик транзакций: " .. transaction_counter_oc)
-                return
-            end
-        end
-    end
-    transaction_counter_oc = 0
-    writeDebugLog("📂 Счётчик транзакций создан: 0")
-end
-
-function save_txn_counter()
-    local file = io.open(TXN_COUNTER_FILE, "w")
-    if file then
-        file:write(tostring(transaction_counter_oc))
-        file:close()
-        writeDebugLog("💾 Счётчик транзакций сохранён: " .. transaction_counter_oc)
-    end
-end
-
--- Загружаем счётчик при старте
-load_txn_counter()
-
 -- ============================================================
 -- ★★★ ИНДЕКСЫ ДЛЯ БЫСТРОГО ПОИСКА ИГРОКОВ ★★★
 -- ============================================================
@@ -1324,9 +1291,8 @@ function addTransaction(type, playerName, item, qty, value_coin, value_ema)
     end
     saveGlobalStats()
     
-    -- ★★★ ID КАК ПРОСТОЕ ЧИСЛО (БЕЗ txn_ И БЕЗ ДРОБЕЙ) ★★★
-    transaction_counter_oc = (transaction_counter_oc or 0) + 1
-    local txn_id = tostring(transaction_counter_oc)  -- ПРОСТО ЧИСЛО: "1", "2", "3"...
+    -- ★★★ ID БУДЕТ ПРИСВОЕН НА СЕРВЕРЕ ★★★
+    -- НЕ ГЕНЕРИРУЕМ ID ЗДЕСЬ!
     
     local transactionRecord = {
         time = getRealTimeHM(),
@@ -1334,12 +1300,11 @@ function addTransaction(type, playerName, item, qty, value_coin, value_ema)
         item = item or "?",
         qty = qty or 0,
         coin = value_coin or 0,
-        ema = value_ema or 0,
-        id = txn_id
+        ema = value_ema or 0
+        -- id ОТСУТСТВУЕТ — СЕРВЕР ПРИСВОИТ
     }
     
     table.insert(transactions, {
-        id = txn_id,
         time = transactionRecord.time,
         type = type,
         player = playerName or "?",
@@ -1393,9 +1358,8 @@ function addTransaction(type, playerName, item, qty, value_coin, value_ema)
         writeErrorLog("⚠️ Некорректное имя игрока при добавлении транзакции: " .. tostring(playerName))
     end
     
-    -- ★★★ ID КАК ПРОСТОЕ ЧИСЛО ★★★
+    -- ★★★ ID БУДЕТ ПРИСВОЕН НА СЕРВЕРЕ ★★★
     local change = {
-        id = txn_id,  -- ПРОСТО ЧИСЛО: "1", "2", "3"...
         type = type,
         data = {
             player = playerName,
@@ -1405,12 +1369,9 @@ function addTransaction(type, playerName, item, qty, value_coin, value_ema)
             ema = value_ema or 0
         }
     }
-    writeDebugFile("📤 Добавлено изменение в буфер: " .. change.id)
+    writeDebugFile("📤 Добавлено изменение в буфер")
     add_pending_change(change)
     send_pending_changes()
-    
-    -- ★★★ СОХРАНЯЕМ СЧЁТЧИК ★★★
-    save_txn_counter()
 end
 
 function broadcastUpdate()

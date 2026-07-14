@@ -11,7 +11,7 @@ local os = require("os")
 local TIMEZONE_OFFSET = 3 * 3600
 
 -- ============================================================
--- АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА
+-- АВТОМАТИЧЕСКАЯ НАСТРОЙКА АВТОЗАПУСКА12333
 -- ============================================================
 
 local function setupAutoStart()
@@ -2899,23 +2899,36 @@ function drawMainMenu()
         gpu.setForeground(colors.tomato)
         gpu.set(balanceX + unicode.len("Баланс: ") + unicode.len(string.format("%.2f", coin) .. " Coina ₵") + unicode.len(" | "), 5, "ЭМЫ: " .. string.format("%.2f", ema) .. " ۞")
         
-        -- ★★★ ИСПОЛЬЗУЕМ КЕШ - МГНОВЕННО ★★★
-        local isBound = getBindingStatus()  -- Возвращает из кеша мгновенно
+        -- ★★★ СТАТУС ПРИВЯЗКИ С ПОЛОСКАМИ ★★★
+        local isBound = getBindingStatus()
         
-        local boundInfo = ""
+        local boundText = ""
         local boundColor = colors.error
         
         if isBound then
-            boundInfo = "  АККАУНТ ПРИВЯЗАН " 
+            boundText = " АККАУНТ ПРИВЯЗАН "
             boundColor = colors.success
         else
-            boundInfo = "  АККАУНТ НЕ ПРИВЯЗАН"
+            boundText = " АККАУНТ НЕ ПРИВЯЗАН "
             boundColor = colors.error
         end
         
+        -- ★★★ РИСУЕМ ПОЛОСКИ С ТЕКСТОМ ПОСЕРЕДИНЕ ★★★
+        local line = string.rep("═", 15)
+        local fullStr = line .. boundText .. line
+        local x = math.floor((80 - unicode.len(fullStr)) / 2) + 1
+        
+        -- Левая полоска
         gpu.setForeground(boundColor)
-        local boundX = math.floor((80 - unicode.len(boundInfo)) / 2) + 1
-        gpu.set(boundX, 2, boundInfo)
+        gpu.set(x, 2, line)
+        
+        -- Текст
+        gpu.setForeground(boundColor)
+        gpu.set(x + unicode.len(line), 2, boundText)
+        
+        -- Правая полоска
+        gpu.setForeground(boundColor)
+        gpu.set(x + unicode.len(line) + unicode.len(boundText), 2, line)
 
         if not playerAgreed then
             gpu.setForeground(colors.accent_secondary)

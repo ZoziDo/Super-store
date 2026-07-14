@@ -5397,6 +5397,84 @@ function checkWebCommands()
                             writeDebugFile("⚠️ Способ " .. i .. " не сработал: " .. tostring(err))
                         end
                     end
+                    
+                -- ★★★ НОВАЯ КОМАНДА: ВКЛ/ВЫКЛ АВТОЗАПУСКА ★★★
+                elseif action == "toggle_autostart" then
+                    writeDebugFile("🔄 ПЕРЕКЛЮЧЕНИЕ АВТОЗАПУСКА")
+                    
+                    local shrcPath = "/home/.shrc"
+                    local autostartEnabled = false
+                    
+                    -- Проверяем, есть ли автозапуск
+                    if fs.exists(shrcPath) then
+                        local file = io.open(shrcPath, "r")
+                        if file then
+                            local content = file:read("*a")
+                            file:close()
+                            if content and content:find("pimmarket.lua") then
+                                autostartEnabled = true
+                            end
+                        end
+                    end
+                    
+                    -- Переключаем
+                    if autostartEnabled then
+                        -- Отключаем автозапуск (переименовываем .shrc)
+                        if fs.exists(shrcPath) then
+                            if fs.exists(shrcPath .. ".bak") then
+                                fs.remove(shrcPath .. ".bak")
+                            end
+                            fs.rename(shrcPath, shrcPath .. ".bak")
+                            writeDebugLog("❌ Автозапуск ОТКЛЮЧЁН (.shrc переименован)")
+                            addLog("❌ Автозапуск терминала отключён")
+                            sendResult(true, "Автозапуск отключён")
+                        end
+                    else
+                        -- Включаем автозапуск (восстанавливаем .shrc)
+                        if fs.exists(shrcPath .. ".bak") then
+                            if fs.exists(shrcPath) then
+                                fs.remove(shrcPath)
+                            end
+                            fs.rename(shrcPath .. ".bak", shrcPath)
+                            writeDebugLog("✅ Автозапуск ВКЛЮЧЁН (.shrc восстановлен)")
+                            addLog("✅ Автозапуск терминала включён")
+                            sendResult(true, "Автозапуск включён")
+                        else
+                            -- Если бэкапа нет - создаём новый .shrc
+                            local file = io.open(shrcPath, "w")
+                            if file then
+                                file:write("lua /home/pimmarket.lua\n")
+                                file:close()
+                                writeDebugLog("✅ Автозапуск ВКЛЮЧЁН (создан новый .shrc)")
+                                addLog("✅ Автозапуск терминала включён")
+                                sendResult(true, "Автозапуск включён")
+                            else
+                                writeDebugLog("❌ Не удалось создать .shrc")
+                                sendResult(false, "Не удалось создать .shrc")
+                            end
+                        end
+                    end
+                    
+                elseif action == "restart_script" then
+                    writeDebugFile("🔄 ПЕРЕЗАПУСК СКРИПТА")
+                    sendResult(true, "Перезапуск скрипта...")
+                    os.sleep(0.5)
+                    
+                    -- Сохраняем все данные перед перезапуском
+                    forceSaveData()
+                    
+                    -- Запускаем новый экземпляр скрипта
+                    local scriptPath = "/home/pimmarket.lua"
+                    if fs.exists(scriptPath) then
+                        -- Запускаем новый процесс
+                        local pid = shell.execute("lua " .. scriptPath .. " &")
+                        writeDebugLog("✅ Новый процесс запущен: " .. tostring(pid))
+                        -- Завершаем текущий процесс
+                        os.exit(0)
+                    else
+                        writeDebugLog("❌ Скрипт не найден: " .. scriptPath)
+                        sendResult(false, "Скрипт не найден")
+                    end
                 end
                 goto continue
             end
